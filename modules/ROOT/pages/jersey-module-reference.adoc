@@ -1,0 +1,226 @@
+= Jersey Module Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[Jersey] is a framework built over JAX-RS (JSR-311) implementation. JAX-RS is a specification that provides a series of annotations and classes which make it possible to build RESTful services. The Mule Jersey transport makes it possible to deploy these annotated classes inside Mule.
+
+In addition to the annotation capabilities, Jersey contains many useful features:
+
+* The ability to integrate with XML data-binding frameworks such as JAXB
+
+* The ability to produce/consume JSON easily.
+
+* The ability to integrate with the JSP presentation tier.
+
+* Integration with [Abdera] for Atom support.
+
+[WARNING]
+Currently implicit views are not supported.
+
+== Classpath Settings
+
+The latest Jersey module uses Jersey 1.6.1.
+
+== Writing a Service
+
+Writing JAX-RS services is an expansive topic and will not be covered in this guide. However, the [Jersey] website has an excellent set of samples, and the [JAX-RS specification] is helpful as well.
+
+We will, however, take a look at a simple hello world service. This example requires the installation of Apache Xalan JAR's.
+
+The first step to create a JAX-RS service is to create a class which represents your HTTP resource. In our case we'll create a "HelloWorldResource" class. Methods on this class will be called in response to GET/POST/DELETE/PUT invocations on specific URL's.
+
+The @Path annotation allows you to bind a class/resource to a specific URL. In the sample below we're binding the HelloWorldResource class to the "/helloworld" URL.
+
+[source,java,linenums]
+----
+package org.mule.transport.jersey;
+
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.PathParam;
+
+@Path("/helloworld")
+public class HelloWorldResource {
+
+    @GET
+    @Produces("text/plain")
+    @Path("/{name}")
+    public String sayHelloWithUri(@PathParam("name") String name) {
+        return "Hello " + name;
+    }
+}
+----
+
+Looking at the "sayHelloWithUri" method we see several annotations involved:
+
+* @GET specifies that this method is only called @GET requests to the URL.
+
+* @Produces specifies that this method is producing a resource with the mime type of "text/plain".
+
+* @Path binds this method to the URL "/helloworld{name}". The {name} is a URI template. Anything in this portion of the URL will be mapped to a URI parameters named "name" (see below).
+
+* @PathParam binds the first parameters of the method to the URI parameters in that path named "name".
+
+== Deploy the Web Service
+
+Once you've written your service, you can create a `jersey:resources` components which contains a set of Jersey resources. URL. Below is a very simple configuration which does this:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey"
+  xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+    http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/3.0/mule-jersey.xsd
+    http://jersey.apache.org/core http://jersey.apache.org/schemas/core.xsd">
+
+  <flow name="HelloWorld">
+     <inbound-endpoint address="http://localhost:8080/jersey"/>
+     <jersey:resources>
+         <component class="org.mule.transport.jersey.HelloWorldResource"/>
+     </jersey:resources>
+  </flow>
+
+</mule>
+----
+
+== Consume a RESTful Web Service
+
+Once you run this configuration in Mule, you can hit the url: http://localhost:8080/jersy/helloworld/Dan and you should see this response in your browser: "Hello Dan".
+
+== JSON Support
+
+You must add the jersey-json module (available on the [Jersey website]) and specify `*@Produces/@Consumes ("application/json")`.
+
+== Exception Mappers
+
+It is possible to register exception mappers inside the `resources` element. Exception mappers allow mapping generic exceptions that may be thrown in the component class to HTTP response codes, you can add as many of these as you want.
+
+The following configuration maps a `HelloWorldException` that may be thrown during the execution of `HelloWorldResource` to HTTP error 503 (Service Unavailable).
+
+[source,xml,linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:exception-mapper class="org.mule.module.jersey.exception.HelloWorldExceptionMapper" />
+</jersey:resources>
+----
+
+[%header%autowidth.spread]
+|===
+^|HelloWorldExceptionMapper.java
+a|
+[source,java,linenums]
+----
+public class HelloWorldExceptionMapper implements ExceptionMapper<HelloWorldException>
+{
+    public Response toResponse(HelloWorldException exception)
+    {
+        int status = Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
+        return Response.status(status).entity(exception.getMessage()).type("text/plain").build();
+    }
+}
+----
+|===
+
+== Context Resolvers
+
+[Context resolvers] are injected into resource classes, and they provide context information to them, which can be useful in certain cases when you need specific metadata that is not available by default.
+
+When you use JAXB for you XML/JSON serialisation, JAXB provides some annotations in case you would need to change the output format. An simple example of such annotations is @XMLElement where you can provide the name of the field as a property on the annotation itself: `@XMLElement(name="PersonName")`.
+
+Some configuration however is not possible to achieve using annotations. For example, by default when using JAXB for JSON serialisation, the numbers (int, long...) are surrounded by double quotes, making them look like strings. This might be good for some projects, but other projects might want to remove those double quotes. This can be done by configuring a ContextResolver on the Jersey resource. Let's take a quick. If we have a class called Person which internally contains an age property, and we would want this Person object to be returned as JSON object with the age without quotes, first create custom context resolver.
+
+[%header%autowidth.spread]
+|===
+^|CustomContextResolver.java
+a|
+[source,java,linenums]
+----
+@Provider
+public class CustomContextResolver implements ContextResolver<JAXBContext>
+{
+    private JAXBContext context;
+    private Class[] types = {Person.class};
+
+    public JAXBContextResolver() throws Exception
+    {
+        this.context = new JSONJAXBContext(
+            JSONConfiguration.natural().build(), types);
+    }
+
+    public JAXBContext getContext(Class<?> objectType)
+    {
+        for (Class type : types)
+        {
+            if (type == objectType)
+            {
+                return context;
+            }
+        }
+        return null;
+    }
+}
+----
+|===
+
+In the above CustomContextResoler, we are specifying that for class of type Person, we return a JAXBContext, which is configured using JSONConfiguration class using the natural notation. Once we have our custom Jersey ContextResolver, we need to configure that in Mule.
+
+[source,xml,linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:context-resolver class="org.mule.module.jersey.context.CustomContextResolver" />
+</jersey:resources>
+----
+
+Without the custom context resolver, the output would look like the following:
+
+[source,text,linenums]
+----
+{"name":"Alan","age":"26"}
+----
+
+With the custom context resolver, the output changes to the following:
+
+[source,text,linenums]
+----
+{"name":"Alan","age":26}
+----
+
+ContextResolvers can also be used to configure other XML/JSON libraries such as Jackson. The following is a custom context resolver to configure Jackson to return numbers in quotes.
+
+[%header%autowidth.spread]
+|===
+^|CustomJacksonContextResolver
+a|
+[source,java,linenums]
+----
+@Provider
+public class CustomJacksonContextResolver implements ContextResolver<ObjectMapper>
+{
+    public ObjectMapper getContext(Class<?> type)
+    {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        objectMapper.configure(Feature.WRITE_NUMBERS_AS_STRINGS, true);
+        objectMapper.configure(Feature.QUOTE_NON_NUMERIC_NUMBERS, true);
+
+        return objectMapper;
+    }
+}
+----
+|===
+
+For more information about context resolver, check out the Jersey [user guide].
+
+
+== See Also
+
+For more information on how to use Jersey, see the [project website].

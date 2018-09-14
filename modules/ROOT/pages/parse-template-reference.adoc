@@ -1,0 +1,94 @@
+= Parse Template Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Use a *parse template* to load the content of a flow-external file into a Mule flow, then use the file as a template into which you can insert data returned as the result of evaluated Mule expressions.
+
+For example, perhaps you want a Mule flow to send an "order complete" HTTP response to a caller to indicate the new order's number and the number of widgets ordered (both values that you previously set on the Mule message as variables). You can use a parse template to load a file from an external location - a file which, behaving as a template, expects values for "order number" and "number of widgets". Then, the parse template extracts info from the Mule message variables to insert as values into the template and set the resulting contents as the message payload. In essence, a parse template pulls a template file into Mule flow, fills in the blanks, then sets results on the message as the payload. In the example, after the parse template sets the payload on the message using the external file as a template, the Mule flow returns the HTTP response to confirm the order.
+
+== Configuring a Parse Template
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+Drag a *parse template* message processor from the palette onto the canvas, then configure the fields according to the table below.
+
+image::parse.png[]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Descriptions
+|*Display Name* |Parse Template |Customize to display a unique name for the transformer in your application.
+|*Location* |filepath |Define the location of the file that Mule uses as a template into which to insert values extracted from the message properties or variables.
+|===
+
+[discrete.view]
+=== XML Editor or Standalone
+
+Add a *`parse-template`* element to your flow, then configure according to the tables below.
+
+[source,xml,linenums]
+----
+<parse-template location="users/administrator/desktop/hrweb/confirmation.html" doc:name="Parse Template"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Element
+|*`parse-template`*
+|===
+
+[%header%autowidth.spread]
+|===
+|Element Attribute |Value
+|*`location`* |Filepath which defines the location of the file that Mule uses a template into which to insert values extracted from the message properties or variables.
+|*`doc:name`* |Customize to display a unique name for the transformer in your application. (Note: not needed in Mule standalone.).
+|===
+=====
+
+== Complete Code Example
+
+The following example demonstrates the use of a parse template in an application which accepts queries by `employeeID` in order to acquire data about an employee.
+
+The parse template uses a flow-external file as a template into which it inserts values for fields - name, department, job title, start date, and employee type - drawn from the message payload. The flow then returns the template-built payload to the caller.
+
+[response.template file]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+    <jdbc-ee:mssql-data-source name="MySQL_Data_Source" user="mule" password="MuleR0cks" url="jdbc:mysql://localhost:3306/hrDB" transactionIsolation="UNSPECIFIED" doc:name="MS SQL Data Source"/>
+
+    <jdbc-ee:connector name="Database" dataSource-ref="MySQL_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="Database">
+        <jdbc-ee:query key="getEmployeeById" value="SELECT * FROM Employees WHERE id=#[message.inboundProperties['id']]"/>
+    </jdbc-ee:connector>
+
+    <flow name="exampleTemplateFlow1" doc:name="exampleTemplateFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="getEmployee" doc:name="HTTP" doc:description="Send GET request with a parameter, for example, http://localhost:8081/getEmployee?id=12345"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="request-response" queryKey="getEmployeeById" queryTimeout="-1" connector-ref="Database" doc:name="Database" doc:description="Returns list of maps containing records; only the first one is required."/>
+        <parse-template location="src/test/resources/responseHtml.template" doc:name="Parse Template"/>
+         <set-property doc:name="Content Type" propertyName="Content-Type" value="text/html"/>
+    </flow>
+
+</mule>
+----
+
+== See Also
+
+* Read about related transformers, the [variable transformer] and the [properties transformer], which you can use to set properties and variables for different scopes.
+
+* Learn how to use Mule Expression Language to read session variables using [sessionVars] map.

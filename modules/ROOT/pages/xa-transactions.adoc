@@ -1,0 +1,102 @@
+= XA Transactions
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Use an *XA transaction* to group together a series of operations from multiple JMS, VM or JDBC resources into a single, very reliable, virtual transaction.
+
+The following example illustrates a flow in which two connectors use XA transaction to function as a single transactional unit.
+
+[source,xml,linenums]
+----
+<flow name="JmsToJdbc">
+  <jms:inbound-endpoint queue="my.queue" reuseSession="false"/>
+    <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  </jms:inbound-endpoint>
+  <jdbc:outbound-endpoint address="writeTest" type="2">
+    <xa-transaction action="ALWAYS_JOIN"/>
+  </jdbc:outbound-endpoint>
+</flow>
+----
+
+Beyond the code displayed above, this configuration must use transports which support XA transactions. Specifically, this example uses a JMS connector which employs a JMS http://docs.oracle.com/javaee/1.4/api/javax/jms/XAConnectionFactory.html[XA Connection Factory], and a JDBC connector which uses an XA-enabled data source.
+
+[TIP]
+Our default and recommended XA Transaction Manager is *Bitronix*, read xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions] for details on how to implement it in Mule.
+
+As with a multiple resource transaction, if you configure an inbound connector with an XA transaction, you must also configure any other connectors as XA transactions and set the action to "ALWAYS_JOIN" to become part of the virtual transaction unit.  XA transactions employ the concept of suspend/resume. If you configure one flow to use an XA transaction set to ALWAYS_BEGIN, and then Mule forwards the message to another flow with an XA transaction set to ALWAYS_BEGIN, Mule suspends the first transaction until the second transaction completes.
+
+== Setting the Polling Frequency
+
+When you configure an inbound JMS connector with XA transactions, the receiver polls every 100 ms. You can change the polling frequency by adjusting the `pollingFrequency` property. The following example illustrates how to set the polling frequency.
+
+[source,xml,linenums]
+----
+<jms:inbound-endpoint queue="my.queue" reuseSession="false">
+  <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  <properties>
+    <spring:entry key="pollingFrequency" value="5000"/>
+  </properties>
+</jms:inbound-endpoint>
+----
+
+This property is only applicable if you are using the the default transport, `XaTransactedJmsMessageReceiver` , on JMS inbound connectors configured to use XA transactions. If you are using JBoss transactions, please read xref:jboss-transaction-manager-reference.adoc[JBoss Transaction Manager Reference] to learn how to configure the `timeout` value.
+
+== Mule Transaction Manager
+
+Though you demarcate transactions based on connectors (i.e. resources) and scopes, Mule actually manages transactions using the *Mule Transaction Manager*. The Transaction Manager is a singleton manager which governs all the transactions in a Mule instance. It provides methods for binding and unbinding transactions and is responsible for retrieving the current transaction state.
+
+Mule uses `javax.transaction.TransactionManager` to manage XA transactions with multiple resources. If you intend to use the `SUSPEND` semantics for your transactions, you must use this transaction manager. However, depending on your application server vendor, you may have access to other transaction manager options. The table below summarizes the transactions managers available on common application servers.
+
+[%header%autowidth.spread]
+|===
+|Application Server |Remote |Embedded |Common Location |Lookup class
+|JBoss |  |image:check.png[(tick)] |java:/TransactionManager a|
+----
+org.mule.transaction.lookup.JBossTransactionManagerLookupFactory
+----
+
+|JRun |  |image:check.png[(tick)] |java:/TransactionManager a|
+----
+org.mule.transaction.lookup.JRunTransactionManagerLookupFactory
+----
+
+|Other |  |image:check.png[(tick)] |Specified via a `jndiName` property a|
+----
+org.mule.transaction.lookup.GenericTransactionManagerLookupFactory
+----
+
+|Resin |  |image:check.png[(tick)] |java:comp/TransactionManager a|
+----
+org.mule.transaction.lookup.Resin3TransactionManagerLookupFactory
+----
+
+|WebLogic |image:check.png[(tick)] |image:check.png[(tick)] |javax.transaction.TransactionManager a|
+----
+org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory
+----
+
+|WebSphere |  |image:check.png[(tick)] |proprietary API call a|
+----
+org.mule.transaction.lookup.WebsphereTransactionManagerLookupFactory
+----
+|===
+
+[WARNING]
+====
+XA transactions for *Weblogic* are not supported in Mule ESB Standalone. +
+
+Use Mule in embedded mode in order to use XA transactions for Weblogic.
+====
+
+To configure your Mule application to use a specific transaction manager, configure the `custom`-`transaction-manager` as per the example below.
+
+[source,xml,linenums]
+----
+<custom-transaction-manager class="org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory" />
+----
+
+== Go Forward
+
+* Refer to xref:transaction-management.adoc[Transaction Management] for details on how to configure an XA transaction.
+* Refer to xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions] to see how to implement our default and recommended XA Transaction Manager +

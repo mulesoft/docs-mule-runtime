@@ -1,0 +1,160 @@
+= Deploying Mule to WebLogic
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+These instructions assume you have downloaded and installed WebLogic Application Server version 10.3. Note that WebLogic 8.x and 9.x are also supported, but these instructions are specific to version 10.3, both on BEA Weblogic and Oracle WebLogic.
+
+*Note:* For an example of Mule running in a webapp under Weblogic, take the webapp example from the standalone distribution and make the changes described above.
+
+== Creating a WebLogic Domain for Mule
+
+The first step is to create a WebLogic domain for Mule using the BEA WebLogic Configuration Wizard.
+
+. Launch the Configuration Wizard. For example, on Windows choose **Start > All Programs > BEA Products > Tools > Configuration Wizard**.
+
+. In the Welcome screen, select the option to create a new domain and click *Next*.
+
+. In the Select Domain Source screen, select the option to generate a domain for WebLogic Server and click *Next*.
+
+. In the Configure Administrator Username and Password screen, enter the user name and password you want to use, and then click *Next*.
+
+. In the Configure Server Start Mode and JDK screen, select Development Mode, select the Sun SDK 1.5 instead of JRockit, and then click *Next*.
+
+. In the Customize Environment and Services Settings screen, leave *No* selected and click *Next*.
+
+. In the Create WebLogic Domain screen, enter `Mule2` for the domain name, leave the location set to the default user projects domains directory, and then click *Create*. Note that you can use whatever domain name you like, but the rest of this page assumes the name `Mule2`.
+
+. When the domain has been created, click *Done*.
+
+== Deploying Mule inside of a WebLogic web application:
+
+You must carry out the following two steps, explained in detail bellow:
+
+. _Required._ Modify your <<Modify your WebLogic Configuration>> by adding elements to the *weblogic.xml* file
+
+. Configure logging as described in <<Configuring Logging>>.
+
+=== Modify your WebLogic Configuration
+
+Include these lines in the *weblogic.xml* file to prioritize mule libraries:
+
+[source,xml,linenums]
+----
+<container-descriptor>
+        <prefer-web-inf-classes>true</prefer-web-inf-classes>
+    </container-descriptor>
+----
+
+Instead, for a more fine-grained package overriding, you can refer to individual packages as shown below:
+
+[source,xml,linenums]
+----
+<container-descriptor>
+         <prefer-application-packages>
+             <package-name>org/apache/commons/lang</package-name>
+         </prefer-application-packages>
+     </container-descriptor>
+----
+
+[TIP]
+====
+Read more about WebLogic Classloading http://docs.oracle.com/cd/E23943_01/web.1111/e13706/classloading.htm#WLPRG282[here].
+====
+
+=== Configuring Logging
+
+Mule uses http://logging.apache.org/log4j/1.2/index.html[Log4j]. WebLogic can be configured so that WebLogic's and Mule's logging both use log4j.
+
+. Copy `<WLHOME>/wlserver_10.3/server/lib/wllog4j.jar` to `<WLHome>/user_projects/domains/<yourdomain>/lib`.
+
+. http://logging.apache.org/log4j/1.2/download.html[Download] the Log4j logging file.
+
+. Unzip the file and copy `log4j.jar` to `<WLHome>/user_projects/domains/<yourdomain>/lib`.
+
+. http://commons.apache.org/downloads/download_logging.cgi[Download] the Commons logging file.
+
+. Unzip the file and copy `commons-loggin.jar` to `<WLHome>/user_projects/domains/<yourdomain>/lib`.
+
+. Launch your WebLogic domain and log into the console.
+
+. In the left navigation pane, expand *Environment* and select *Servers*.
+
+. In the Servers table, click the name of the server instance whose logging you want to configure.
+
+. Select **Logging > General**, and click *Advanced* at the bottom of the page.
+
+. In the Logging Implementation list box, select *Log4j*.
+
+. Click *Save*.
+
+. Restart your WebLogic domain to activate the changes.
+
+== Deploying Mule
+
+There are many ways to deploy applications to the WebLogic server. These instructions demonstrate the two most common approaches: through auto-deployment, which provides a fast method for deploying for testing and evaluation, and through the Administration console, which provides more control over the configuration. Note that this section also applies when deploying an EAR or WAR that embeds Mule to WebLogic, in which case you deploy the EAR or WAR instead of the RAR file.
+
+=== To Auto-deploy Mule:
+
+. Copy `mule-enterprise-jca.rar` into the `<WLHome>/user_projects/domains/<yourdomain>/autodeploy` directory.
+
+. Restart your domain server instance in development mode. During the starting process, the new RAR file will be autodiscovered and deployed by the domain server.
+
+=== To Deploy Mule Using the Administration Console:
+
+. Start the WebLogic server. For example, on Windows choose **Start > BEA Products > WebLogic Server**.
+
+. Start the Admin Server for the Mule2 domain. For example, on Windows you would choose **Start > BEA Products > User Projects > <yourdomain> > Start Admin Server for WebLogic Server Domain**.
+
+. When prompted, log in to the console using the user name and password you specified when creating the domain. If you close the console and need to restart it later, you can go to the URL http://localhost:7001/console/console.portal.
+
+. In the Domain Structure on the left, click *Deployments*.
+
+. Click *Install*, and then navigate to the location where you downloaded the Mule RAR file.
+
+. Select the RAR file and click *Next*.
+
+. Select *Install this deployment as an application*
+
+. Select *Next*
+
+. Select *Finish*
+
+. In the Change Center on the left, click *Activate Change*.
+
+Mule is now deployed to WebLogic via the Mule JCA Resource Adapter. You must now replace the default configuration file in the RAR file with the configuration file for your Mule application.
+
+== Replacing the Mule Configuration File in the Vanilla RAR
+
+*_Enterprise Edition_*
+
+Mule includes a placeholder configuration file called `mule-config.xml` in the RAR file under `mule-module-jca-core.jar`. If you simply want to modify this file, you can do the following:
+
+. Unpackage the RAR and the JAR file.
+
+. Modify the configuration file.
+
+. Repackage the JAR and RAR with the updated file and copy the RAR into the `<WLHome>/user_projects/domains/<yourdomain>/autodeploy` directory.
+
+. Run the `startWebLogic` command.
+
+If you want to use a different configuration file, do the following:
+
+. Unpackage the RAR file and copy your configuration file to the top level where all the JAR files are located.
+
+. Open the `META-INF` folder, and then open `weblogic-ra.xml` for editing.
+
+. Immediately after the
+`<enable-global-access-to-classes>true</enable-global-access-to-classes>` entry and right before `outbound-resource-adapter`, add the following lines, where `echo-axis-config.xml`is the name of your configuration file:
++
+[source,xml,linenums]
+----
+<properties>
+  <property>
+    <name>Configurations</name>
+    <value>echo-axis-config.xml</value>
+  </property>
+</properties>
+----
+
+. Repackage the RAR file and deploy it by copying it to the `autodeploy` directory and running `startWebLogic`.

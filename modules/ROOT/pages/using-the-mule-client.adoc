@@ -1,0 +1,340 @@
+= Using the Mule Client
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, mule client
+
+In most Mule ESB applications, messages are triggered by an external occurrence such as a message being received on a queue or a file being copied to a directory. However, if you want to send and receive messages programmatically, you can create a Mule client.
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/client/MuleClient.html[MuleClient]
+
+is a simple interface for Java clients to send and receive messages from a Mule server and other applications. You can use the Mule client for:
+
+* Sending and receiving messages to and from a local or remote Mule server
+* Communicating with other applications using any Mule transport
+* Making requests to a Mule server behind a firewall using the `RemoteDispatcher`
+
+The Mule client can be used as a web services client to make SOAP requests using popular SOAP implementations such as Apache CXF. It can also send messages directly to a flow component and bypass the transports layer completely, which is useful for testing your flow components or when triggering an event from a script or JSP page.
+
+The Mule client can be used with any of the Mule transports, making it a universal client for many types of transports such as JDBC, JMS, FILE, POP3, XMPP, HTTP, etc.
+
+The following sections describe how to use the MuleClient in various scenarios.
+
+== Using Send and Dispatch
+
+The Mule client allows the user to send and receive messages programmatically. For example, to send a JMS message to any application or Mule component listening on `my.queue`, you can use the `dispatch()` method. The `dispatch()` method provides the ability to "fire and forget" messages over an endpoint.
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+client.dispatch("jms://my.queue", "Message Payload", null);
+----
+
+To make a regular synchronous call to a service and receive a result, you can use the `send()` method:
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.send("tcp://localhost:3456", "Message Payload", null);
+----
+
+The client `send()` and `dispatch()` methods expect the following arguments:
+
+. The Mule URL endpoint: any valid xref:3.6@mule-endpoint-uris.adoc[Mule Endpoint] used to determine the transport, endpoint, and other information about delivery of the message. This can also be an endpoint name stored in configuration.
+. The message payload: any object carried by the message.
+. Properties: any properties or meta-data to associate with the message being sent
+
+[TIP]
+====
+*Don't use physical endpoints in your code* +
+
+For clarity, the examples on this page use a physical endpoint URI, such as `jms://myQueue`. However, it is much better practice to define all your endpoints inside a Mule configuration file using the `<endpoint>` element and then reference those endpoint names in your code.
+====
+
+== Configuring the Mule Client
+
+If you are using the Mule client in the same classloader (e.g., a Web App or Mule stand-alone), the client will have access to the server configuration. For example, if you had some endpoints defined in your server configuration file:
+
+[source,xml,linenums]
+----
+<http:endpoint host="192.168.0.1" port="80" path="/services" name="serviceEndpoint"/>
+----
+
+This endpoint will be accessible by the Mule client:
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+client.dispatch("serviceEndpoint", dataObject, null);
+----
+
+Essentially, the Mule client will have the same configuration information as the Mule server, since they will both have access to the same registry.
+
+If you are running the Mule client in stand-alone mode, you can still configure it using its own Mule XML configuration file(s). You pass in these files when the client is created:
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient("http-client-config.xml, shared-client-config.xml");
+client.getMuleContext().start();
+----
+
+Note that you must start the local Mule context used by the client. You can also create your own Mule context and pass it into the client:
+
+[source,text,linenums]
+----
+//Create a MuleContextFactory
+MuleContextFactory muleContextFactory = new DefaultMuleContextFactory();
+
+//create the configuration builder and optionally pass in one or more of these
+ConfigurationBuilder builder =
+    new SpringXmlConfigurationBuilder("http-client-config.xml, shared-client-config.xml");
+//The actual context builder to use
+MuleContextBuilder contextBuilder = new DefaultMuleContextBuilder();
+
+//Create the context
+MuleContext context = muleContextFactory.createMuleContext(builder, contextBuilder);
+
+//Start the context
+context.start();
+
+//Create the client with the context
+MuleClient client = new MuleClient(context);
+----
+
+== MuleClient as a Web Services Client
+
+The Mule client can be used as a web services client to make SOAP requests using popular SOAP implementations such as http://cxf.apache.org/[Apache CXF] or http://ws.apache.org/axis[Axis].
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient();
+
+//Arguments for the addPerson WS method
+String[] args = new String[]{"Ross", "Mason"};
+
+//Call the web service
+client.dispatch("axis:http://localhost:38004/PersonService?method=addPerson", args, null);
+
+//Call another method to look up the newly added person
+MuleMessage result = client.send
+        ("axis:http://localhost:38004/PersonService?method=getPerson", "Ross", null);
+
+//A person object is returned, and all type mapping is handled for you
+Person person (Person)result.getPayload();
+
+System.out.println(person));
+----
+
+For SOAP support, you can use the Mule xref:3.6@cxf-module-reference.adoc[CXF Module Reference].
+
+== Performing an Event Request Call
+
+Making a request to an endpoint is useful when using a transport that has a store of events that you want to request rather then have a listener on the resource.
+
+To make a request for a message, use the `request()` method:
+
+[source,text,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.request("pop3://ross:blah@mail.my.org", 5000);
+----
+
+This code will attempt to receive a message from a mailbox called `ross` on `mail.my.org` and will return after five seconds if no message was received. Calling `request()` works for all Mule supported transports, but it is more usual to make event request calls where there is a store to be queried such as a queue, file directory, or some other repository.
+
+== Associating Properties with the Message
+
+The previous examples set the properties argument to `null`. Properties can be arbitrary, such as to pass around custom metadata with your messages, or they can be transport-specific. The following example demonstrates an asynchronous request/response using JMS and the JMS-specific `JMSReplyTo` property. When the `JMSReplyTo` is set, it is stated in the JMS spec that a receiver of the message should send back any results to the destination defined in the `JMSReplyTo` header. Mule does this for you.
+
+[source,text,linenums]
+----
+//create the client instance
+MuleClient client = new MuleClient(muleContext);
+
+//create properties to associate with the message
+Map props = new HashMap();
+
+//Set the JMSReplyTo property, which is where the response message will be sent
+props.put("JMSReplyTo", "replyTo.queue");
+
+//dispatch the message asynchronously
+client.dispatch("jms://test.queue", "Test Client Dispatch message", props);
+
+//Receive the return message on the replyTo.queue
+MuleMessage message = client.request("jms://replyTo.queue", 5000);
+
+//This is the message sent back from the first component to process our message
+System.out.println(message.getPayload());
+----
+
+== When Not to Use the Mule Client
+
+It's generally not good practice to make calls using the Mule client from your flow objects or within extensions to Mule such as routers or transformers.
+
+When you need to dispatch or request events in Mule, you should use the current
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleEventContext.html[org.mule.api.MuleEventContext]
+
+and call the send/dispatch/request methods on the context instead.
+
+To gain access to the `MuleEventContext`inside your flowss, you can implement the
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]
+
+interface.
+
+If you need to make an event request from a transformer, filter, or interceptor, you should reconsider your design strategy for that event flow.
+
+== Handling Message Collections
+
+To handle situations where multiple results occur, Mule has introduced a new message type
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]
+
+* This type of message contains all message results in the order they were received. Note that
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]
+
+extends
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessage]
+
+, so the interface is similar. If there are multiple results, the `MuleMessage.getPayload()` method returns a `java.util.List` containing the payloads of each of the returned messages.
+
+When using the Mule client, you can cast the message return type to get access to all `MuleMessage` objects.
+
+[source,java,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.send("myEndpoint", "some data", null);
+
+if (result instanceof MuleMessageCollection)
+{
+    MuleMessageCollection resultsCollection = (MuleMessageCollection) result;
+    System.out.println("Number of messages: " + resultsCollection.size());
+    MuleMessage[] messages = resultsCollection.getMessagesAsArray();
+}
+----
+
+== Future Results
+
+The Mule client allows you to make synchronous calls without blocking by using the `sendAsync()`method, which returns a
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/FutureMessageResult.html[FutureMessageResult]
+
+that can be queried later.
+
+[source,java,linenums]
+----
+MuleClient client = new MuleClient();
+FutureMessageResult result = client.sendAsync("http://localhost:8881",
+                                              "Message Payload", null);
+//Do some more stuff here
+
+Object payload = result.getMessage().getPayload();
+----
+
+The FutureMessageResult returned is a placeholder for the real result message when the call returns. By using a future result, you can continue with other tasks while the remote call executes. Calling `getMessage()` will block until the call returns. Optionally, you can specify a timeout of how long to wait. You can also check if the call has returned using `result.isReady()`.
+
+== Using the Remote Dispatcher
+
+The Mule client can connect to, send, and receive messages from a remote Mule server through a firewall using a remote dispatcher. This should only be used when the remote service being invoked does not expose an endpoint accessible by the Mule client. Note that there is performance overhead when using the remote dispatcher, because all requests and responses are serialized, sent to the server, and deserialized before the real invocation is made from within the firewall.
+
+To use the remote dispatcher, you enable it on the server instance by configuring the remote dispatcher agent. You can ensure that the server can handle both asynchronous and synchronous calls by setting the `synchronous` attribute to true. You can also set the `responseTimeout` setting, although often it is better to control it at the MuleClient call level, as each call might have a different timeout requirement.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:client="http://www.mulesoft.org/schema/mule/client"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/client http://www.mulesoft.org/schema/mule/client/3.0/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core/3.0 http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd">
+  ...
+  <client:remote-dispatcher-agent>
+    <client:remote-endpoint address="http://localhost:81" exchange-pattern="request-response" responseTimeout="10000"/>
+  </client:remote-dispatcher-agent>
+  ...
+</mule>
+----
+
+On the client side, you can now communicate with the remote server via the remote dispatcher agent. For example:
+
+[source,java,linenums]
+----
+// start an empty context for client side
+MuleClient client = new MuleClient(true);
+RemoteDispatcher dispatcher = client.getRemoteDispatcher("http://localhost:81");
+
+
+MuleMessage result = dispatcher.sendToRemoteComponent("StockManager", "give me the price of XXX", null);
+
+StockQuote sq = (StockQuote) result.getPayload();
+----
+
+The Mule client executes the StockManager component on a remote Mule server, returning the result to the client. Mule handles all the call marshalling. The first null argument is an optional string of comma-separated transformers to use on the result message. The second null argument contains properties associated with the request.
+
+If you do not want to wait for the result to be returned from the remote server, you can use the `sendAsyncToRemoteComponent()` method, which returns a `FutureMessageResult`:
+
+[source,java,linenums]
+----
+// start an empty context for client side
+MuleClient client = new MuleClient(true);
+RemoteDispatcher dispatcher = client.getRemoteDispatcher("tcp://localhost:60504");
+FutureMessageResult result = dispatcher.sendAsyncToRemoteComponent("StockManager", null, "give me the price of XXX", null);
+
+//do some other stuff
+
+StockQuote sq = (StockQuote) result.getMessage(1000).getPayload();
+----
+
+=== Specifying the Wire Format
+
+You can specify the wire format to use for dispatching messages by configuring one of the following:
+
+* `<xml-wire-format>`: uses the XML-Object transformers
+* `<serialization-wire-format>`: uses the ByteArray-Serializable transformers
+* `<custom-wire-format>`: set the `class` attribute to the class file of the transformer you want to use.
+
+[WARNING]
+====
+*About Serialization* +
+
+The Mule Client uses java Serialization. Make certain that all objects in the message implement serializable.
+====
+
+If you do not set the wire format, the serialization format is used. For more information on transformers, see xref:3.6@using-transformers.adoc[Using Transformers].
+
+For example:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:client="http://www.mulesoft.org/schema/mule/client/3.0"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/client http://www.mulesoft.org/schema/mule/client/3.0/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd">
+  ...
+  <client:remote-dispatcher-agent>
+    <client:remote-endpoint address="http://localhost:81" exchange-pattern="request-response" responseTimeout="10000"/>
+    <client:xml-wire-format/>
+  </client:remote-dispatcher-agent>
+  ...
+</mule>
+----
+
+== Sending Messages to Components Directly
+
+The Mule client provides a convenient way to send a message directly to a component without needing to use a transport when the Mule server is running in the same classloader as the client. This approach can be very useful in testing as well as triggering messages from a JSP page or JavaScript. For example, to dispatch a message directly to your stock quote component called StockManager, you would do the following:
+
+[source,java,linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.sendDirect("StockManager", null, "give me the price of XXX", null);
+
+StockQuote sq = (StockQuote) result.getPayload();
+----
+
+Note that the call is `sendDirect`, which tells the Mule client to go directly to the component and not through a transport. You can specify a comma-separated list of transformers to use in the second argument of this call.

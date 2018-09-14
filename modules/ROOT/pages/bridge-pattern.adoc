@@ -1,0 +1,150 @@
+= Bridge Pattern
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: connectors, anypoint, studio, esb, bridge pattern, integration,
+
+Connecting systems together is one of the most essential task of integration. Mule ESB offers the necessary building blocks for achieving such connections. One of these building blocks allows establishing bridges between message sources and destinations.
+
+image::mcp-bridge.png[mcp_bridge]
+
+== Core Features
+
+A messaging bridge acts as a direct conduit between an inbound endpoint and an outbound endpoint. It is a neutral component as it doesn't apply any business logic on the messages that flow through it. This said, as we will see later on, a bridge can perform protocol adaptation and data transformation.
+
+By default, the Bridge configuration element establishes a request-response conduit between its endpoints: any response coming from the outbound endpoint will be routed back to the inbound endpoint. The following illustrates such a synchronous bridge:
+
+[%header%autowidth.spread]
+|===
+^|*Synchronous - aka Request-Response - Bridge*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="request-response-bridge"
+        inboundAddress="vm://synchronous-bridge.in"
+        outboundAddress="vm://maths-service.in" />
+----
+|===
+
+Using a synchronous bridge made sense in this case because the target of the outbound endpoint was a request-response math computation service, whose response was expected by the caller of the bridge. In other scenarios, no response needs to be routed back: the bridge becomes a one-way conduit. Consider the following example where messages are sent to the logging system in a fire and forget manner:
+
+[%header%autowidth.spread]
+|===
+^|*One-Way Bridge*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="one-way-bridge"
+        exchange-pattern="one-way"
+        inboundAddress="vm://asynchronous-bridge.in"
+        outboundAddress="vm://log-service.in" />
+----
+|===
+
+The Bridge element, like other pattern-based configuration elements, supports referencing global endpoints:
+
+[%header%autowidth.spread]
+|===
+^|*Endpoint References*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="endpoint-ref-bridge"
+        inboundEndpoint-ref="endpoint-ref-bridge-channel"
+        outboundEndpoint-ref="maths-service-channel" />
+----
+|===
+
+It also supports child elements to enable advanced configuration of endpoints and definition of exception strategy (in case something nasty happens while a message was processed by the Bridge):
+
+[%header%autowidth.spread]
+|===
+^|*Child Elements*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="child-endpoint-bridge">
+  <vm:inbound-endpoint path="child-endpoint-bridge.in"
+                       exchange-pattern="request-response" />
+  <vm:outbound-endpoint path="maths-service.in"
+                        exchange-pattern="request-response" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</bridge>
+----
+|===
+
+Finally, inheritance is also supported, making it possible to share properties across several Bridges:
+
+[%header%autowidth.spread]
+|===
+^|*Inheritance*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="abstract-parent-bridge"
+        abstract="true"
+        outboundAddress="vm://maths-service.in" />
+
+<pattern:bridge name="concrete-child-bridge"
+        parent="abstract-parent-bridge"
+        inboundAddress="vm://concrete-child-bridge.in" />
+----
+|===
+
+== Adaptation and Transformation
+
+So far, our examples were showing bridges with homogeneous transports: the same transport (VM) was used for both the inbound and outbound endpoints. Because it relies on Mule's protocol adaptation and messaging abstraction, a bridge can very well handle scenarios where heterogeneous protocols are used. Consider the following example:
+
+[%header%autowidth.spread]
+|===
+^|*Heterogeneous Transports Bridge*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="dlqDumper"
+        exchange-pattern="one-way"
+        inboundAddress="jms://myDlq"
+        outboundAddress="file://./test?outputPattern=#[header:INBOUND:JMSMessageID].dl" />
+----
+|===
+
+As you can see, we have configured a bridge to handle the messages we're receiving on a dead letter queue (DLQ). This bridge consumes all the dead messages sent to the specified JMS queue and writes them to the file system. Of course, this is a one-way bridge: we're not interested into sending anything back to the DLQ!
+
+Beyond handling heterogeneous protocols, a bridge can handle differences in data format. Indeed, as mentioned above, a bridge can perform transformations, which is oftentimes needed when integrating disparate systems. The following shows an example where data is transformed to and from a canonical form:
+
+[%header%autowidth.spread]
+|===
+^|*Transforming Bridge*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="transforming-bridge"
+        inboundAddress="vm://transforming-bridge.in"
+        transformer-refs="to-canonical-form"
+        responseTransformer-refs="from-canonical-form"
+        outboundAddress="vm://target-service.in" />
+----
+|===
+
+== Transaction Support
+
+Sometimes, important messages transit trough a bridge: in that case, a message must reliably be consumed from the inbound endpoint and delivered to the outbound endpoint. If this delivery fails, the message should be pushed back so the delivery can be attempted again later.
+
+The way to achieve this is to declare Bridge as being transacted. In that case, it will consume its inbound messages and dispatch its outbound ones within a transaction. Look at the following example for an idea of how this works:
+
+[%header%autowidth.spread]
+|===
+^|*Transacted Bridge*
+
+a|[source,xml,linenums]
+----
+<pattern:bridge name="queue-to-topic"
+        transacted="true"
+        inboundAddress="jms://myQueue"
+        outboundAddress="jms://topic:myTopic" />
+----
+|===
+
+In this example, we bridge a JMS queue to a topic. We've used the transacted attribute as we want to ensure that all inbound messages will be successfully consumed and re-published.
+
+Obviously, for this to work, the transports used by the bridge should support transactions. If the inbound and outbound endpoints use heterogeneous protocols, the bridge will look for an XA transaction manager (which must be already xref:3.6@transactions-configuration-reference.adoc[configured]).

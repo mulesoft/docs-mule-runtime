@@ -1,0 +1,404 @@
+= Anypoint Connectors
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+**Anypoint Connectors** facilitate easy integration of your Mule applications with third-party APIs and standard integration protocols. Use connectors within your application's flows to send and receive data using a protocol or specific API.
+
+Anypoint Connectors are automatically bundled with Anypoint Studio, and there is a large library of additional connectors available for download in https://www.anypoint.mulesoft.com/exchange/?type=connector[Anypoint Exchange]. You can also create a xref:3.7@publishing-and-consuming-apis-with-mule.adoc[REST or SOAP API connector], or create your own connectors using xref:3.8@connector-devkit::index.adoc[Anypoint Connector DevKit]. For more information on integration solutions, see the http://www.mulesoft.com/platform/cloud-connectors[Anypoint Connectors] product site.
+
+Import additional connectors into your Studio instance, or create applications using connectors outside of Studio by adding them as Maven dependencies or including connector libraries with your project.
+
+
+== Types of Connectors
+
+All connectors can function as *endpoints* by sending and receiving messages between flows or between a flow and some other data source outside of Mule. Some connectors are *endpoint-based*, meaning that you configure them either as inbound or outbound endpoints in your flow, then specify other operation logic within the configuration of that endpoint. Some connectors are *operation-based*, meaning that they allow you to invoke specific actions against an API, Web service, or database.
+
+Connectors in Anypoint Exchange:
+
+* https://anypoint.mulesoft.com/exchange/?search=community[Community connectors]
+* https://anypoint.mulesoft.com/exchange/?search=mulesoft-certified[MuleSoft Certified connectors]
+* https://anypoint.mulesoft.com/exchange/?search=select[Select connectors]
+* https://anypoint.mulesoft.com/exchange/?search=premium[Premium connectors]
+
+While there are exceptions, the following table summarizes the major differences between endpoint-based and operation-based connectors in Mule.
+
+[%header%autowidth.spread]
+|===
+||Endpoint-Based Connectors |Operation-Based Connectors
+|*Usage* a| * Typically URL-based
+* Typically provides connection for a standard protocol
+* Typically support serializable data
+* Global Connector Configuration is usually optional
+a|* Typically operation-based
+* Typically provides connection to one or more APIs
+* Support serializable or structured data
+* Global Connector Configuration always required
+|*Implementation* a|* Built around a transport automatically bundled with Mule
+a|* Implemented using Anypoint Connector DevKit
+|*Installation and Updates*
+a|* Automatically included with Anypoint Studio
+* Specify them as required transports when building with Maven
+* Updates occur with Mule releases only (with the exception of SAP and HL7, which are available on update sites)
+a|* Some are automatically included with Anypoint Studio
+* Add them as dependencies when building with Maven
+* Updates available on Anypoint Studio update sites (with the exception of Database and Web Service Consumer, which are updated with Mule releases)
+|*Global Configuration XML*	|`<connectorname>:connector`
+`For example: http:connector` |`<connectorname>:config` `For example: sfdc:config`
+|*Flow-Level Element XML*	|`<connectorname>:inbound-endpoint` `<connectorname>:outbound-endpoint` `For example: http:inbound-endpoint`
+|`<connectorname>:<operation>` `For example: sfdc:create`
+|===
+
+See the xref:anypoint-connectors.adoc[Connector Configuration Reference] for instructions for configuring connectors for endpoint functions or for operations
+
+Terminology
+
+In previous versions of Mule, endpoint-based connectors were sometimes referred to as transports. Also the term connectors was used for both the global connection configuration for an endpoint and for Mule-specific  extensions (also called Cloud Connectors) for third-party APIs.
+
+As of Mule 3.5, we are clarifying the terminology as follows.
+
+*Transport:* Transports provide connectivity to a data source or message channel by implementing one of a variety of standard connection protocols that are bundled with Mule. Endpoint-based connectors are often constructed around a transport.
+
+*Connector:* A connector is a Mule-specific connection to an external resource of any kind, whether it is a generic protocol such as HTTP, FTP, or a Java-based database, or a specific third-party API, such as Salesforce or Workday. Connectors may be operation-based or endpoint-based, but this distinction refers to a difference in configuration details, not in functionality.
+
+*Endpoint:* An endpoint is a flow-level element that is configured to receive and/or send messages from and/or to external resources. Any connector (whether endpoint-based or operation-based) can function as an endpoint, but some connectors can only act as *inbound endpoints*, others can only act as *outbound endpoints.*
+
+== Endpoint-Based Connector Communication
+
+Depending on its location in a flow, a endpoint-based connector may function as an *inbound endpoint* or *outbound endpoint.*
+
+
+Note that an endpoint is a functional concept in Mule, not a rigid category. Endpoint-based connectors are always configured as either an inbound endpoint or an outbound endpoint, but operation-based connectors may also function as endpoints.
+
+*Inbound Endpoints*
+
+When a connector is configured as an inbound endpoint, it is acting as a *message source*. A message source receives new messages from a channel or resource, thus triggering the execution of a flow. A connector configured as an inbound endpoint reads the data it receives, packages the content as a message, then passes it to the first message processor in a Mule flow. A message source can receive data by:
+
+* Using a server socket
+* Polling a remote socket or resource
+* Registering a listener
+
+Inbound endpoints use one of two *message exchange patterns* (MEPs) in a Mule flow.
+
+* An inbound endpoint with a *one-way* exchange pattern simply accepts information from an external source for processing by Mule. For example, an JMS endpoint would use a one-way exchange pattern to accept messages from an external queue and process them in Mule (the queue doesn't expect a post-processing response).
+* An inbound endpoint with a *request-response* exchange pattern not only accepts information from an external source, it also returns a response to the external source that "called" the Mule flow. For example, an HTTP endpoint might use a request-response exchange pattern to accept a Web service request from a caller, then return a response after Mule has processed the message.
+
+*Outbound Endpoints*
+
+*Outbound endpoints* send messages from Mule to an external system or application. Outbound endpoints can exist either in the middle of a flow or at the end of a Mule flow, sending a message out to an external system after Mule has processed the message to transform it, enrich it, or otherwise act upon it.
+
+Outbound endpoints may also use one of two *message exchange patterns*:
+
+* An outbound endpoint with a *one-way* exchange pattern simply receives the message payload and routing instructions from the message processor which precedes it in a flow, then sends the message to its destination. For example, an SMTP connector, which can only be configured as a one-way, outbound endpoint, sends the message it receives from the Mule flow as an email using the SMTP protocol to a destination and does not expect a response.
+* An outbound endpoint with a *request-response* exchange pattern not only sends information to an external resource, it also returns the external resource's response to the Mule flow. For example, a VM connector might use a request-response exchange pattern to send a message to another flow via a VM queue, then that second flow would process the message and return it back to the first flow after its processing is complete.
+
+[NOTE]
+====
+[%autowidth.spread]
+|===
+2+|Endpoint-based connectors in Anypoint Studio visually indicate their message exchange pattern with small arrow icons on the building block.
+a|Endpoints configured with a request-response exchange pattern have two arrows:
+
+image:mep-ways-rr.png[mep_ways-rr] a|Endpoints configured with a one-way exchange pattern have just one arrow:
+
+image::mep-ways-rr.png[mep_ways-rr]
+
+2+|Operation-based connectors do not have these indicators, as their message exchange pattern varies according to the specific operation that you select for the connector.
+|===
+====
+
+===  Operation-Based Connector Communication
+
+Many connectors are *operation-based*, which means that when you add the connector to your flow, you immediately define a specific operation for that connector to perform. For example, when you add a Salesforce connector to your flow, the first configuration you need to define is the operation. The XML element of the operation-based connector differs according to the operation that you select, taking the form `<connectorname>:<operation>`. For example, `sfdc:query` or `sfdc:upsert-bulk`. The remaining configuration attributes or child elements are determined by the operation that you select.
+
+Operation-based connectors require a global connector configuration (usually optional for endpoint-based connectors) to specify the connection parameters such as username, passwords, and security token. Additional global parameters may also be configured. For details, see the individual references for each connector. General instructions are available on the xref:anypoint-connectors.adoc[Connector Configuration Reference].
+
+Note that endpoint-based connectors also perform operations on resources, but in most cases the protocol itself defines what that operation is. For example, the SMTP connector always sends an email, so the "send" operation is built into the protocol itself. In cases where a protocol supports multiple operations, the configuration of the operation is done via attributes or child elements of the connector, rather than in the connector element itself. For example, an `http:outbound-endpoint` may have an `attribute method="GET"`, which defines what operation you are performing over the HTTP protocol.
+
+== Connector Support Categories
+
+Connectors fall into one of the following categories. See https://www.mulesoft.com/legal/versioning-back-support-policy#anypoint-connectors[Connector Support Policy] for more information.
+
+[%header,cols="2*a"]
+|===
+|Type |Description
+|*Community*
+|
+
+MuleSoft or members of the MuleSoft community write and maintain the https://anypoint.mulesoft.com/exchange/?search=community[Community connectors]. Connectors built by the community or MuleSoft are generally open-source, although each package may vary. Partner-built connectors may not be open-source. Contact the partner directly for more information. You do not need any special account or license to use a Community connector.
+
+|*MuleSoft Certified*
+|
+
+For https://anypoint.mulesoft.com/exchange/?search=mulesoft-certified[MuleSoft Certified connectors] are developed by MuleSoft’s partners and developer community and are reviewed and certified by MuleSoft. For support, customers should contact the MuleSoft partner that created the MuleSoft Certified connector.
+
+|*Select*
+|
+
+MuleSoft maintains https://anypoint.mulesoft.com/exchange/?search=select[Select connectors]. Connectors included in the open source Mule distribution can be used by everyone, however support is only included in an Anypoint Platform subscription. To use all other Select Connectors and access support, you must have an active Anypoint Platform subscription.
+
+|*Premium*
+|
+
+MuleSoft maintains https://anypoint.mulesoft.com/exchange/?search=premium[Premium connectors]; you must have an active CloudHub Premium plan or an Enterprise subscription with an entitlement for the specific connector you wish to use.
+|===
+
+== Accessing Connectors
+
+Anypoint Studio includes a number of bundled connectors in the standard download. See the table below for more information about these connectors.
+
+MuleSoft and members of the Mule community have developed dozens more connectors that you can use in your applications. Refer to the Installing Connectors documentation to learn how to download and install connectors in Anypoint Studio.
+
+The following table lists connectors that are bundled with Anypoint Studio May 2014 and later, and are available for deployment using a  Mule 3.5.n runtime . If you intend to deploy your application to an earlier version of Mule, use a Mule 3.4 runtime when you begin a new project in Studio.
+
+[%header%autowidth.spread]
+|===
+|Connector |XML Element(s) |Description |Category |Reference
+|*Ajax*
+|`ajax:inbound-endpoint` +
+ +
+`ajax:outbound-endpoint`
+|Asynchronously exchanges messages between an Ajax server and a browser. One-way only.
+|Community
+|xref:ajax-connector.adoc[Ajax Connector]
+|*Amazon S3*
+|`s3:<operation>`
+|Accesses online storage web service offered by Amazon Web Services.	|Community
+|amazon S3 Connector
+|*Amazon SQS*
+|`sqs:<operation>`
+|Programmatically sends messages via web service applications as a way to communicate over the internet.
+|Community
+|Amazon SQS Connector
+|*CMIS*
+|`cmis:<operation>``
+|Interacts with any CMS system that implements the Content Management Interoperability Services (CMIS) specification.
+|Community
+|
+|*Database*
+|`db:<operation>`
+|Connect with JDBC relational databases and run SQL operations and queries.	|Community
+|xref:database-connector.adoc[Database Connector]
+|*DotNet*
+|`dotnet:<operation>`
+|Calls .NET code from a Mule flow.
+|Standard
+|xref:dotnet-connector.adoc[DotNet Connector]
+|*Facebook*
+|`facebook:<operation>`
+| Interacts with all the functions available through the Facebook Dialogs API, using OAuth2 for authentication.
+|Community
+|
+|*File*
+|`file:inbound-endpoint` +
+ +
+`file:outbound-endpoint`
+|Reads and writes to a file system. One-way only.
+|Community
+|xref:file-connector.adoc[File Connector]
+|*FTP*
+|`ftp:inbound-endpoint` +
+ +
+`ftp:outbound-endpoint`
+|Reads and writes to an FTP Server. One-way only.
+|Community
+|xref:ftp-connector.adoc[FTP Connector]  |*Generic*
+|`inbound-endpoint` +
+ +
+`outbound-endpoint`
+|Implements a generic endpoint specified by address URI.
+|Community
+|xref:generic-connector.adoc[Generic Connector]
+|*HTTP/HTTPS*
+|`http:inbound-endpoint` +
+ +
+`http:outbound-endpoint`
+|Sends and receives messages via the HTTP transport protocol. Turn on security to send HTTPS messages via SSL.
+|Community
+|xref:http-connector.adoc[HTTP Connector]
+|*IMAP*
+|`imap:inbound-endpoint`
+|Email transport that receives a message via IMAP. Turn on security to send IMAP messages via SSL. Inbound endpoint only. One-way only.
+|Community
+|xref:imap-connector.adoc[IMAP Connector]
+|*Jetty*
+|`jetty:inbound-endpoint`
+|Allows a Mule application to receive requests over +
+ +
+HTTP using a Jetty server. Turn on security to receive +
+ +
+HTTPS messages via SSL. Inbound endpoint only.
+|Community
+|xref:jetty-transport-reference.adoc[Jetty Reference]
+|*JMS*
+|`jms:inbound-endpoint` +
+ +
+`jms:outbound-endpoint`
+|Sends or receives messages from a JMS queue.
+|Community
+|xref:jms-transport-reference.adoc[JMS Reference]
+|*Magento*
+|`magento:<operation>``
+|Interacts with the Magento eCommerce platform.
+|Community
+|
+|*MongoDB*
+|mongo:<operation>
+|Connects to a MongoDB instance and run almost all of the operations that can be performed from the command line.
+|Community
+|link:/mule-user-guide/v/3.5/mongodb-connector[MongoDB Connector]
+|*MSMQ*
+|`msmq:<operation>`
+|Sends and receives data from MSMQ queues via the Anypoint Gateway for Windows.
+|Standard
+|xref:msmq-connector.adoc[MSMQ Connector]
+|*POP3*
+|`pop3:inbound-endpoint`
+|Receives messages via the POP3 email transport protocol. Turn on SSL to implement POP3 with security. Inbound endpoint only. One-way only.
+|Community
+|xref:pop3-connector.adoc[POP3 Connector]
+|*Quartz*
+|`quartz:inbound-endpoint` +
+ +
+`quartz:outbound-endpoint`
+|Generates events that trigger flows at specified times or intervals. One-way only.
+|Community
+|xref:quartz-connector.adoc[Quartz Connector]
+|*RMI*
+|`rmi:inbound-endpoint` +
+ +
+`rmi:outbound-endpoint`
+|Sends and receives Mule events over JRMP.
+|Community
+|xref:rmi-transport-reference.adoc[RMI Reference]
+|*Salesforce*
+|`sfdc:<operation>`
+|Connects with Salesforce APIs for querying, creating, and updating information using either regular username and password or using OAuth as the authentication mechanism.
+|Community
+|xref:salesforce-connector.adoc[Salesforce Connector]
+|*SAP*
+|`sap:inbound-endpoint` +
+ +
+`sap:outbound-endpoint`
+|Allows a Mule application to execute and receive BAPI calls and send and receive IDocs.
+|Premium
+|xref:sap-connector.adoc[SAP Connector]
+|*ServiceNow*
+|`servicenow:<operation>`
+|Facilitates connections between Mule integration and ServiceNow applications.
+|Standard
+|xref:servicenow-connector.adoc[ServiceNow Connector]
+|*Servlet*
+|`servlet:inbound-endpoint`
+|Allows a Mule application to listen for events received via a Servlet. Inbound endpoint only. Request-response only.
+|Community
+|xref:servlet-connector.adoc[Servlet Connector]
+|*SFTP*
+|`sftp:inbound-endpoint` +
+ +
+`sftp:outbound-endpoint`
+|Reads from and writes to a SFTP Server.
+|Standard
+|xref:sftp-connector.adoc[SFTP Connector]
+|*SMTP*
+|`smtp:outbound-endpoint`
+|Sends email via the SMTP protocol. Turn on security to send SMTP messages via SSL. Outbound endpoint only. One-way only.
+|Community
+|xref:smtp-transport-reference.adoc[SMTP Reference]
+|*SSL (TLS)*
+|`ssl:inbound-endpoint` +
+ +
+`ssl:outbound-endpoint`
+|Sends messages over secure socket communication using SSL or TLS.
+|Community
+|xref:ssl-and-tls-transports-reference.adoc[SSL and TLS Reference]
+|*TCP*
+|`tcp:inbound-endpoint` +
+ +
+`tcp:outbound-endpoint`
+|Sends or receives messages over a TCP socket.
+|Community
+|xref:tcp-transport-reference.adoc[TCP Reference]
+|*Twitter*
+|`twitter:<operation>`
+|Interacts with the Twitter API, which provides simple interfaces for most Twitter functionality.
+|Community
+|
+|*UDP*
+|`udp:inbound-endpoint` +
+ +
+`udp:outbound-endpoint`
+|Sends and receives messages as Datagram packets under the UDP transport protocol.
+|Community
+|xref:udp-transport-reference.adoc[UDP Reference]
+|*VM*
+|`vm:inbound-endpoint` +
+ +
+`vm:outbound-endpoint`
+|Sends and receives messages via intra-VM component communication.
+|Community
+|xref:vm-transport-reference.adoc[VM Reference]
+|*Web Service Consumer*
+|`ws:consumer`
+|Consumes SOAP Web services from within Mule flows.
+|Community
+|xref:web-service-consumer.adoc[Web Service Consumer]
+|*WMQ*
+|`wmq:inbound-endpoint` +
+ +
+`wmq:outbound-endpoint`
+|Sends or receives messages using the WMQ (WebSphere MQ queue) protocol.	|Standard
+|xref:wmq-connector.adoc[WMQ Connector]
+|===
+
+== Installing Additional Connectors
+
+MuleSoft and members of the Mule community have developed dozens of additional connectors that you can use in your applications. Refer to the xref:installing-connectors.adoc[Installing Connectors] documentation to learn how to download and install connectors in Anypoint Studio.
+
+If you are developing your applications in an XML editor outside of Anypoint Studio, you can add jars manually or add Anypoint Connectors as Maven dependencies. To make the connector available to a Mavenized Mule application, add the connector repositories to your pom.xml file, add the module as a dependency, and add it to the packaging process of your applications.
+
+You can find the latest installation links and instructions for each connector on the connector-specific reference pages, accessible from the connectors site.
+
+== Beyond Existing Connectors
+
+If none of the connectors on the connectors site meet your needs, you have several options:
+
+* Contact MuleSoft and the community via the http://forums.mulesoft.com[forum] – either MuleSoft or a member of the community might be in the process of building the connector you need or can point you to a community-built connector hosted elsewhere.
+* Consider building your own. Check out the xref:3.8@connector-devkit::index.adoc[Anypoint Connector DevKit] documentation for more information.
+
+Note that many connectors facilitate connectivity via a standard format or protocol. For example, if you are connecting to an Oracle database or a MS SQLServer database, you can use the xref:database-connector.adoc[Database Connector], because those databases output their data in a standard format. There is no need for an Oracle-specific or MS SQLServer-specific connector. Similarly, you can use the xref:web-service-consumer.adoc[Web Service Consumer Connector] to consume any SOAP-based web service, so you may not need a specific connector if the Web Service Consumer satisfies your use case.
+
+== Configuring Connectors
+
+For configuration information specific to individual connectors, refer to the Reference column of the table above. If the connector you are interested in using is not bundled in Studio, refer to the documentation linked on the connectors site.
+
+For general configuration instructions for connectors, see the Connector xref:connector-configuration-reference.adoc[Configuration Reference].
+
+== Connector Compatibility
+
+*Operations-Based*
+
+Starting with (and including) Mule 3.2, MuleSoft has made all operations-based connectors forward-compatible with all new releases of Mule. This group of connectors, which are referred to as *3.2-compatible* or *Studio-compatible*, can be configured either through the Properties pane in Anypoint Studio's visual interface or through an XML editor.
+
+Connectors developed prior to Mule ESB 3.2 can be deployed only with the version of Mule for which they were developed. In other words, these legacy operation-based connectors are neither forward nor backward-compatible.
+
+Legacy connectors cannot be configured or deployed using Studio. Instead, you must configure all legacy connectors with an XML editor, then deploy them exclusively with the Mule release for which they are listed as compatible.
+
+*Endpoint-Based*
+
+Because endpoint-based connectors are constructed around transports that are bundled with the Mule distribution, they are tied directly to a Mule version. When you develop a Mule application for the Mule 3.5.0 Runtime, for example, the endpoint-based connectors included in your project are tied to the Mule 3.5.0 core code.
+
+== Connector Support
+
+See https://www.mulesoft.com/legal/versioning-back-support-policy#anypoint-connectors[Connector Support Policy] for more information.
+
+*Getting Support for a Connector*
+
+If you need help with a connector, search http://forums.mulesoft.com[MuleSoft's Forums] for solutions and ideas.
+
+See also https://support.mulesoft.com[Contact MuleSoft Support]
+
+== See Also
+
+* Download new connectors and read specific documentation for them in  https://www.anypoint.mulesoft.com/exchange/?type=connector[Anypoint Exchange]
+* Learn how to build your own connectors with the xref:3.8@connector-devkit::index.adoc[Anypoint Connector DevKit].

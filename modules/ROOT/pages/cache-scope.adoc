@@ -1,0 +1,449 @@
+= Cache Scope
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+*_Enterprise, CloudHub_*
+
+The *Cache Scope* saves on time and processing load by storing and reusing frequently called data. You can put any number of message processors into a cache scope and configure the caching strategy to store the responses (which contain the payload of the response message) produced by the processing that occurs within the scope. Mule's default caching strategy defines how data are stored and reused, but if you want to adjust cache behavior, you can customize a global caching strategy in Mule and make it available for use by all cache scopes in your application.
+
+Mule sends a message into the cache scope and the parent flow expects an output. The cache scope processes the message, delivers the output to the parent flow and saves the output (i.e. caches the response). The next time Mule sends the same kind of message into the cache scope, the cache scope may offer a cached response rather than invoking, again, a potentially time-consuming process.
+
+[NOTE]
+You can configure the exchange patterns of connectors in a cache scope to operate as *request-response* or **one-way**. Regardless of exchange pattern settings or any data retrieval activity that might occur within it, the cache scope simply caches the output of the flow inside it; when a message next enters the scope, the cache scope offers the cached output, or *cached response*.
+
+You can use a cache scope to reduce the processing load on the Mule instance and speed up message processing within a flow. It is particularly effective for:
+
+* processing repeated requests for the same information
+* processing requests for information that involve large, non-consumable message payloads
+
+For instance, you can use a cache scope to manage customer requests for flight information. Many customers may request the same pricing information about flights from San Francisco to Buenos Aires. Rather than using a lot of processing power to send separate requests to several airline databases with each customer query, you can use a cache scope to arrange to send a request to the databases fewer times – say, once every ten minutes – and present users with the cached flight pricing information. Where timeliness of data is not critical, cache scope can save time and processing power.
+
+
+
+== Caching Strategy
+
+The *caching strategy* defines the actions a cache scope takes when a message enters its subflow.
+
+* If there _is no_ cached response event (a cache “miss”), cache scope processes the message.
+* If there _is_ a cached response event (a cache “hit”), cache scope offers the cached response event rather than processing the message.
+
+You can customize a global caching strategy in Mule for the cache scopes in your application to follow, or you can use Mule’s default caching strategy.
+
+=== Default Caching Strategy
+
+By default, all cache scopes in Mule applications follow the caching strategy procedure described below.
+
+[NOTE]
+The default caching strategy uses an InMemoryObject store and should only be used for testing; on actual implementations you should <<Creating a Caching Strategy>>.
+
+. A message enters the cache scope.
+. Cache scope determines whether the message’s payload is consumable. A **consumable payload **can only be read once before it is lost – such as a streaming payload – and cannot be cached. +
+* If the message payload _is_ consumable, cache scope always processes the message; nothing is cached and the caching strategy is abandoned.
+* If the message payload _is not_ consumable, cache scope continues to the next step in the caching strategy.
+. Cache scope generates a key to identify the message’s payload. Mule uses an SHA256KeyGenerator and a SHA256 digest to generate a unique key for the message payload.
+. Cache scope compares the newly-generated key to cached responses that it has previously processed and saved in an InMemoryObject store — a container for cached data. In other words, cache scope searches for a “cache hit” it can offer instead of processing the message. +
+* Where there is a _cache miss_, cache scope processes the new message and produces a response. Cache scope also saves the resulting response in the object store. (If the response has a consumable payload, it does not cache the response.)
+* Where there is a _cache hit_, the caching strategy uses a DefaultResponseGenerator to generate a response that combines data from both the new request and the cached response. (If the generated response has a consumable payload, it does not cache the response.)
+. Cache scope pushes the response out into the parent flow for continued processing.
+
+=== Object Stores and Clustering
+
+In Mule 3.4.1 and earlier versions, if you created a caching strategy without configuring an object store, Mule created a default InMemoryObjectStore which did not work as a unified cache for all cluster nodes. Instead, each node had its own cache; to create a unified cache for the cluster it was necessary to configure the application to use a custom managed store.
+
+Starting in Mule 3.5.0, by default new caching strategies use an object store instance that provides a unified cache for all cluster nodes without extra modifications. The exception is the default caching strategy used by the xref:3.6@cache-scope.adoc[Cache Scope], which uses the InMemoryObjectStore and is intended for testing only.
+
+If you want to enable the old behavior on your caching strategy (i.e. provide a cache for each cluster node), you need to configure your application to use a managed store that controls an in-memory store. The configuration for the managed store should be:
+
+* *maxEntries*: 4000
+* *entryTTL*: -1
+* *expirationInterval*: 1000
+
+For details on configuring caching strategies, see <<Creating a Caching Strategy>>.
+
+== Adding and Configuring a Cache Scope
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. Drag and drop the cache scope icon from the palette into a flow on your canvas.  +
+
++
+image::cache.png[]
++
+
+. Drag one or more building blocks from the palette into the cache scope to build a chain of processors to which Mule will apply the caching strategy. A cache scope can contain any number of message processors.
+. Open the building block's *Properties Editor*, then configure the fields per the table below. +
+
++
+image::cache-scope.png[cache_scope]
++
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Display Name* |Cache |Customize to display a unique name for the scope in your application. |`doc:name="Cache"`
+.2+|*Caching strategy reference* |Use Default caching strategy |(Default) Select if you want the cache scope to follow Mule’s <<Default Caching Strategy>>. |n/a
+|Reference to a strategy |Select to configure the cache scope to follow a global caching strategy that you have created; select the global caching strategy from the drop-down menu or create one by clicking the image:add.png[(plus)]. |`cachingStrategy-ref="Caching_Strategy"`
+.3+|*Filter* |Process all messages |(Default) Select if you want the cache scope to execute the caching strategy for all messages that enter the scope. |n/a
+|Filter messages using an expression |Select if you want the cache scope to execute the caching strategy ONLY for messages that match the expression(s) defined in this field. +
+ +
+If the message matches the expression(s), Mule executes the caching strategy. +
+ +
+If the message does not match expression(s), Mule processes the message through all message processors within the cache scope; Mule never saves nor offers cached responses. |`filterExpression="#[user.isPremium()]"`
+
+|Filter messages using a global filter |Select if you want the cache scope to execute the caching strategy only for messages that successfully pass through the designated global filter. +
+  +
+If the message passes through filter, Mule executes the caching strategy. +
+ +
+If the message fails to pass through filter, Mule processes the message through all message processors within the cache scope; Mule never saves nor offers cached responses. |`filter-ref="MyGlobalFilter"`
+|===
+
+[discrete.view]
+=== XML Editor or Standalone
+
+. Add a `ee:``cache` element to your flow at the point where you want to initiate a cache processing block. Refer to the code sample below.
+. Optionally, configure the scope according to the tables below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*ee:cache* |Use to create a block of message processors that will processes a message, deliver the output to the parent flow, and cache the response for reuse (according to the rules of the caching strategy.)
+|===
++
+[%header,cols="34,33,33"]
+|===
+|Element Attribute |Default Value |Description
+|*doc:name* |Cache a|
+Customize to display a unique name for the cache scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*filterExpression* |  |(Optional) Specify one or more expressions against which the cache scope should evaluate the message to determine whether the caching strategy should be executed.
+|*filter-ref* |  |(Optional) Specify the name of a filtering strategy that you have defined as a global element. This attribute is mutually exclusive with filterExpression.
+|*cachingStrategy-ref* |  |(Optional) Specify the name of the global caching strategy that you have defined as a global element. If no `cachingStrategy-ref` is defined, Mule will use the <<Default Caching Strategy>>.
+|===
+
+. Add nested elements beneath your `ee:cache` element to define what processing should occur within the scope. The cache scope can contain any number of message processors as well as references to child flows.
+
+[source,xml,linenums]
+----
+<ee:cache doc:name="Cache" filter-ref="Expression" cachingStrategy-ref="Caching_Strategy">
+    <some-nested-element/>
+    <some-other-nested-element/>
+</ee:cache>
+----
+=====
+
+== Creating a Caching Strategy
+
+The default caching strategy used by the cache scope uses an InMemoryObjectStore, and is only suitable for testing. For example, processing messages with large payloads may quickly exhaust memory storage and slow the processing performance of the flow. In such a case, you may wish to crate a global caching strategy that stores cached responses in a different type of object store and prevents memory exhaustion.
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. In the Cache properties editor, click radio button next to the *Reference to a strategy field*, then click **image:add.png[(plus)]**.
+
+. Configure the fields in the *Global Element Properties* panel that appears according to the tables below. The only required field is *Name*. +
+
++
+image::caching-strategy-general.png[caching_strategy_general]
++
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Name* |Caching_Strategy |Customize to create a unique name for your global caching strategy. |`name="Caching_Strategy"`
+|*Object Store* | |(Optional) Configure an object store in which Mule will store all of the scope’s cached responses. Refer to the <<Configuring an Object Store for Cache>> section below for configuration specifics. Unless otherwise configured, Mule stores all cached responses in an InMemoryObjectStore by default. |`<custom-object-store>` +
+ +
+`<in-memory-store>` +
+ +
+`<managed-store>` +
+ +
+`<simple-text-file-store>`
+.3+|*Event Key* |Default |(Default) Mule utilizes an SHA256KeyGenerator and a SHA256 digest to generate a key. Use when you have objects that return the same SHA256 hashcode for instances that represent the same value, such as String class. |n/a
+|Key Expression |(Optional) Enter an expression that Mule should use to generate a key. Use when request classes do not return the same SHA256 hashcode for objects that represent the same value. |`keyGenerationExpression="#[some.expression]"`
+|Key Generator |(Optional) Identify a custom-built Spring bean that generates a key. Use when request classes do not return the same SHA256 hashcode for objects that represent the same value. If you have not created any custom key generators, the *Key Generator* drop-down box will be empty. Click image:add.png[(plus)] next to the field to create one. |`keyGenerator-ref="Bean"`
+|===
+
+. Optionally, click the *Advanced* tab in the Global Element Properties panel and configure further, if needed, according to the tables below. +
+
++
+image::caching-strategy-advanced.png[caching_strategy_advanced]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Response Generator* | |Specify the name of a Response Generator that will direct the cache strategy to use a custom-built Spring bean to generate a response that combines data from both the new request and the cached response. Click image:add.png[(plus)] next to the field to create a new Spring bean for your caching strategy to reference. |`responseGenerator-ref="Bean1"`
+|*Consumable Message Filter* | |Specify the name of a Consumable Message Filter to direct the cache strategy to use a custom-built Spring bean to detect whether a message contains a consumable payload. Click image:add.png[(plus)] next to the field to create a new Spring bean for your caching strategy to reference. |`consumableFilter-ref="Bean2"`
+.2+|*Event Copy Strategy* |Simple event copy strategy (data is immutable) |Data is either immutable, like a String, or the Mule flow has not mutated the data. The payload that Mule caches is the same as that returned by the flow. Every generated response will contain the same payload. |
+|Serializable event copy strategy (data is mutable)	|Data is mutable or the Mule flow has mutated the data. The payload that Mule caches is not the same as that returned by the flow, which has been serialized/deserialized in order to create a new copy of the object. Every generated response will contain a new payload.	 |`<ee:serializable-event-copy-strategy/>`
+|===
+
+[discrete.view]
+=== XML Editor or Standalone
+
+Add an `ee:object-store-caching-strategy` element outside of your flow. Configure your strategy as needed, as shown in the example and tables below. The only required attribute is a unique *name*.
+
+[%header%autowidth.spread]
+|===
+|Element |Description
+|**ee:object-store-caching-strategy**  |Create a global caching strategy to customize some of the activities that your cache scopes perform.
+|===
+
+[%header,cols="34,33,33"]
+|===
+|Element Attribute |Type |Description
+|*name* |String |Customize to create a unique name for your global caching strategy.
+|*doc:name* |String a|
+Customize to display a unique name for the global element in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*keyGenerationExpression* |Mule expression a|
+(Optional) Enter an expression that Mule should use to generate a key. Use when request classes do not return the same SHA256 hashcode for objects that represent the same value.
+
+If you configure neither a keyGenerationExpression or a keyGenerator-ref, Mule utilizes an SHA256KeyGenerator and a SHA256 digest to generate a key. Use this default when you have objects that return the same SHA256 hashcode for instances that represent the same value, such as String class.
+
+|*keyGenerator-ref* |String a|
+(Optional) Identify a custom-built Spring bean that generates a key. Use when request classes do not return the same SHA256 hashcode for objects that represent the same value.
+
+If you configure neither a keyGenerationExpression or a keyGenerator-ref, Mule utilizes an SHA256KeyGenerator and a SHA256 digest to generate a key. Use this default when you have objects that return the same SHA256 hashcode for instances that represent the same value, such as String class.
+
+|*responseGenerator-ref* |String |(Optional) Specify the name of a Response Generator that will direct the cache strategy to use a custom-built Spring bean to generate a response that combines data from both the new request and the cached response.
+|*consumableFilter-ref* |String |(Optional) Specify the name of a Consumable Message Filter to direct the cache strategy to use a custom-built Spring bean to detect whether a message contains a consumable payload.
+|===
+
+[%header%autowidth.spread]
+|===
+|Child Element |Description
+|*ee:serializable-event-copy-strategy* |Use if data is mutable or the Mule flow has mutated the data. The payload that Mule caches is not the same as that returned by the flow, which has been serialized/deserialized in order to create a new copy of the object. Every generated response will contain a new payload. +
+ +
+_If you do not configure this child element, Mule will follow the simple event copy strategy by default._ Data is either immutable, like a String, or the Mule flow has not mutated the data. The payload that Mule caches is the same as that returned by the flow. Every generated response will contain the same payload.
+|*custom-object-store* .3+|See <<Configuring an Object Store for Cache>>, below
+|*in-memory-store*
+|*managed-store*
+|*simple-text-file-store*
+|===
+=====
+
+== Configuring an Object Store for Cache
+
+By default, Mule stores all cached responses in an InMemoryObjectStore. <<Creating a Caching Strategy>> and define a new xref:3.7@mule-object-stores.adoc[object store] if you want to customize the way Mule stores cached responses.
+
+[%header,cols="2*"]
+|===
+|Object Store |Description
+|*custom-object-store* |Create custom class to instruct Mule where and how to store cached responses.
+|*in-memory-store* a|
+Configure the following settings for an object store that saves cached responses in the system memory:
+
+* store name
+* maximum number of entries (i.e. cached responses)
+* the “life span” of a cached response within the object store (i.e. time to live)
+* the expiration interval between polls for expired cached responses
+
+|*managed-store* a|
+Configure the following settings for an object store that saves cached responses in a place defined by ListableObjectSTore:
+
+* store name
+* persistence of cached responses (true/false)
+* maximum number of entries (i.e. cached responses)
+* the “life span” of a cached response within the object store (i.e. time to live)
+* the expiration interval between polls for expired cached responses
+
+|*simple-text-file-store* a|
+Configure the following settings for an object store that saves cached responses in file:
+
+* store name
+* maximum number of entries (i.e. cached responses)
+* the “life span” of a cached response within the object store (i.e. time to live)
+* the expiration interval between polls for expired cached responses
+* the name and location of the file in which the object store saves cached responses
+|===
+
+Configure the settings of your new object store. If you selected a custom-object-store, select or write a class and a Spring property to define the object store. Configure the settings for all other object stores as described in the table below.
+
+[%header,cols="34,33,33"]
+|===
+|Field or Checkbox |XML Attribute |Instructions
+|Store Name a|
+*name* (for in-memory, simple-text)
+
+*storeName* (for managed)
+
+ |Enter a unique name for your object store.
+|Persistent |*persistent*="true" |Check to ensure that the object store saves cached responses in http://en.wikipedia.org/wiki/Persistent_storage[persistent storage]. Default is false.
+|Max Entries |*maxEntries* |Enter an integer to limit the number of cached responses the object store will save. When it reaches the maximum number of entries, the object store expunges the cached responses, trimming the first entries (first in, first out) and those which have exceeded their time to live.
+|Entry TTL |*entryTTL* |(Time To Live) Enter an integer to indicate the number of milliseconds that a cached response has to live in the object store before it is expunged.
+|Expiration Interval |*expirationInterval* |Enter an integer to indicate, in milliseconds, the frequency with which the object store checks for cached response events it should expunge. For example, if you enter “1000”, the object store reviews all cached response events every one thousand milliseconds to see which ones have exceeded their Time To Live and should be expunged.
+|Directory |*directory* |Enter the file path of the file where object store saves cached responses.
+|===
+
+== Synchronizing a Caching Strategy
+
+Mule allows synchronizing access to a cache, which can avoid unexpected results if two different threads (on the same or on different Mule instances) use the cache at the same time.
+
+For example: two threads attempt to retrieve a value from a cache, but do not find the value in the cache. So each thread calculates the value independently and inserts it into the cache. The value inserted by the second thread overwrites the value inserted by the first thread. If the values are different, then two different answers would be obtained for the same input, with the last one stored in the cache.
+
+In some scenarios this is perfectly valid, but it can be a problem if the application requires cache coherence. Synchronizing the caching strategy ensures this coherence. A synchronized cache is locked when it is being modified by a thread. In the example mentioned above, a locked cache would force the second thread to wait until the first thread has calculated the value, and then retrieve the value from the cache.
+
+Synchronization affects performance, so it is recommended to disable it unless needed. Note that performance degradation is most severe in cluster mode.
+
+To enable synchronization, use the `synchronized` property in the caching strategy element. Accepted values are `true` and `false`.
+
+== Invalidating a Cache
+
+Mule provides the `InvalidatableCachingStrategy` interface, which allows you to invalidate a complete cache or a cache key without the need for custom code or configuration.
+
+There are two message processors for invalidating caches:
+
+* `invalidate-cache`: Completely invalidates a cache. Must reference an invalidatable caching strategy.
++
+[source,xml,linenums]
+----
+<ee:invalidate-cache cachingStrategy-ref="InvalidatableCachingStrategy"/>
+----
+
+* `invalidate-key` Calculates a cache key from the current event, then searches for it in the cache and removes it if present. Must reference an invalidatable caching strategy and, optionally, a MuleEventKeyGenerator. If no MuleEventKeyGenerator is provided, the default implementation (SHA256MuleEventKeyGenerator) will be used.
++
+[source,xml,linenums]
+----
+<ee:invalidate-key cachingStrategy-ref="InvalidatableCachingStrategy" keyGenerator-ref="MD5MuleEventKeyGenerator"/>
+----
+
+== Example
+
+The example that follows demonstrates the power of the cache scope with a Fibonacci function. The Fibonacci sequence is a series of numbers in which the next number in the series is always the sum of the two numbers preceding it.
+
+In this example, the Mule flow receives and performs two tasks for each request:
+
+. executes, and returns the answer to, the Fibonacci equation (see below) using a number (_n_) provided by the caller  +
+`F(n) = F(n-1) + F(n-2) with F(0) = 0 and F(1) = 1`
+. records and returns the cost of the calculation, wherein each individual invocation of a calculation task (i.e. add two numbers in the sequence) adds 1 to the cost
+
+image::cache-flow-2.png[cache+flow+2]
+
+ View the XML
+
+Note: This project requires  link:{attachmentsdir}/FibonacciResponseGenerator.java[FibonacciResponseGenerator.java]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xsi:schemaLocation="
+
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+
+          http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+          http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+
+    <configuration>
+        <expression-language>
+            <global-functions>
+                def fibonacciRequest(n, cached)
+                {
+                    import org.mule.DefaultMuleMessage;
+                    import org.mule.RequestContext;
+
+                    request = new DefaultMuleMessage("Fibonacci: " + n, app.registry['_muleContext']);
+
+                    request.setOutboundProperty("n", Integer.toString(n));
+
+                    if (!cached)
+                    {
+                        request.setOutboundProperty("nocache", true);
+                    }
+
+                    RequestContext.getEventContext().sendEvent(request, "vm://fibonacci");
+                }
+            </global-functions>
+        </expression-language>
+    </configuration>
+
+    <spring:bean id="responseGenerator" class="com.mulesoft.mule.cache.FibonacciResponseGenerator"/>
+
+    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties['n']]" responseGenerator-ref="responseGenerator"/>
+
+    <vm:connector name="vmConnector">
+        <dispatcher-threading-profile maxThreadsActive="200"/>
+    </vm:connector>
+
+
+    <flow name="cache-exampleFlow1" doc:name="cache-exampleFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="fibonacci" doc:name="HTTP"/>
+ <message-filter doc:name="Filter favicon">
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico" caseSensitive="true"/>
+            </not-filter>
+        </message-filter>
+ <choice doc:name="Choice">
+            <when expression="message.inboundProperties['n'] &lt; 20">
+                <flow-ref name="calculateFibonacci"/>
+ <expression-component>payload= "Fibonacci(" + message.inboundProperties['n'] + ") = " + payload +"\nCOST: " + message.outboundProperties['cost']</expression-component>
+            </when>
+            <otherwise>
+                <expression-component>payload= "ERROR: n must be less than 20"</expression-component>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <flow name="calculateFibonacci">
+        <vm:inbound-endpoint path="fibonacci" exchange-pattern="request-response"/>
+ <ee:cache cachingStrategy-ref="Caching_Strategy"
+                  filterExpression="#[groovy:message.getInboundProperty('nocache') == null]" doc:name="Cache">
+            <logger level="INFO" message="#[payload]"/>
+            <expression-component><![CDATA[
+                n = message.inboundProperties['n'];
+                if (n < 2)
+                {
+                    payload = n;
+                    message.outboundProperties["cost"] = 1;
+                } else {
+                    boolean cached = message.inboundProperties['nocache'] == null;
+                    import org.mule.api.MuleMessage;
+                    MuleMessage fib1 = fibonacciRequest(n-1, cached);
+                    MuleMessage fib2 = fibonacciRequest(n-2, cached);
+ message.outboundProperties["cost"] = fib1.getInboundProperty("cost") + fib2.getInboundProperty("cost") + 1;
+                    payload = Long.parseLong(fib1.getPayload()) + Long.parseLong(fib2.getPayload());
+                }
+            ]]>
+            </expression-component>
+        </ee:cache>
+    </flow>
+</mule>
+----
+
+If a call to the Fibonacci function has already been calculated and cached, the flow returns both the cached response and the cost of retrieving the cached response, which is 0. To demonstrate the number of invocations cache spares the function, this example includes the ability to force the flow to perform the full calculation by adding a `nocache` parameter to the request URL.
+
+The following sequence illustrates a series of calls to the Fibonacci function. Notice that when the flow is able to return a cached value — because it has already performed an identical calculation — the cost returned is 0. When the flow is able to respond with a value it has calculated using another cached response (as in request-response C, below), the cost represents the difference between the cached response and the new request. (For example, if the Fibonacci function has already calculated and cached a request for n=10, and then receives a request for n=13, the cost to return the second response is 3.)
+
+image::reqa.png[reqA]
+
+image::reqb.png[reqB]
+
+image::reqc.png[reqC]
+
+image::reqd.png[reqD]
+
+As this example illustrates, cache saves both time and processing load by reusing data it has already retrieved or calculated.
+
+== See Also
+
+* Read more about xref:3.6@scopes.adoc[Scopes] in Mule.

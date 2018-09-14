@@ -1,0 +1,358 @@
+= XML-only SOAP Web Service Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: xml, soap, web, routing
+
+*_Enterprise, CloudHub_*
+
+This application illustrates how you can use Mule to expose a SOAP Web service. In particular, it illustrates how a Mule application can accept SOAP requests, then orchestrate several Web services to meets the needs of a particular business process. Further, this example performs all of these actions using only XML – no Java. To demonstrate these capabilities, this example is based on the use case of patient admission into a hospital.
+
+== Service Orchestration
+
+image:orchestrate.png[]This term applies to the activity of coordinating calls to several different Web services in order to process a single Web service request. As the name implies, an application, such as this example, can _orchestrate_ the sequence of calls to services.  Like the conductor of an orchestra, a single Mule flow signals when to submit calls to services, ensuring that all the moving pieces work together to produce a single response.
+
+== Content-Based Routing
+
+image:content-routing.png[content_routing]Mule has the ability to intelligently route a message through different processing pathways according to its content. Using a Choice Router, Mule uses an expression to evaluate a message's properties, or part of its payload, then routes it to a specific pathway (such as a series of message processors). Content-based routing, as this activity is called, dynamically applies routing criteria to a message at runtime.
+
+== Assumptions
+
+This document assumes that you are familiar with Mule ESB and the xref:5@studio::basic-studio-tutorial.adoc[Anypoint Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:5@studio::basic-studio-tutorial.adoc[Anypoint Studio Tutorials]. Further, this example assumes you are familiar with XML coding and that you have a basic understanding of xref:mule-application-architecture.adoc[Mule flows], SOAP as a Web service paradigm, and the practice of WSDL-first Web service development.
+
+This document describes the details of the example within the context of Anypoint Studio, Mule ESB’s graphical user interface (GUI), and includes configuration details for both the visual and XML editors.
+
+== Example Use Case
+
+This example demonstrates service orchestration and content-based routing within the context of a simple use case: in order to facilitate patient pre-admission into a hospital, the hospital has exposed a SOAP Web service called AdmissionService. Using this Web service, a patient's family doctor can perform two tasks:
+
+. For a new patient, she can create a new patient record (EHR) and episode on an EHR to initiate a patient's admission into the hospital.
+. For an existing patient, she can locate an existing EHR and create a new Episode. +
+
+[TIP]
+====
+*EHR* (Electronic Health Record) is the electronic patient record that tracks and updates all patient data, such as name, patient ID,  billing address, etc.
+
+An *Episode* is the occurrence of an event related to a specific patient. For example, a patient's pre-admission into a hospital counts as an "episode" on the EHR.
+====
+
+For example, if a family doctor wishes to schedule a surgical procedure for an existing patient at the hospital, she uses her desktop software to record all the relevant data for the existing patient's upcoming surgery. The software then submits a SOAP request to the hospital's AdmissionService, which processes the request – task 2 above – locating the existing EHR for the patient then scheduling the surgical procedure.
+
+== Set Up
+
+Complete the following procedure to create, then run this example in your own instance of *Anypoint Studio*. You can create template applications straight out of the box in Anypoint Studio and tweak the configurations of the use case-based templates to create your own customized applications in Mule.
+
+Skip ahead to the next section if you prefer to simply examine this example via screenshots and code snippets.
+
+. xref:mule-examples.adoc[*Create, then run*] the example application in Anypoint Studio.
+. To simulate a request submission to the Mule application, use the *soapUI interface* available for free download at http://www.soapui.org/[www.soapui.org]. This tool enables you to submit a request as though you were a family doctor in this example's use case. If you haven't already done so, download and launch soapUI (see image below). +
+
++
+image::soapui-launch.png[soapUI_launch]
++
+
+. In soapUI, select *File* > *Import Project*. Browse to the AnypointStudio folder on your local drive to locate the sample request file: *AnypointStudio* > *workspace* > *XML-only SOAP Web Service* > *src* > *test* > *resources* > *Hospital-Admission-Example-soapui-project.xml*. Click *Open*.
+. In the new *Hospital Admission Example* project in soapUI, expand the folders to reveal *Request 3*. Double-click *Request 3* to open the request-response window.
+. Click the submit request icon (green "play" button at upper left) to submit the request to the Mule application (see below, left). soapUI displays the response from the Mule application in the response pane (see below, right). +
+ +
+image::request-response.png[]
+
+. Review the contents of the SOAP response, to examine the details of your processed request. Note the response contains information about the patient's new episode and details about billing.
+
+== How it Works
+
+The application is divided into two parts, each stored on separate flow files (`.mflow` files) in the Mule project.
+
+The *Hospital Admissions SOA* file contains the heart of the hospital's SOAP proxy Web service application. It accepts SOAP requests from family doctors, then processes them to locate or create EHRs or episodes. The main flow, *admitPatientService*, orchestrates calls to services contained within the mocks.mflow file, then ultimately creates and returns a response to the end user.
+
+The *mocks* file contains the two supporting Web services, *PatientService* and *EHRService* which, respectively, query or create new EHRs, or query and create new episodes. It is within these flows that Mule uses content-based routing to process requests submitted by the Hospital Admissions SOA. In a real world scenario, these Web services would likely be owned and maintained by separate hospital admin groups, but for practical purposes we include both of these services in the same Mule project so as to enable end-to-end functionality when you run the app.
+
+=== Hospital Admissions SOA
+
+
+This file contains a flow and subflows which, together, form the hospital's patient pre-admission SOAP proxy Web service. The sections below offer descriptions of the actions of the flow and each subflow as they process end user requests. Refer to the diagram below to visualize the calls between flows, subflows, and other Web services.
+
+==== AdmitPatientService Flow
+
+This flow is the heart of the hospital's  pre-admissions Web service. Through an HTTP endpoint, it accepts a client request (i.e. request from a family doctor) as a SOAP envelope. The body of the SOAP envelope contains the XML which forms the entirety of the message, or the processing request. The flow then transforms the data format of the message from http://en.wikipedia.org/wiki/Document_Object_Model[document object model (DOM)] to XML. Then begins the service orchestration: using two Flow Ref message processors, this flow orchestrates calls, via subflows, to other hospital Web services to find or create patient EHRs and episodes.  Finally, when all pre-admission activities are complete, this flow uses an xref:6@studio::datamapper-user-guide-and-reference.adoc[Anypoint DataMapper transformer] to map data from the responses from the other hospital Web services to a response to send to the end user, including new information about the cost estimates for the patient's stay in the hospital.
+
+==== SubFlows
+
+The following table offers a brief description of the activity in each subflow of the AdmissionService application.
+
+[%header%autowidth.spread]
+|===
+|Subflow |Description of Activity
+|*upsertPatient* |This subflow is triggered by the Upsert Patient Flow Ref element in the AdmitPatientService flow. Using a DataMapper transformer, this subflow maps data from the end user request to a structure that the PatientService Web service accepts. Then it uses a Flow Ref element to invoke another subflow – invokePatientService – to perform the actual submission of a request to another hospital Web service. Finally, it converts the response from DOM to XML before returning the data to the main AdmitPatientService flow.
+|*invokePatientService* |This subflow is triggered by the upsertPatient subflow. As a proxy client, the CXF component and HTTP endpoint call the PatientService Web service (ostensibly a Web service the hospital makes available internally; practically the Web service that exists in the mocks .mflow file). It pushes the response it receives to the invokePatient Service subflow.
+|*createEpisode* |This subflow is triggered by the Create Episode Flow Ref element in the AdmitPatientService flow. Using a DataMapper transformer, this subflow maps data from the end user request to a structure that the EHRService Web service accepts. Then it uses a Flow Ref element to invoke another subflow – invokeEHRService – to perform the actual submission of a request to another hospital Web service. Finally, it converts the response from DOM to XML before returning the data to the main AdmitPatientService flow.
+|*invokeEHRService* |This subflow is triggered by the createEpisode subflow. As a proxy client, the CXF component and HTTP endpoint call the EHRService Web service, (ostensibly a Web service the hospital makes available internally; practically the Web service that exists in the mocks .mflow file). It pushes the response it receives to the createEpisode Service subflow.
+|===
+
+image::calls-to-services2.png[calls_to_services2]
+
+There are several important configurations to take note of in this example application.
+
+* *The XML is in the body.* Because the XML is contained in the body of the SOAP envelope, you can simply execute actions against the SOAP body, rather than having to dissect and detach the actual message payload from the SOAP envelope. To do this, the Proxy Service CXF component in the admitPatientService flow indicates that the message payload is _just_ the body, not the whole SOAP envelope. Refer to the Visual Editor (below, left) and XML Editor (below, right) screenshots of the CXF component's configuration.
++
+Similarly, the XML payload is in the body of the request the Proxy Client CXF components send to the PatientService and EHRService Web services. Again, this obviates the need to dissect the SOAP request and extract the relevant payload upon receipt.
++
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::proxyservice.png[]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<flow doc:description="AdmssionService SOAP Web service which accepts calls and processes request to perform pre-admissions activities in the hospital's systems." doc:name="admitPatientService" name="admitPatientService">
+        <http:inbound-endpoint doc:name="AdmissionService" exchange-pattern="request-response" host="localhost" path="AdmissionService" port="${http.port}"/>
+        <cxf:proxy-service doc:name="Proxy service" namespace="http://www.mule-health.com/SOA/service/admission/1.0" payload="body" port="AdmissionPort" service="AdmissionService" wsdlLocation="service/AdmissionService.wsdl"/>
+    ...
+</flow>
+----
+=====
+
+* *The application separates tasks into subflows. *Mule leverages the CXF framework to expose, consume and proxy Web services. Because CXF functions best with separate subflows to perform Web services calls, this application separates each Web service call into its own, small subflow.
+
+* *The AdmissionService Web services was built http://en.wikipedia.org/wiki/Web_service#Automated_design_methods[WSDL-first].* The Web service's SOAP component includes four important attributes configured according to the table below.
+
+*WSDL*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<wsdl:definitions xmlns:mes="http://www.mule-health.com/SOA/message/1.0" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" name="Admission" xmlns:tns="http://www.mule-health.com/SOA/service/admission/1.0" targetNamespace="http://www.mule-health.com/SOA/service/admission/1.0">
+
+    <wsdl:types>
+
+        <xsd:schema>
+            <xsd:import namespace="http://www.mule-health.com/SOA/message/1.0" schemaLocation="xsd/SOA-Message-1.0.xsd" />
+        </xsd:schema>
+    </wsdl:types>
+    <wsdl:message name="admitSubject">
+        <wsdl:part element="mes:admitSubject" name="parameters" />
+    </wsdl:message>
+    <wsdl:message name="admitSubjectResponse">
+        <wsdl:part element="mes:admitSubjectResponse" name="parameters" />
+    </wsdl:message>
+    <wsdl:portType name="Admission">
+        <wsdl:operation name="admitSubject">
+            <wsdl:input message="tns:admitSubject" />
+            <wsdl:output message="tns:admitSubjectResponse" />
+        </wsdl:operation>
+    </wsdl:portType>
+    <wsdl:binding name="AdmissionSoap" type="tns:Admission">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http" />
+        <wsdl:operation name="admitSubject">
+            <soap:operation soapAction="http://http://www.mule-health.com/SOA/service/admission/1.0/admitSubject" />
+            <wsdl:input>
+                <soap:body use="literal" />
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal" />
+            </wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+    <wsdl:service name="AdmissionService">
+        <wsdl:port binding="tns:AdmissionSoap" name="AdmissionPort">
+            <soap:address location="http://www.mule-health.com" />
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>
+----
+
+
+[%header,cols="34,33,33"]
+|===
+|Attribute |Value |Maps to WSDL File
+|*namespace* |+http://www.mule-health.com/SOA/service/admission/1.0+ |maps to the target namespace attribute of the http://wsdldefinition/[wsdl:definition]
+|*payload* |`body` |maps to the http://wsdlinput/[wsdl:input] and http://wsdloutput/[wsdl:output], in which it specifies use of the literal body of the SOAP message
+|*port* |`AdmissionPort` |maps to the name attribute of the http://wsdlport/[wsdl:port] element
+|*service* |`AdmissionService` |maps to the name attribute of the http://wsdlservice/[wsdl:service] element
+|*wsdlLocation* |`service/AdmissionService.wsdl` |maps not to something _in_ the wsdl file, but to the filepath of the wsdl file itself in the `src/main/resources/` directory of the Mule project
+|===
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::hospitaladmissions.png[hospitalAdmissions]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation=" http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd  http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd  http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd  http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd  http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd  http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd  http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd ">
+    <spring:beans>
+        <spring:bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer" id="property-placeholder">
+            <spring:property name="location" value="classpath:config.dev.properties"/>
+        </spring:bean>
+    </spring:beans>
+    <mulexml:namespace-manager includeConfigNamespaces="true">
+        <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+        <mulexml:namespace prefix="mes" uri="http://www.mule-health.com/SOA/message/1.0"/>
+        <mulexml:namespace prefix="mod" uri="http://www.mule-health.com/SOA/model/1.0"/>
+    </mulexml:namespace-manager>
+    <data-mapper:config doc:name="DataMapper" name="admit_subject_to_upsert_patient" transformationGraphPath="admit_subject_to_upsert_patient.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="upsert_patient_response_to_create_episode" transformationGraphPath="upsert_patient_response_to_create_episode.grf"/>
+    <object-to-string-transformer doc:name="Object to String" name="Object_to_String"/>
+    <data-mapper:config doc:name="DataMapper" name="create_episode_response_to_admit_subject_response" transformationGraphPath="create_episode_response_to_admit_subject_response.grf"/>
+    <flow doc:description="AdmssionService SOAP Web service which accepts calls and processes request to perform pre-admissions activities in the hospital's systems." doc:name="admitPatientService" name="admitPatientService">
+        <http:inbound-endpoint doc:name="AdmissionService" exchange-pattern="request-response" host="localhost" path="AdmissionService" port="${http.port}"/>
+        <cxf:proxy-service doc:name="Proxy service" namespace="http://www.mule-health.com/SOA/service/admission/1.0" payload="body" port="AdmissionPort" service="AdmissionService" wsdlLocation="service/AdmissionService.wsdl"/>
+        <mulexml:dom-to-xml-transformer returnClass="java.lang.String"/>
+        <flow-ref doc:name="Upsert Patient" name="upsertPatient"/>
+        <flow-ref doc:name="Create Episode" name="createEpisode"/>
+        <data-mapper:transform config-ref="create_episode_response_to_admit_subject_response" doc:name="&lt;createEpisodeResponse /> to &lt;admitSubjectResponse />"/>
+    </flow>
+    <sub-flow doc:description="Uploads and inserts patient data into a hospital system." doc:name="upsertPatient" name="upsertPatient">
+        <data-mapper:transform config-ref="admit_subject_to_upsert_patient" doc:name="&amp;lt;admitSubject /&amp;gt; to &amp;lt;upsertPatient /&amp;gt;"/>
+        <flow-ref doc:name="Invoke Patient Service" name="invokePatientService"/>
+        <mulexml:dom-to-xml-transformer returnClass="java.lang.String"/>
+    </sub-flow>
+    <sub-flow doc:description="Submits calls to the PatientService Web service." doc:name="invokePatientService" name="invokePatientService">
+        <cxf:proxy-client doc:name="Proxy client" enableMuleSoapHeaders="true" payload="body"/>
+        <http:outbound-endpoint doc:name="PatientService" exchange-pattern="request-response" host="localhost" password="hello123" path="PatientService" port="${http.port}" user="nialdarbey"/>
+    </sub-flow>
+    <sub-flow doc:description="Creates new episodes for patient pre-admission into the hospital systems." doc:name="createEpisode" name="createEpisode">
+        <data-mapper:transform config-ref="upsert_patient_response_to_create_episode" doc:name="&amp;lt;upsertPatientResponse /&amp;gt; to &amp;lt;createEpisode /&amp;gt;"/>
+        <flow-ref doc:name="Invoke EHR Service" name="invokeEHRService"/>
+        <mulexml:dom-to-xml-transformer returnClass="java.lang.String"/>
+    </sub-flow>
+    <sub-flow doc:description="Submits calls to the EHR Web service." doc:name="invokeEHRService" name="invokeEHRService">
+        <cxf:proxy-client doc:name="Proxy client" enableMuleSoapHeaders="true" payload="body"/>
+        <http:outbound-endpoint doc:name="EHRService" exchange-pattern="request-response" host="localhost" path="EHRService" port="${http.port}"/>
+    </sub-flow>
+</mule>
+----
+=====
+
+=== Mocks
+
+
+This file contains two flows which act as two independent SOAP Web services within the hospital's internal network. Each service uses content-based routing to intelligently process Web service requests.
+
+==== PatientService
+
+This SOAP Web service accepts HTTP requests, transforms the body of the message from DOM to XML, then uses an xpath expression to extract one particular piece of information from the body – the operation – and set it as a variable. The message then encounters a Choice Router which uses xref:mule-expression-language-mel.adoc[MEL expressions] to route the message depending upon its content, specifically, the new variable called operation. If the variable's value is upsertPatient, the router pushes the message into the upsertPatient DataMapper which prepares a response for the caller with a new patient ID; if the variable's value is anything other than upsertPatient, the router pushes the message into the getPatient DataMapper which prepares a response for the caller with the existing patient ID. Essentially, the first route creates a new patient record, the second locates existing. Note that as a mock flow, this service is simplified in order to facilitate functionality of the AdmissionService Web service; in a proper service, the flow would likely include calls to databases or other internal services to locate or create new records.
+
+The Choice Router directs messages according to the first expression that evaluates to true. In a more complex routing structure, a router may have to choose between several routes to perform any number of actions, for example, to delete a patient record or update an existing record. The router always evaluates against the MEL expression attribute of the `when` child elements in the order in which they appear in the config. See the visual editor (below, left) and XML editor (below, right) incarnations of the same choice router's configuration. (*Default* in the visual editor maps to `otherwise` in the XML editor.)
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::choicehosp.png[Choicehosp]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<flow doc:description="Creates or locates existing patient records in the hospital's system." doc:name="PatientService" name="PatientService">
+...
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.operation == 'upsertPatient']">
+                <processor-chain doc:name="upsertPatient">
+                    <data-mapper:transform config-ref="upsert_patient_to_upsert_patient_response" doc:name="&amp;lt;upsertPatientRequest /&amp;gt; to &amp;lt;upsertPatientResponse /&amp;gt;"/>
+                </processor-chain>
+            </when>
+            <otherwise>
+                <processor-chain doc:name="getPatient">
+                    <data-mapper:transform config-ref="get_patient_to_get_patient_response" doc:name="&amp;lt;getPatient /&amp;gt; to &amp;lt;getPatientResponse /&amp;gt;"/>
+                </processor-chain>
+            </otherwise>
+        </choice>
+    </flow>
+----
+=====
+
+==== EHRService
+
+Much the same as the PatientService Web service, the EHRService accepts HTTP requests, converts the data format and uses an xpath expression to set a variable on the message. The Choice Router then uses MEL expressions to evaluate the content of the newly set variable, then direct it to its corresponding pathway in the flow. Finally, it returns a response to the caller with information about the new or existing episode. Again, this service is simplified in order to facilitate functionality of the AdmissionService Web service; in a proper service, the flow would likely include calls to databases or other internal services to locate or create new records.
+
+[.ex]
+=====
+[discrete.view]
+=== studio Visual Editor
+
+image::mocks.png[]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+    <data-mapper:config doc:name="DataMapper" name="insurance_request_to_insurance_response" transformationGraphPath="insurance_request_to_insurance_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="insurance_request_to_insurance_request_rejected" transformationGraphPath="insurance_request_to_insurance_request_rejected.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="upsert_patient_to_upsert_patient_response" transformationGraphPath="upsert_patient_to_upsert_patient_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="get_patient_to_get_patient_response" transformationGraphPath="get_patient_to_get_patient_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="create_episode_to_create_episode_response" transformationGraphPath="create_episode_to_create_episode_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="find_episodes_to_find_episodes_response" transformationGraphPath="find_episodes_to_find_episodes_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="create_bill_to_create_bill_response" transformationGraphPath="create_bill_to_create_bill_response.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="audit_request_to_audit_response" transformationGraphPath="audit_request_to_audit_response.grf"/>
+    <flow doc:description="Creates or locates existing patient records in the hospital's system." doc:name="PatientService" name="PatientService">
+        <http:inbound-endpoint doc:name="PatientService" exchange-pattern="request-response" host="localhost" path="PatientService" port="${http.port}"/>
+        <cxf:proxy-service doc:name="Proxy service" namespace="http://www.mule-health.com/SOA/service/patient/1.0" payload="body" port="PatientPort" service="PatientService" wsdlLocation="service/PatientService.wsdl"/>
+        <mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>
+        <set-variable doc:name="operation" value="#[xpath('fn:local-name(/*)')]" variableName="operation"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.operation == 'upsertPatient']">
+                <data-mapper:transform config-ref="upsert_patient_to_upsert_patient_response" doc:name="&lt;upsertPatientRequest /&gt; to &lt;upsertPatientResponse /&gt;"/>
+            </when>
+            <otherwise>
+                <data-mapper:transform config-ref="get_patient_to_get_patient_response" doc:name="&lt;getPatient /&gt; to &lt;getPatientResponse /&gt;"/>
+            </otherwise>
+        </choice>
+    </flow>
+    <flow doc:description="Creates or locates existing patient episodes in the hospital's system." doc:name="EHRService" name="EHRService">
+        <http:inbound-endpoint doc:name="EHRService" exchange-pattern="request-response" host="localhost" path="EHRService" port="${http.port}"/>
+        <cxf:proxy-service doc:name="Proxy service" namespace="http://www.mule-health.com/SOA/service/ehr/1.0" payload="body" port="EHRPort" service="EHRService" wsdlLocation="service/EHRService.wsdl"/>
+        <mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>
+        <set-variable doc:name="operation" value="#[xpath('fn:local-name(/*)')]" variableName="operation"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.operation == 'createEpisode']">
+                <data-mapper:transform config-ref="create_episode_to_create_episode_response" doc:name="&lt;createEpisode /&gt; to &lt;createEpisodeResponse /&gt;"/>
+            </when>
+            <otherwise>
+                <data-mapper:transform config-ref="find_episodes_to_find_episodes_response" doc:name="&lt;findEpisode /&gt; to &lt;findEpisodeResponse /&gt;"/>
+            </otherwise>
+        </choice>
+    </flow>
+</mule>
+----
+=====
+
+== Documentation
+
+Anypoint Studio includes a feature that enables you to easily export all the documentation you have recorded for your project. Whenever you want to easily share your project with others outside the Studio environment, you can export the project's documentation to print, email, or share online. Studio's auto-generated documentation includes:
+
+* a visual diagram of the flows in your application
+* the XML configuration which corresponds to each flow in your application
+* the text you entered in the Notes tab of any building block in your flow
+
+== See Also
+
+* Learn more about the xref:choice-flow-control-reference.adoc[Choice Router].
+* Learn more about the xref:cxf-component-reference.adoc[CXF component].
+* Learn more about xref:6@studio::datamapper-user-guide-and-reference.adoc[DataMapper].
+* Examine other xref:mule-examples.adoc[Mule application examples], particularly the xref:foreach-processing-and-choice-routing-example.adoc[Foreach Processing and Choice Routing Example] which also demonstrates content-based routing in Web service integrations.

@@ -1,0 +1,173 @@
+= Using Bitronix to Manage Transactions
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+_*Enterprise*_
+
+Prior to version 3.5.0, Mule used the JBoss transaction manager to configure xref:3.7@xa-transactions.adoc[XA transactions]. As of version 3.5.0, https://github.com/bitronix/btm[Bitronix] is the recommended transaction manager for Mule Enterprise, since it provides out-of-the-box support XA transactions recovery.
+
+[WARNING]
+====
+If the Mule server crashes or loses connectivity to a resource manager (such as a JMS broker, database, etc.), this can cause a transaction to fail abnormally between the prepare phase and the commit phase of the two-phase commit protocol (2PC). In this case, the transaction manager needs to run a recovery process to complete any in-flight transaction that was taking place during the failure. While this kind of failure is unlikely, a mechanism is needed to retain data consistency in the event of this happening.
+
+Bitronix allows Mule to automatically recover interrupted transactions on restart. JBoss on the other hand requires that you implement this process by hand, which is extremely difficult and time-consuming.
+====
+
+== Assumptions
+
+This document assumes you are familiar with working with xref:3.7@shared-resources.adoc[Shared Resources] in Mule.
+
+== Using Bitronix in Mule
+
+=== Using Bitronix in a Single Application
+
+To configure an application to use Bitronix, declare the transaction manager outside of your flows, as shown below.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd">
+    <bti:transaction-manager/>
+...
+</mule>
+----
+
+=== Using Bitronix in All Applications in a Mule Domain
+
+To use Bitronix in all applications associated to a Mule domain, define Bitronix as the transaction manager in your `mule-domain-config.xml`, as shown below. Doing so causes all applications associated to the domain to use Bitronix, without needing to declare the transaction manager in individual applications. For further details on domain configuration, see xref:3.7@shared-resources.adoc[Shared Resources.]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule-domain xmlns="http://www.mulesoft.org/schema/mule/ee/domain"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+               http://www.mulesoft.org/schema/mule/ee/domain http://www.mulesoft.org/schema/mule/ee/domain/current/mule-domain-ee.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+
+    <bti:transaction-manager/>
+
+</mule-domain>
+----
+
+=== Configuring the Bitronix Transaction Manager
+
+In the Mule container, there is only one instance of the Bitronix Transaction Manager; all the applications that have Bitronix defined as their transaction manager use this instance. Thus, the Bitronix Transaction Manager cannot be configured at the _application_ level, only at the _domain_ level.
+
+The default configuration values for Bitronix are suitable for most use cases. However, if you wish to customize the transaction manager, you can do so by using system properties or the `wrapper.conf` file located in the `$MULE_HOME/conf` directory.
+
+The table below lists configuration attributes for Bitronix.
+
+[%header,cols="34,33,33"]
+|===
+|Configuration Attribute |Description |Default value
+|`mule.bitronix.transactiontimeout` |Timeout for XA transactions, in seconds |60
+|`mule.bitronix.recoveryinterval` |Recovery execution interval for XA transactions, in seconds |60
+|`mule.bitronix.serverId` |Unique ID for the transaction manager to register in the XA transaction logs. This value must be unique for each Mule server |Combination of the host IP and, if running in HA, the cluster node ID
+|===
+
+== Bitronix and JMS
+
+Bitronix integration provides a JMS caching connection factory, which you must use whenever you want to implement resource pooling in JMS. The example `mule-domain-config.xml` file below demonstrates how to declare a Bitronix transaction manager in conjunction with a JMS connection factory.
+
+*Notes:
+
+* Bitronix and JMS do not honor the caching connection factory and TCP connections are recreated regardless of how this
+factory is set.
+* In the following example, the *specification="1.1"* value is mandatory because Bitronix only supports version 1.1.
+
+[source,xml,linenums]
+----
+<mule-domain xmlns="http://www.mulesoft.org/schema/mule/ee/domain"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+
+    <spring:bean name="xaConnectionFactory" class="org.apache.activemq.ActiveMQXAConnectionFactory">
+        <spring:property name="brokerURL" value="vm://localhost?broker.persistent=false&amp;broker.useJmx=false"/>
+    </spring:bean>
+
+    <jms:activemq-xa-connector connectionFactory-ref="connectionFactoryPool" name="sharedJmsConnector" maxRedelivery="-1" specification="1.1" numberOfConsumers="1"/>
+
+    <bti:xa-caching-connection-factory name="connectionFactoryPool" minPoolSize="5" maxPoolSize="15" maxIdleTime="40" connectionFactory-ref="xaConnectionFactory"/>
+
+    <bti:transaction-manager/>
+
+</mule-domain>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Description
+|`minPoolSize` |The minimum number of JMS connections to hold in the pool.
+|`maxPoolSize` |The maximum number of JMS connections to hold in the pool.
+|`maxIdleTime` |The maximum time, in seconds, that an idle connection can remain in the pool before it is closed.
+|===
+
+== Bitronix and the Database Connector
+
+Bitronix integration provides a datasource connection pool for the xref:3.6@database-connector.adoc[Database connector], which you must use whenever you want to implement resource pooling in the database connector.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+       http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <bti:transaction-manager/>
+
+    <spring:bean id="PostgresDataSource" class="org.postgresql.EmbeddedXADataSource" >
+        <spring:property name="databaseName" value="dbName"/>
+    </spring:bean>
+
+    <db:generic-config name="DBDefaultPool" dataSource-ref="PostgresDataSource"/>
+
+
+    <bti:xa-data-source-pool name="bitronixDataSource" minPoolSize="5" maxPoolSize="15" maxIdleTime="40" acquireIncrement="2" preparedStatementCacheSize="6" acquireTimeoutSeconds="50" dataSource-ref="PostgresDataSource"/>
+
+</mule>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Description
+|minPoolSize |The minimum number of JDBC connections to hold in the pool.
+|maxPoolSize |The maximum number of JDBC connections to hold in the pool.
+|maxIdleTime |The maximum time, in seconds, that an idle connection can remain in the pool before it is closed.
+|acquireIncrement |Number of connections to acquire at a time, when the pool is exhausted.
+|preparedStatementCacheSize |Number of statements cached per pooled connection. Defaults to 0, meaning that statement caching is disabled.
+|acquireTimeoutSeconds |The time, in seconds, that a client calling `getConnection()` will wait for a connection to be checked in or acquired when the pool is exhausted. Zero means to wait indefinitely.
+|===
+
+== Transaction Recovery
+
+Enabling transaction recovery requires no configuration on your part. When Mule restarts after a system crash, it connects to all of the resources involved in XA transactions and starts the transaction recovery process, leaving all systems in a consistent state.
+
+== See Also
+
+* Read more about how to xref:shared-resources.adoc[define a Bitronix transaction manager as a shared resource] for multiple applications associated with a domain.

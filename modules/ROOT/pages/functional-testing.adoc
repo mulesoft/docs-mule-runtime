@@ -1,0 +1,366 @@
+= Functional Testing
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: testing, functional testing
+
+Because Mule ESB is light-weight and embeddable, it is easy to run a Mule Server inside a test case. Mule provides an abstract http://junit.sourceforge.net/index.html[JUnit] test case called https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/tck/junit4/FunctionalTestCase.html[org.mule.tck.junit4.FunctionalTestCase] that runs Mule inside a test case and manages the lifecycle of the server. The https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/tck/functional/package-summary.html[org.mule.tck.functional] package contains a number of supporting classes for functionally testing Mule code, including https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/tck/functional/FunctionalTestComponent.html[FunctionalTestComponent]. These classes are described in more detail in the following sections.
+
+== FunctionalTestCase
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/FunctionalTestCase.html[FunctionalTestCase]
+
+is a base test case for Mule functional tests. Your test cases can extend `FunctionalTestCase` to use its functionality.
+
+FunctionalTestCase fires up a Mule server using a configuration you specify by overriding the getConfigResources():
+
+[source,java,linenums]
+----
+protected String getConfigResources()
+{
+    return "mule-conf.xml";
+}
+----
+
+[TIP]
+You can use the method `getConfigResources` to specify a configuration file or comma-separated list of configuration files to use. All configuration files must exist in your classpath.
+
+You then create tests that interact with the Mule server. JUnit is the framework for creating and running your test cases. For example, this simple test would send a message to a vm endpoint.
+
+[source,java,linenums]
+----
+public void testSend() throws Exception
+{
+    MuleClient client = new MuleClient(muleContext);
+    String payload = "foo";
+    Map<String, Object> properties = null;
+    MuleMessage result = client.send("vm://test", payload, properties);
+    assertEquals("foo Received", result.getPayloadAsString());
+}
+----
+
+Notice the use of `MuleClient` to interact with the running Mule server. `MuleClient` is used to send messages to and receive messages from endpoints you specify in your Mule configuration file (mule-conf.xml in this case). The example `mule-conf.xml` file used in this example is shown below:
+
+[source,xml,linenums]
+----
+
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+  xmlns:test="http://www.mulesoft.org/schema/mule/test"
+  xsi:schemaLocation="
+  http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+  http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+  http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+  http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+
+<flow name="TestComponentFlow">
+  <inbound-endpoint address="vm://test" exchange-pattern="request-response" />
+  <test:component appendString=" Received"/>
+</flow>
+----
+
+=== Watchdog Timeout
+
+The base test case class includes a watchdog timeout feature that times out your functional test after 60 seconds. To change this setting, add `-Dmule.test.timeoutSecs=XX` either to the `mvn` command you use to run Mule or to the JUnit test runner in your IDE. As of Mule 3.0-M2 you can also set the environment variable `MULE_TEST_TIMEOUTSECS`. If both the system property and the environment variable are set, the system property takes precedence.
+
+== FunctionalTestComponent
+
+The previous example of
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/functional/FunctionalTestComponent.html[FunctionalTestCase]
+
+covers many common (synchronous) test scenarios, where the flow responds directly to the caller. `FunctionalTestComponent` can help support richer tests, such as:
+
+. Simulating asynchronous communication
+. Returning mock data to the caller
+. Common scenarios such as forced exceptions, storing message history, appending text to responses, and delayed responses.
+
+The component includes two methods: the `onCall` method and the `onReceive` method that basically do the same thing.
+
+* *onCall*: receives a MuleEventContext as input and returns an Object.
+* *onReceive*: receives an Object as input and returns an Object.
+
+In both methods, `FunctionalTestComponent` takes the message that is passed to it (either from the `MuleEventContext` or from the Object) and transform it into a String. It then creates a message and sends it back to the caller. It also checks whether any of its properties are set and acts accordingly.
+
+=== Asynchronous Tests with `FunctionalTestComponent`
+
+The `FunctionalTestComponent` supports two event mechanisms for responding to a caller asynchronously: event callbacks and notifications. Both event callbacks and notifications fire events that get handled by registered listeners. During functional testing, the listener will typically be a class accessible in the `FunctionalTestCase`.
+
+==== Event Callbacks
+
+User-defined event callbacks get called when the test component is invoked. Following is an example of a test case and Mule configuration that uses callbacks:
+
+[source,java,linenums]
+----
+
+public void testEventCallback() throws Exception
+{
+    EventCallback callback = new EventCallback()
+    {
+        public void eventReceived(MuleEventContext context, Object component)
+            throws Exception
+        {
+            System.out.println("Thanks for calling me back");
+        }
+    };
+
+    getFunctionalTestComponent("TestComponentService").setEventCallback(callback);
+
+    MuleClient client = new MuleClient();
+
+    client.send("vm://test", new DefaultMuleMessage("foo"));
+ }
+----
+
+In this example, the `eventReceived` callback method is invoked as soon as the `FunctionalTestComponent` receives the message, and a message is printed to the console. Test assertions could be made in this method.
+
+The corresponding Mule configuration used in this example is as follows:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+    http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+
+<flow name="TestComponentFlow">
+    <inbound-endpoint address="vm://test" exchange-pattern="request-response" />
+    <component>
+        <singleton-object class="org.mule.tck.functional.FunctionalTestComponent"/>
+    </component>
+</flow>
+----
+
+Notice that in this configuration, we did not use the "test:component" element, since we need `FunctionalTestComponent` to be singleton for the callback to work properly.
+
+For an example of an event callback on a Spring component, see the <<Additional Example: Event Callback With a Spring Component>> below.
+
+==== Notifications
+
+Notifications are an alternative to event callbacks. When an event is received, the `FunctionalTestComponent` fires a notification informing us that the event has been received. It is up to us to set up a listener (the `FunctionalTestNotificationListener`) on our test to capture this notification.
+
+To do this, we must first make our test case implement the `FunctionalTestNotificationListener` interface. Then, we must implement the method exposed by this listener, which is `onNotification`. In the example below, we check `notification.getAction` to see whether it is the `FunctionalTestNotification` fired by the `FunctionalTestComponent`. If it is, we print it out to the console.
+
+[source,java,linenums]
+----
+public void onNotification(ServerNotification notification)
+{
+    if (notification.getAction() == FunctionalTestNotification.EVENT_RECEIVED)
+    {
+        System.out.println("Event Received");
+    }
+}
+----
+
+Now, in order for our listener to start listening for notifications, we must register it:
+
+[source,java,linenums]
+----
+muleContext.registerListener(this,"myComponent");
+----
+
+=== Returning Mock Data from `FunctionalTestComponent`
+
+`FunctionalTestComponent` can return mock data specified either in a file or embedded in the Mule configuration. For example, to have the `FunctionalTestComponent` return the message "donkey", you would configure the component as follows:
+
+[source,xml,linenums]
+----
+<test:component>
+    <test:return-data>donkey</test:return-data>
+</test:component>
+----
+
+To return contents from a file, you could use:
+
+[source,xml,linenums]
+----
+<test:component>
+    <test:return-data file="abc.txt"/>
+</test:component>
+----
+
+The file referenced should exist on the Mule classpath.
+
+=== Other Useful Features of `FunctionalTestComponent`
+
+==== Forcing Exceptions
+
+You can use `throwException` to always return the exception specified by `exceptionToThrow`, as follows:
+
+[source,xml,linenums]
+----
+<test:component  throwException="true"  exceptionToThrow="your.service.exception"/>
+----
+
+==== Storing Message History
+
+By default, every message that is received by the `FunctionalTestComponent` is stored and can be retrieved. If you do not want this information stored, you can set `enableMessageHistory` to false. For example, if you are running millions of messages through the component, an out-of-memory error would probably occur eventually if this feature were enabled.
+
+To enable:
+
+[source,xml,linenums]
+----
+<test:component enableMessageHistory="true" />
+----
+
+Messages are stored in an ArrayList. To retrieve a stored message, you use the `getReceivedMessage` method to retrieve it by number (e.g., `getReceivedMessage(1)` to retrieve the first message stored), or use `getLastReceivedMessage` to retrieve the last message that was received. You can use `getReceivedMessages` to return the total number of messages stored.
+
+==== Appending Text to Responses
+
+You can use `appendString` to append text to the response message, as follows:
+
+[source,xml,linenums]
+----
+<test:component appendString="Received" />
+----
+
+==== Delayed Responses
+
+You can set `waitTime` to delay responses from this `FunctionalTestComponent`. In this example, responses are delayed five seconds:
+
+[source,xml,linenums]
+----
+<test:component waitTime="5000" />
+----
+
+==== Disable Inbound Transformer
+
+You can set doInboundTransform to false to disable the inbound transformer. For example:
+
+[source,xml,linenums]
+----
+<test:component doInboundTransform="false" />
+----
+
+== Additional Features
+
+The `functional` package includes several additional classes, such as `CounterCallback`, a test callback that counts the number of messages received. For complete information, see the `org.mule.tck.functional` Javadoc.
+
+== Additional Example: Event Callback With a Spring Component
+
+This example is similar to the "Event Callbacks" example above, except the component used here is a Spring component. In this case, we can look up the component using the Spring registry.
+
+[source,java,linenums]
+----
+public void testEventCallback() throws Exception
+{
+    EventCallback callback = new EventCallback()
+    {
+        public void eventReceived(MuleEventContext context, Object component)
+            throws Exception
+        {
+            System.out.println("Thanks for calling me back");
+        }
+    };
+
+    ApplicationContext ac =
+(ApplicationContext)muleContext.getRegistry().lookupObject(SpringRegistry.SPRING_APPLICATION_CONTEXT);
+    FunctionalTestComponent testComponent = (FunctionalTestComponent) ac.getBean("FTC");
+    testComponent.setEventCallback(callback);
+
+    MuleClient client = new MuleClient();
+
+    client.send("vm://test", new DefaultMuleMessage("foo"));
+ }
+----
+
+The corresponding Mule configuration would be as follows:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+    http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+
+<flow name="TestComponentFlow">
+   <inbound-endpoint address="vm://test" exchange-pattern="request-response" />
+   <component>
+        <spring-object bean="FTC" />
+   </component>
+</flow>
+----
+
+== Test Component Configuration Reference
+
+Following is detailed information about the test components provided in the test framework (mule-test.xsd).
+
+== Component
+
+A component that can be used for testing message flows. It is a configurable component. The return data for the component can be set so that users can simulate a call to a real service. This component can also track invocation history and fire notifications when messages are received.
+
+=== Attributes of <component...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|throwException |boolean |no |  |Whether the component should throw an exception before any processing takes place.
+|logMessageDetails |boolean |no |  |Whether to output all message details to the log. This includes all headers and the full payload. The information will be loogged at INFO level.
+|doInboundTransform |boolean |no |  |Whether the message will be transformed using the transformer(s) set on the inbound endpoint before it gets processed. The default is true.
+|exceptionToThrow |name (no spaces) |no |  |A fully qualified classname of the exception object to throw. Used in conjunction with `throwException`. If this is not specified, a `FunctionalTestException` will be thrown by default.
+|exceptionText |string |no |  |The text of the exception that is thrown. Used in conjunction with `throwException`. If this is not specified, an empty message will be used.
+|enableMessageHistory |boolean |no |  |Every message that is received by the test component is stored and can be retrieved. If you do not want this information stored, such as if you are running millions of messages through the component, you can disable this feature to avoid a potential out of memory error.
+|enableNotifications |boolean |no |  |Whether to fire a `FunctionalTestNotification` when a message is received by the component. Test cases can register to receive these notifications and make assertions on the current message.
+|appendString |string |no |  |A string value that will be appeneded to every message payload that passes through the component. Note that by setting this property you implicitly select that the message payload will be converted to a string and that a string payload will be returned. The inbound transformer (if any) will get applied first, but if that does not return a string, `MuleEventContext.getMessageAsString()` will be called directly after.
+|waitTime |long |no |  |The time in milliseconds to wait before returning a result. All processing happens in the component before the wait begins.
+|id |string |no |  |The name of this component
+|===
+
+=== Child Elements of <component...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|return-data |0..1 |Defines the data to return from the service once it has been invoked. The return data can be located in a file, which you specify using the `file` attribute (specify a resource on the classpath or on disk), or the return data can be embeddded directly in the XML.
+|callback |0..1 |A user-defined callback that is invoked when the test component is invoked. This can be useful for capturing information such as message counts. Use the `class` attribute to specify the callback class name, which must be an object that implements `org.mule.tck.functional.EventCallback`.
+|===
+
+== Web Service Component
+
+A component that can be used for testing web services. This component has the same properties as `component` element, but in addition to implementing `org.mule.api.lifecycle.Callable`, it also implements `org.mule.api.component.simple.EchoService`, `org.mule.tck.testmodels.services.DateService`, and `org.mule.tck.testmodels.services.PeopleService`. When using this with WS endpoints such as CXF, be sure to set the `serviceClass` property of the endpoint to the type of service you are using.
+
+=== Attributes of <web-service-component...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|throwException |boolean |no |  |Whether the component should throw an exception before any processing takes place.
+|logMessageDetails |boolean |no |  |Whether to output all message details to the log. This includes all headers and the full payload. The information will be loogged at INFO level.
+|doInboundTransform |boolean |no |  |Whether the message will be transformed using the transformer(s) set on the inbound endpoint before it gets processed. The default is true.
+|exceptionToThrow |name (no spaces) |no |  |A fully qualified classname of the exception object to throw. Used in conjunction with `throwException`. If this is not specified, a `FunctionalTestException` will be thrown by default.
+|exceptionText |string |no |  |The text of the exception that is thrown. Used in conjunction with `throwException`. If this is not specified, an empty message will be used.
+|enableMessageHistory |boolean |no |  |Every message that is received by the test component is stored and can be retrieved. If you do not want this information stored, such as if you are running millions of messages through the component, you can disable this feature to avoid a potential out of memory error.
+|enableNotifications |boolean |no |  |Whether to fire a `FunctionalTestNotification` when a message is received by the component. Test cases can register to receive these notifications and make assertions on the current message.
+|appendString |string |no |  |A string value that will be appeneded to every message payload that passes through the component. Note that by setting this property you implicitly select that the message payload will be converted to a string and that a string payload will be returned. The inbound transformer (if any) will get applied first, but if that does not return a string, `MuleEventContext.getMessageAsString()` will be called directly after.
+|waitTime |long |no |  |The time in milliseconds to wait before returning a result. All processing happens in the component before the wait begins.
+|id |string |no |  |The name of this component
+|===
+
+=== Child Elements of <web-service-component...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|return-data |0..1 |Defines the data to return from the service once it has been invoked. The return data can be located in a file, which you specify using the `file` attribute (specify a resource on the classpath or on disk), or the return data can be embeddded directly in the XML.
+|callback |0..1 |A user-defined callback that is invoked when the test component is invoked. This can be useful for capturing information such as message counts. Use the `class` attribute to specify the callback class name, which must be an object that implements `org.mule.tck.functional.EventCallback`.
+|===
+
+== See Also
+* Read about this in the http://blogs.mulesoft.com/biz/mule/shared-resources-and-testing/[MuleSoft Blog]

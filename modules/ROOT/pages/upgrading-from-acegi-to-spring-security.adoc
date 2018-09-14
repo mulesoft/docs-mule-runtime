@@ -1,0 +1,164 @@
+= Upgrading from Acegi to Spring Security
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, spring security, spring beans
+
+Spring Security is version 3.0 of the Acegi Security framework. Upgrading your Mule application to use Spring Security instead of Acegi involves the following steps:
+
+. Adding the necessary namespaces to your Mule configuration
+. Updating the Acegi package names
+. Updating your Mule configuration to use an `AuthenticationManager`
+. Simplification using new Spring Security elements
+
+== Adding the Namespaces
+
+Your Mule configuration file should have the following namespaces declared.
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesource.org/schema/mule/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:mule-ss="http://www.mulesource.org/schema/mule/spring-security"
+    xmlns:ss="http://www.springframework.org/schema/security"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesource.org/schema/mule/core http://www.mulesource.org/schema/mule/core/3.0/mule.xsd
+    http://www.mulesource.org/schema/mule/spring-security
+        http://www.mulesource.org/schema/mule/spring-security/3.0/mule-spring-security.xsd
+    http://www.springframework.org/schema/security
+        http://www.springframework.org/schema/security/spring-security-3.0.xsd">
+...
+</mule>
+----
+
+The `mule-ss` namespace is for the Mule Spring Security extensions. The `ss` namespace is for the Spring Security schema elements that are not Mule specific and allows you to use the less verbose XML that is part of Spring Security 2.0.
+
+== Updating the Acegi Package Names
+
+Except for the changed package names, the Spring Security API has remained largely compatible with Acegi. For example, assume you configured a `DaoAuthenticationProvider` like this one:
+
+[source,xml,linenums]
+----
+<bean class="org.acegisecurity.providers.dao.DaoAuthenticationProvider">
+    <property name="userDetailsService" ref="userService"/>
+</bean>
+----
+
+To use Spring Security, you simply change the `acegisecurity` package to `springframework.security`:
+
+[source,xml,linenums]
+----
+<bean class="org.springframework.security.authentication.dao.DaoAuthenticationProvider">
+    <property name="userDetailsService" ref="userService"/>
+</bean>
+----
+
+Repeat this step for all your Acegi bean definitions. To find the correct spring framework package names, check the API documentation at http://static.springsource.org/spring-security/site/docs/3.0.x/apidocs/.
+
+== Using an AuthenticationManager
+
+The only major difference between Mule integration with Acegi and Spring Security is that the latter uses the `AuthenticationManager` to provider authentication functions, while the former tied in at the Acegi `AuthenticationProvider` level. With the Acegi provider, the authentication flow followed this progression:
+
+[source,text,linenums]
+----
+AcegiProviderAdapter (Mule) -> AuthenticationProvider (Acegi)
+----
+
+With the new Spring Security adapter, it follows this progression:
+
+[source,text,linenums]
+----
+SpringProviderAdapter (Mule) -> AuthenticationManager (Spring Security) -> AuthenticationProvider (Spring Security)
+----
+
+This allows the authentication manager to try multiple authentication providers to authenticate your messages.
+
+Configuration of this approach requires a little more XML. For example, consider this original configuration:
+
+[source,xml,linenums]
+----
+<mule ...>
+    <acegi:security-manager>
+        <acegi:delegate-security-provider name="memory-dao" delegate-ref="daoAuthenticationProvider"/>
+    </acegi:security-manager>
+
+    <spring:bean id="inMemoryDaoImpl" class="org.acegisecurity.userdetails.memory.InMemoryDaoImpl">
+        <spring:property name="userMap">
+            <spring:value>
+                ross=ross,ROLE_ADMIN
+                anon=anon,ROLE_ANONYMOUS
+            </spring:value>
+        </spring:property>
+    </spring:bean>
+
+    <spring:bean id="daoAuthenticationProvider" class="org.acegisecurity.providers.dao.DaoAuthenticationProvider">
+        <spring:property name="userDetailsService" ref="inMemoryDaoImpl"/>
+    </spring:bean>
+
+</mule>
+----
+
+To upgrade this configuration, you add an `AuthenticationManager`. This would result in the following:
+
+[source,xml,linenums]
+----
+<mule ...>
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager"/>
+    </mule-ss:security-manager>
+
+    <spring:bean id="inMemoryDaoImpl" class="org.springframework.security.core.userdetails.memory.InMemoryDaoImpl">
+        <spring:property name="userMap">
+            <spring:value>
+                ross=ross,ROLE_ADMIN
+                anon=anon,ROLE_ANONYMOUS
+            </spring:value>
+        </spring:property>
+    </spring:bean>
+
+    <spring:bean id="daoAuthenticationProvider" class="org.springframework.security.authentication.dao.DaoAuthenticationProvider">
+        <spring:property name="userDetailsService" ref="inMemoryDaoImpl"/>
+    </spring:bean>
+
+    <spring:bean id="authenticationManager" class="org.springframework.security.authentication.ProviderManager">
+        <spring:property name="providers">
+            <spring:list>
+                 <spring:ref bean="daoAuthenticationProvider"/>
+            </spring:list>
+        </spring:property>
+    </spring:bean>
+</mule>
+----
+
+== Simplifying the Configuration
+
+Spring Security 3.0 includes new XML syntax that can simplify configurations, especially in simple cases. For example, the previous example has an in-memory user database, a DAO authentication provider, and an authentication manager. This can be simplified to:
+
+[source,xml,linenums]
+----
+<mule ...>
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager" />
+    </mule-ss:security-manager>
+
+    <spring:beans>
+      <ss:authentication-manager alias="authenticationManager">
+        <ss:authentication-provider>
+          <ss:user-service id="userService">
+            <ss:user name="ross" password="ross" authorities="ROLE_ADMIN" />
+            <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+          </ss:user-service>
+        </ss:authentication-provider>
+      </ss:authentication-manager>
+    </spring:beans>
+</mule>
+----
+
+The `<authentication-manager>` element defines the name of our `AuthenticationManager` bean. We then create a single `AuthenticationProvider` with the `<authentication-provider>` and `<user-service>` elements. This `<user-service>` is the same as our `InMemoryDaoImpl` above.
+
+For more information on how to configure Acegi, see the following Spring documentation:
+
+* http://static.springsource.org/spring-security/site/[Spring Security Documentation]
+* http://static.springframework.org/spring-security/site/apidocs/index.html[Spring Security Javadoc]
+* http://static.springsource.org/spring-security/site/docs/3.0.x/reference/appendix-namespace.html[Spring Security XML Schema reference]

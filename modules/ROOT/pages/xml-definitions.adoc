@@ -1,0 +1,371 @@
+= XML Definitions
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, esb, sap, connectors jco, bapi
+
+All SAP objects (BAPIs and IDocs) can be represented as XML documents for ease of use. IDocs are already XML documents by nature and its schema can be obtained with SAP transaction **WE60**.
+
+For BAPIs (functions) the SAP Connector offers two different proprietary formats (Version 1 and 2), being version 2 the best option to use with xref:5@studio::datamapper-user-guide-and-reference.adoc[Anypoint DataMapper].
+
+[NOTE]
+XML version 2 is available from SAP Connector version **2.1.0**.
+
+== JCo Function
+
+A JCo Function (BAPI) can be represented by the following XML document structure:
+
+* *Import*: Contains input values (arguments) when executing a BAPI/Function.
+* *Export*: Contains output values after executing a BAPI/function.
+* *Changing*: Contains changing values that can be send and/or received when executing BAPIs/functions.
+* *Tables*: Contains tables which values can be used both for input and output.
+* *Exceptions*: When retrieving the BAPI metadata, contains all the exceptions the BAPI can throw. When sending the response back to SAP in the inbound endpoint, if an ABAP exception should be return, then it should be sent in an *exception* element child of this one.
+
+== XML Structure
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco name="BAPI_NAME" version="1.0">
+    <import>
+        <!-- Fields / Structures / Tables -->
+    </import>
+    <export>
+        <!-- Fields / Structures / Tables -->
+    </export>
+    <changing>
+        <!-- Fields / Structures / Tables -->
+    </changing>
+    <tables>
+        <!-- Tables -->
+    </tables>
+    <exceptions>
+        <exception/>
+    </exceptions>
+</jco>
+----
+
+Each of the main records (import, export and changing) support *fields*, *structures* and/or *tables*:
+
+* *Structure*: Contains fields, tables and/or inner structures
+* *Table*: Contains a list of rows
+* *Table Row*: Contains fields, structures and/or inner tables
+* *Field*: Is the element that contains an actual value
+
+Fields, which are the only attribute that holds values, allow since version *1.4.1* and *2.1.0* a special attribute name *trim* which holds a boolean value indicating whether the value of the field should be trimmed (remove leading and trailing space characters) or not. The default behavior is to trim the value (trim="true").
+
+[source,xml,linenums]
+----
+<jco name="BAPI_NAME" version="1.0">
+    <import>
+        <field name="ATTR-1">   VAL-1 </value> <!-- Trims ==> "VAL-1" -->
+        <field name="ATTR-2" trim="false">  VAL-2  </value> <!-- No trim ==> "  VAL-2  " -->
+        <field name="ATTR-3" trim="true"> VAL-3</value> <!-- Trims  ==> "VAL-3" -->
+    </import>
+    ...
+</jco>
+----
+
+[NOTE]
+The trim attribute is valid in all XML versions. The previous example is using XML version 1.
+
+Exceptions are represented the same way in all XML versions too. In the result of any metadata retrieval method, it represents the list of exceptions a function module (BAPI) can throw.
+
+[source,xml,linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1" messageClass="" messageNumber="" messageType="">Message 1</exception>
+        <exception key="EXCEPTION_2" messageClass="" messageNumber="" messageType="">Message 2</exception>
+        <exception key="EXCEPTION_3" messageClass="" messageNumber="" messageType="">Message 3</exception>
+        <exception key="EXCEPTION_4" messageClass="" messageNumber="" messageType="">Message 4</exception>
+    </exceptions>
+</jco>
+----
+
+The exception element is also used when an ABAP exception needs to be returned to SAP by the inbound endpoint. In this case _only one_ exception should be present. If more than one exception is returned, then the first one will be thrown and the rest will be ignored.
+
+There are two constructors for the ABAP exception and the XML varies depending on which one you want to call:
+
+* _new AbapException(String key, String message)_
++
+[source,xml,linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1">Message 1</exception>
+    </exceptions>
+</jco>
+----
+
+* _new AbapException(String key, String messageClass, char messageType, String messageNumber, String[] messageParameters)_
++
+[source,xml,linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_2" messageClass="THE_MESSAGE_CLASS" messageNumber="1000" messageType="E">
+            <param>Param 1</param>
+            <param>Param 2</param>
+            <!-- Max 4 params -->
+        </exception>
+    </exceptions>
+</jco>
+----
+
+[TIP]
+====
+You can use the SAP outbound endpoint with type *function-metadata* to retrieve the XML template for a given function module (BAPI):
+[source,xml,linenums]
+----
+<mule ...>
+   <flow name="retrieveMetadata">
+        <!-- INBOUND ENDPOINT -->
+        <sap:outbound-endpoint type="function-metadata" functionName="#[payload.bapiName]" xmlVersion="1"/>
+        <sap:object-to-xml/>
+   </flow>
+</mule>
+----
+With _functionName_ holding a Mule Expression returning the name of the function module.
+
+====
+
+=== XML Version 1
+
+This is the default version for the JCo function XML representation (it is the only possible value for the SAP connector prior to version **2.1.0**).
+
+Each element (field, structure, table) is represented by an XML tag that holds a *name* and a *value*.
+
+*Example of JCo Function represented in XML version 1*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco name="BAPI_PO_CREATE1" version="1.0">
+  <import>
+    <structure name="POHEADER">
+      <field name="COMP_CODE">2100</field>
+      <field name="DOC_TYPE">NB</field>
+      <field name="VENDOR">0000002101</field>
+      <field name="PURCH_ORG">2100</field>
+      <field name="PUR_GROUP">002</field>
+    </structure>
+    <structure name="POHEADERX">
+      <field name="DOC_TYPE">X</field>
+      <field name="VENDOR">X</field>
+      <field name="PURCH_ORG">X</field>
+      <field name="PUR_GROUP">X</field>
+      <field name="COMP_CODE">X</field>
+    </structure>
+  </import>
+  <tables>
+    <table name="POITEM">
+      <row id="0">
+        <field name="NET_PRICE">20</field>
+        <field name="PLANT">2100</field>
+        <field name="MATERIAL">SBSTO01</field>
+        <field name="PO_ITEM">00010</field>
+        <field name="QUANTITY">10.000</field>
+      </row>
+    </table>
+    <table name="POITEMX">
+      <row id="0">
+        <field name="PO_ITEMX">X</field>
+        <field name="MATERIAL">X</field>
+        <field name="QUANTITY">X</field>
+        <field name="PLANT">X</field>
+        <field name="PO_ITEM">00010</field>
+        <field name="NET_PRICE">X</field>
+      </row>
+    </table>
+    <table name="POSCHEDULE">
+      <row id="0">
+        <field name="QUANTITY">10.000</field>
+        <field name="DELIVERY_DATE">27.06.2011</field>
+        <field name="SCHED_LINE">0001</field>
+        <field name="PO_ITEM">00010</field>
+      </row>
+    </table>
+    <table name="POSCHEDULEX">
+      <row id="0">
+        <field name="PO_ITEM">00010</field>
+        <field name="QUANTITY">X</field>
+        <field name="DELIVERY_DATE">X</field>
+        <field name="SCHED_LINEX">X</field>
+        <field name="PO_ITEMX">X</field>
+        <field name="SCHED_LINE">0001</field>
+      </row>
+    </table>
+  </tables>
+</jco>
+----
+
+*JCo Function Response (RETURN structure / table)*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<jco name="Z_MULE_EXAMPLE">
+  <import>
+    ...
+  </import>
+  <export>
+    <structure name="RETURN">
+      <field name="TYPE"></field>
+      <field name="ID"></field>
+      <field name="NUMBER"></field>
+      <field name="MESSAGE"></field>
+      <field name="LOG_NO"></field>
+      <field name="LOG_MSG_NO"></field>
+      <field name="MESSAGE_V1"></field>
+      <field name="MESSAGE_V2"></field>
+      <field name="MESSAGE_V3"></field>
+      <field name="MESSAGE_V4""></field>
+      <field name="PARAMETER"></field>
+      <field name="ROW"></field>
+      <field name="FIELD"></field>
+      <field name="SYSTEM"></field>
+    </structure>
+  </export>
+</jco>
+----
+
+*Return Types*
+
+* *A*: Abort
+* *S*: Success
+* *E*: Error
+* *W*: Warning
+* *I*: Information
+
+[WARNING]
+====
+If `evaluateFunctionResponse` is set to *true*, then the SAP outbound endpoint will throw an exception when the return type is *A*, *E*, or exceptions are present.
+====
+
+=== XML Version 2 (since version 2.1.0)
+
+This XML version was added to provide a better option for the xref:5@studio::datamapper-user-guide-and-reference.adoc[Anypoint DataMapper] tool. It has the same general structure than the XML version 1, but the name of the XML element is the actual name of the field, structure or table and the type is provided as an attribute.
+
+*Example of JCo Function represented in XML version 2*
+
+This is the same as the previous example but represented with XML version 2.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco type="BAPI_PO_CREATE1" version="1.0">
+  <import>
+    <POHEADER type="structure">
+      <COMP_CODE type="field">2100</COMP_CODE>
+      <DOC_TYPE type="field">NB</DOC_TYPE>
+      <VENDOR type="field">0000002101</VENDOR>
+      <PURCH_ORG type="field">2100</PURCH_ORG>
+      <PUR_GROUP type="field">002</PUR_GROUP>
+    </POHEADER>
+    <POHEADERX type="structure">
+      <DOC_TYPE type="field">X</DOC_TYPE>
+      <VENDOR type="field">X</VENDOR>
+      <PURCH_ORG type="field">X</PURCH>
+      <PUR_GROUP type="field">X</PUR_GROUP>
+      <COMP_CODE type="field">X</COMP_CODE>
+    </POHEADERX>
+  </import>
+  <tables>
+    <POITEM type="table">
+      <row id="0">
+        <NET_PRICE type="field">20</NET_PRICE>
+        <PLANT type="field">2100</PLANT>
+        <MATERIAL type="field">SBSTO01</MATERIAL>
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <QUANTITY type="field">10.000</QUANTITY>
+      </row>
+    </POITEM>
+    <POITEMX type="table">
+      <row id="0">
+        <PO_ITEMX type="field">X</PO_ITEMX>
+        <MATERIAL type="field">X</MATERIAL>
+        <QUANTITY type="field">X</QUANTITY>
+        <PLANT type="field">X</PLANT>
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <NET_PRICE type="field">X</NET_PRICE>
+      </row>
+    </POITEMX>
+    <POSCHEDULE type="table">
+      <row id="0">
+        <QUANTITY type="field">10.000</QUANTITY>
+        <DELIVERY_DATE type="field">27.06.2011</DELIVERY_DATE>
+        <SCHED_LINE type="field">0001</SCHED_LINE>
+        <PO_ITEM type="field">00010</PO_ITEM>
+      </row>
+    </POSCHEDULE>
+    <POSCHEDULEX type="table">
+      <row id="0">
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <QUANTITY type="field">X</QUANTITY>
+        <DELIVERY_DATE type="field">X</DELIVERY_DATE>
+        <SCHED_LINEX type="field">X</SCHED_LINEX>
+        <PO_ITEMX type="field">X</PO_ITEMX>
+        <SCHED_LINE type="field">0001</SCHED_LINE>
+      </row>
+    </POSCHEDULEX>
+  </tables>
+</jco>
+----
+
+== IDoc Document / Document List
+
+IDocs are XML documents defined by SAP. You can download their definition from your SAP server using the SAP UI.
+
+[source,xml,linenums]
+----
+<?xml version="1.0"?>
+<ORDERS05>
+    <IDOC BEGIN="1">
+        <EDI_DC40 SEGMENT="1">
+            <TABNAM>EDI_DC40</TABNAM>
+            <MANDT>100</MANDT>
+            <DOCNUM>0000000000237015</DOCNUM>
+            <DOCREL>700</DOCREL>
+            <STATUS>30</STATUS>
+            <DIRECT>1</DIRECT>
+            <OUTMOD>2</OUTMOD>
+            <IDOCTYP>ORDERS05</IDOCTYP>
+            <MESTYP>ORDERS</MESTYP>
+            <STDMES>ORDERS</STDMES>
+            <SNDPOR>SAPB60</SNDPOR>
+            <SNDPRT>LS</SNDPRT>
+            <SNDPRN>B60CLNT100</SNDPRN>
+            <RCVPOR>MULE_REV</RCVPOR>
+            <RCVPRT>LS</RCVPRT>
+            <RCVPRN>MULESYS</RCVPRN>
+            <CREDAT>20110714</CREDAT>
+            <CRETIM>001936</CRETIM>
+            <SERIAL>20101221112747</SERIAL>
+        </EDI_DC40>
+        <E1EDK01 SEGMENT="1">
+            <ACTION>004</ACTION>
+            <CURCY>USD</CURCY>
+            <WKURS>1.06383</WKURS>
+            <ZTERM>0001</ZTERM>
+            <BELNR>0000000531</BELNR>
+            <VSART>01</VSART>
+            <VSART_BEZ>standard</VSART_BEZ>
+            <RECIPNT_NO>C02199</RECIPNT_NO>
+            <KZAZU>X</KZAZU>
+            <WKURS_M>0.94000</WKURS_M>
+        </E1EDK01>
+
+        ...
+
+        <E1EDS01 SEGMENT="1">
+            <SUMID>002</SUMID>
+            <SUMME>1470.485</SUMME>
+            <SUNIT>USD</SUNIT>
+        </E1EDS01>
+    </IDOC>
+</ORDERS05>
+----

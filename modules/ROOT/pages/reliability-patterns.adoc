@@ -1,0 +1,321 @@
+= Reliability Patterns
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Overview
+
+A high-reliability application (one that has zero tolerance for message loss) not only requires the underlying ESB to be reliable, but that reliability needs to extend to individual connections. If your application uses a transactional transport such as JMS, VM, or JDBC, reliable messaging is ensured by the built-in support for transactions in the transport. This means, for example, that you can configure a transaction on a JMS inbound endpoint that makes sure messages are only removed from the JMS server when the transaction is committed. By doing this, you ensure that if an error occurs while processing the message, it will still be available for reprocessing.
+
+In other words, the transactional support in these transports ensures that messages are delivered reliably from an inbound endpoint to an outbound endpoint or between processors within a flow. Note though that if you want to move messages between different transports that support transactions you need to use XA transactions to ensure that both transports' transactions are committed as one atomic unit. See xref:3.6@transaction-management.adoc[Transaction Management] for more information on XA and other types of transactions.
+
+However, suppose you have a web application that uses a non-transactional transport such as HTTP. How do you ensure reliable messaging for your application? The answer is to follow a reliability pattern.
+
+[NOTE]
+Note that VM file persistency is disabled on clusters, so VM endpoints persist in-memory in a clustered topology.
+
+== What is a Reliability Pattern?
+
+A *reliability pattern* is a design that results in reliable messaging for an application even if the application receives messages from a non-transactional transport. A reliability pattern couples a reliable acquisition flow with an application logic flow, as shown in the following diagram.
+
+image::reliability-pattern.png[Reliability_Pattern]
+
+The *reliable acquisition flow* (that is, the left-hand part of the diagram) delivers a message reliably from an inbound endpoint to an outbound endpoint, even though the inbound endpoint is for a non-transactional transport. The outbound endpoint can be any type of transactional endpoint such as VM or JMS. If the reliable acquisition flow cannot deliver the message, it ensures that the message isn't lost:
+
+* For socket-based transports like HTTP, this means returning an "unsuccessful request" response to the client so that the client can retry the request.
+* For resource-based transports like File or FTP, it means not deleting the file, so that it can be reprocessed.
+
+The *application logic flow* (that is, the right-hand side of the diagram) delivers the message from the inbound endpoint (which uses a transactional transport) to the business logic for the application.
+
+== Comparing Endpoints in Reliability Patterns
+
+As mentioned earlier, you can couple the reliable acquisition flow with any type of transactional endpoint – you don't have to use a VM endpoint in a reliability pattern. The following diagram illustrates a reliability pattern where the reliable acquisition flow delivers a message to a JMS endpoint.
+
+image::reliabilitypatternwithjms.png[ReliabilityPatternwithJMS]
+
+However, because the VM transport, by default, uses in-memory queues, it can be much faster than another transactional endpoint such as JMS.
+
+The following table lists the advantages and disadvantages of using VM, JMS, and JDBC endpoints in a reliable acquisition flow.
+
+[%header,cols="10,80,10"]
+|===
+|Endpoint |Advantage |Disadvantage
+|VM (standalone Mule) |Faster than JMS because everything is in memory and in-process. Provided out of the box with Mule – no need to purchase additional software. |Data lost when Mule exits. Non-clustered.
+|File-based VM (standalone Mule) |Provided out of the box with Mule – no need to purchase additional software. |Non-clustered.
+|VM (Mule HA cluster) |Faster than JMS because everything is in shared memory. Provided out of the box with Mule – no need to purchase additional software. |Data lost when entire Mule cluster exits.
+|JDBC |Depending on resources available, can hold a very large amount of information. |Can be complex to use, since proper DBMS schemas are required
+|JMS (not enabled for persistence) |Allows sharing data with other Mule instances or non-Mule clients. |Slower than VM because it is in another process.
+|JMS (enabled for persistence) |Most reliable choice because messages are persisted to disk. |Slower than VM because of disk access.
+|===
+
+== Implementing a Reliability Pattern
+
+Here is a code example that shows what a complete reliability pattern would look like (that is, including the reliable acquisition flow and application logic flow). In this example, the reliable acquisition flow part of the reliability pattern is HTTP-to-VM. Note that VM file persistency, shown below, does not work on clusters.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+               http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">
+
+    <vm:connector name="persistent">
+       <vm:queue-profile maxOutstandingMessages="500">
+          <default-persistent-queue-store />
+       </vm:queue-profile>
+    </vm:connector>
+
+
+    <!-- This is the reliable acquisition flow in the reliability pattern.  -->
+    <flow name="reliable-data-acquisition" processingStrategy="synchronous"> ❶
+
+
+        <http:inbound-endpoint address="..." exchange-pattern="request-response" />
+
+        <message-filter>
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico"/>
+            </not-filter>
+        </message-filter>
+
+        <vm:outbound-endpoint path="input" exchange-pattern="one-way"
+                              connector-ref="vmConnector" /> ❷
+    </flow>
+
+    <!-- This is the application logic flow in the reliability pattern.
+         It is a wrapper around a sub-flow, "business-logic-processing".
+    -->
+    <flow name="main-flow">
+    <vm:inbound-endpoint path="input" exchange-pattern="one-way" connector-ref="vmConnector" >
+            <vm:transaction action="ALWAYS_BEGIN"/> ❸
+        </vm:inbound-endpoint>
+
+        <flow-ref name="business-logic-processing" />
+    </flow>
+
+    <!-- This is where the real work of the application will happen. -->
+    <sub-flow name="business-logic-processing" processingStrategy="synchronous">
+        <!--
+            This flow is where the actual business-logic is performed.
+        -->
+    </sub-flow>
+</mule>
+----
+
+Some things to notice in particular about the code in the reliable acquisition flow:
+
+❶ The flow specifies a synchronous processing strategy (`processingStrategy="synchronous"`). In a synchronous processing strategy, the entire flow is processed in the receiver thread. This ensures that the transfer to the VM endpoint happens in the same thread. See xref:3.7@flow-processing-strategies.adoc[Flow Processing Strategies] for further details about the synchronous processing strategy. +
+ ❷ The message is written to the VM queue. It is now available for processing by the main flow.
+ ❸ The message is read from the VM queue transactionally. This ensures that if any error occurs, the read will be rolled back and the message reprocessed.
+
+Here is the code for a complete reliability pattern where the the reliable acquisition flow part of the reliability pattern is HTTP-to-JMS.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+               http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+               http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd">
+
+    <jms:activemq-connector name="jmsConnector"
+        brokerURL="tcp://localhost:61616">
+    </jms:activemq-connector>
+    <http:listener-config name="listener-config" host="localhost" port="8081"/>
+
+    <!-- This is the reliable acquisition flow in the reliability pattern.  -->
+    <flow name="reliable-data-acquisition" processingStrategy="synchronous">
+
+        <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+        <message-filter>
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico"/>
+            </not-filter>
+        </message-filter>
+
+        <jms:outbound-endpoint queue="input" exchange-pattern="one-way"/>
+    </flow>
+
+    <!-- This is the application logic flow in the reliability pattern.
+         It is a wrapper around a sub-flow, "business-logic-processing".
+    -->
+    <flow name="main-flow">
+    <jms:inbound-endpoint queue="input" exchange-pattern="request-response">
+            <jms:transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+
+        <flow-ref name="business-logic-processing" />
+    </flow>
+
+    <!-- This is where the real work of the application will happen. -->
+    <sub-flow name="business-logic-processing" processingStrategy="synchronous">
+        <!--
+            This flow is where the actual business-logic is performed.
+        -->
+    </sub-flow>
+</mule>
+----
+
+== Implementing a Reliable Acquisition Flow
+
+Let's focus on the reliable acquisition flow part of the reliability pattern. Furthermore, let's concentrate on reliable acquisition flows that have a non-transactional inbound endpoint. You've already seen in Implementing a Reliable Message Pattern what a reliable acquisition flow for an HTTP inbound endpoint to a VM or JMS outbound endpoint looks like. Let's look at three other scenarios: FTP-to-VM, File-to-VM, and IMAP-to-VM.
+
+You can change the outbound endpoint in each of the following examples to JMS. Remember to replace the XML namespace and XML schema locations to the ones appropriate for a JMS transport:
+
+[source,text,linenums]
+----
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+----
+
+And replace the outbound endpoints accordingly.
+
+=== FTP to VM
+
+The following code implements a reliable acquisition flow from an FTP inbound endpoint to a JMS outbound endpoint:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/jms/3.2/mule-vm.xsd
+        http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+
+    <flow name="ftp-reliability" processingStrategy="synchronous"> ❶
+
+        <ftp:inbound-endpoint user="dirk" password="dirk" host="localhost" port="2121" path="/">
+            <idempotent-redelivery-policy maxRedeliveryCount="2"> ❷
+                <dead-letter-queue>
+                    <vm:endpoint path="error-queue" />❸
+                </dead-letter-queue>
+            </idempotent-redelivery-policy>
+        </ftp:inbound-endpoint>
+        <custom-transformer class="mycompany.mule.transformers.FTPInput"/>
+        <vm:outbound-endpoint path="from-ftp" exchange-pattern="one-way"/>
+    </flow>
+</mule>
+----
+
+Notice that as is the case for the HTTP-to-JMS scenario:
+
+❶ The flow specifies a synchronous flow strategy (`processingStrategy="synchronous"`).
+
+Note also that because we are calling a transformer, we have to allow for the possibility that it might fail and throw an exception. If it does, the file will be reprocessed, and might throw the same exception, and so on. To avoid an infinite loop, we used the redelivery policy configured at ❷. This, after the second time the same file is redelivered to the inbound endpoint, will send the file to the error queue at ❸, and declare success, which will allow the file to be redelivered.
+
+=== File to VM
+
+The following code implements a reliable acquisition flow from an File inbound endpoint to a JMS outbound endpoint:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+
+    <file:connector name="fileConnector" streaming="false"/>
+
+    <flow name="file-reliability" processingStrategy="synchronous"> ❶
+
+        <file:inbound-endpoint path="/tmp/file2ftp/ftp-home/dirk">
+            <idempotent-redelivery-policy maxRedeliveryCount="2"> ❷
+                <dead-letter-queue>
+                    <vm:endpoint path="error-queue" />
+                </dead-letter-queue>
+            </idempotent-redelivery-policy>
+        </file:inbound-endpoint>
+        <custom-transformer class="mycompany.mule.transformers.FTPInput"/>
+        <vm:outbound-endpoint path="from-file"/>
+    </flow>
+</mule>
+----
+
+Here too, the flow specifies:
+
+❶ A synchronous flow strategy.
+❷ A redelivery policy
+
+Also notice that the configuration of the file connector specifies `streaming="false"`. This is required here, since closing the stream has the side effect of deleting the file. Note also that other File transport flags like `moveTo` and `workDirectory` should not be used in reliability patterns, as they will move or rename the file in ways that interfere with reprocessing it on failure.
+
+=== IMAP to VM
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+        http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.2/mule-imap.xsd">
+
+    <imap:connector name="imapConnector" mailboxFolder="INBOX.MuleTest" deleteReadMessages="false"/>
+    <jms:activemq-connector name="amqConnector" brokerURL="tcp://localhost:61616"/>
+
+    <flow name="imap-reliability" processingStrategy="synchronous">
+        <imap:inbound-endpoint host="localhost" port="143" user="dirk" password="dirk">
+            <wildcard-filter pattern="*"/>
+        </imap:inbound-endpoint>
+        <vm:outbound-endpoint path="from-imap"/>
+    </flow>
+</mule>
+----
+
+As is the case in the other reliable acquisition flows, this flow specifies:
+
+❶ A synchronous flow strategy.
+❷ The JMS outbound endpoint configures a transaction.
+
+Also notice that `deleteReadMessages="false"` is configured on the imap connector. This is required here so that messages stay in the mailbox when the processing encounters an error. Also, `wildcard-filter` must be configured on the endpoint to mark messages that were successfully processed. This is required so those messages won't be processed again.
+
+== General Considerations
+
+Here are a number of things to consider in implementing the reliability pattern:
+
+* Always use a transaction when the transport allows you to do so.
+* Always use a synchronous processing strategy in the acquisition flow.
+* Use an XA transaction for bridging transports, that is, where you want to enlist multiple managed resources within the same transaction.
+* The reliability of JMS is tied to the MQ implementation and how it is configured. Most MQ implementations allow you to configure whether messages are to be stored in memory only or to be persisted. You can achieve reliability only if you configure the MQ server to persistently store messages before sending them forward. Otherwise, you risk losing messages in case of an MQ server crash.
+* Reliability has performance implications.
+* If the outbound transport in the reliable acquisition flow is not transactional (for example, a flow from file-to-FTP), the only way to ensure message delivery is to turn off threading on the respective connector. To understand this, imagine if an exception occurs while sending the message to the outbound endpoint (this might happen if the FTP server is down). If threading is not turned off, the caller may not notice the exception. That's because the exception occurred in a different thread, and there is no way that one thread can see exceptions that occur in another thread. The following example shows how to turn off threading in the connector:
+
+[source,xml,linenums]
+----
+<ftp:connector name="ftpConn">
+<dispatcher-threading-profile doThreading="false"/>
+</ftp:connector>
+----

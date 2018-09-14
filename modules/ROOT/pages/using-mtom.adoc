@@ -1,0 +1,75 @@
+= Using MTOM
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, mtom, wsdl
+
+This page describes the basics of how to use MTOM inside your service. For more information, go to the https://cwiki.apache.org/confluence/display/CXF20DOC/MTOM[MTOM documentation] for CXF. Portions of the examples on this page are from that guide.
+
+For a WSDL-first service, the general process is as follows:
+
+. Write your WSDL
+. Generate your server stubs
+. Configure the CXF endpoint in Mule
+
+== Writing an MTOM-enabled WSDL
+
+To get started, write a WSDL like you would normally. Use `xsd:base64Binary` schema types to represent any binary data that you want to send.
+
+Normally, when creating XML schema types for binary data, you would write a schema type like this:
+
+[source,xml,linenums]
+----
+<element name="yourData" type="xsd:base64Binary"/>
+----
+
+To tell CXF to treat this binary type as an attachment, you must add an `xmime:expectedContentTypes` attribute to it:
+
+[source,xml,linenums]
+----
+<schema targetNamespace="http://mediStor.org/types/"
+  xmlns="http://www.w3.org/2001/XMLSchema"
+  xmlns:xmime="http://www.w3.org/2005/05/xmlmime">
+
+<element name="yourData" type="xsd:base64Binary" xmime:expectedContentTypes="application/octet-stream"/>
+...
+</schema>
+----
+
+== Generating Server Stubs and/or a Client
+
+After writing your WSDL, you run wsdl2java on it to generate server stubs and a client (if you are creating outbound endpoints). To do this, download the CXF distribution, extract it, and then enter the following command:
+
+[source,console,linenums]
+----
+$ ./apache-cxf-2.1.2-incubator/bin/wsdl2java -d outputDirectory path/to/your.wsdl
+----
+
+== Configuring the CXF Inbound Endpoint
+
+The above command generates a server stub interface. This is the interface that your service must implement. Each method will correspond to an operation in your WSDL. If the base64Binary type is an argument to one of your operations, CXF will generate a method like this:
+
+[source,java,linenums]
+----
+public void yourOperation(DataHandler handler) {
+...
+}
+----
+
+You can use this DataHandler method to access the attachment data by calling "handler.getInputStream();".
+
+When you configure the CXF service, set the `mtomEnabled` attribute to true to enable MTOM:
+
+== Configuring the CXF client
+
+The configuration of an MTOM client is exactly like the configuration of a normal CXF outbound endpoint, except that you must specify the `mtomEnabled` attribute. For example:
+
+[source,xml,linenums]
+----
+<cxf:jaxws-client
+    clientClass="org.mule.example.employee.EmployeeDirectory_Service"
+    operation="addEmployee"
+    wsdlPort="EmployeeDirectoryPort"
+    wsdlLocation="classpath:employeeDirectory.wsdl"
+    mtomEnabled="true"/>
+----

@@ -1,0 +1,92 @@
+= Setting Up an LDAP Provider for Spring Security
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, esb, connector, spring security, spring, ldap, authentication
+
+This page describes how you can configure a Spring Security LDAP provider, which can be used by Mule 2.2 or later as follows:
+
+* As its security provider via https://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/spring/security/SpringProviderAdapter.html[SpringProviderAdapter]
+* To perform xref:3.7@component-authorization-using-spring-security.adoc[component authorization]
+
+For information on configuring an in-memory provider, see xref:3.7@configuring-security.adoc[Configuring Security].
+
+== Setup
+
+Before proceeding, ensure that you have the following .jar files in your project classpath:
+
+* spring-security-ldap-3.1.2.RELEASE.jar
+* spring-security-core-3.1.2.RELEASE.jar
+* spring-ldap-core-1.3.1.RELEASE.jar
+
+
+== Declaring the Beans
+
+You must set up two beans in Spring, a http://static.springsource.org/spring-security/site/docs/3.0.x/apidocs/org/springframework/security/ldap/DefaultSpringSecurityContextSource.html[DefaultSpringSecurityContextSource] and an http://static.springframework.org/spring-security/site/docs/3.0.x/apidocs/org/springframework/security/ldap/authentication/LdapAuthenticationProvider.html[LdapAuthenticationProvider]. The `DefaultSpringSecurityContextSource` is the access point for obtaining an LDAP context where the `LdapAuthenticationProvider` provides integration with the LDAP server. For example:
+
+You need to set up an LDAP context source that will be used by the spring security authentication provider to search and authenticate your users. Also, you need to define an authentication manager with an embedded LDAP authentication provider as shown:
+
+[source,xml,linenums]
+----
+<mule
+      xmlns:ss="http://www.springframework.org/schema/security"
+      xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      ...
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      ...
+      xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+        http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.0.xsd">
+...
+  <spring:beans>
+
+    ...
+
+    <spring:bean id="contextSource" class="org.springframework.security.ldap.DefaultSpringSecurityContextSource">
+             <spring:constructor-arg value="${ldap.url}"/>
+             <spring:property name="userDn" value="${ldap.adminDn}"/>
+             <spring:property name="password" value="${ldap.adminPassword}"/>
+        </spring:bean>
+
+        <ss:authentication-manager alias="authenticationManager">
+            <ss:ldap-authentication-provider user-search-filter="(uid={0})" user-search-base="ou=People" group-search-base="ou=Group"/>
+        </ss:authentication-manager>
+
+
+  </spring:beans>
+
+...
+----
+
+More information about the LDAP authentication provider and the different mechanisms to authenticate users against your LDAP server can be found here:  http://static.springsource.org/spring-security/site/docs/3.1.x/reference/ldap.html.
+
+== Configuring the Mule Security Provider
+
+The `SpringSecurityProviderAdapter` delegates to an `AuthenticationProvider` such as the `LdapAuthenticationProvider`.
+
+[source,xml,linenums]
+----
+<mule-ss:security-manager>
+    <mule-ss:delegate-security-provider name="spring-security-ldap" delegate-ref="authenticationManager"/>
+</mule-ss:security-manager>
+----
+
+With the above configuration, you can achieve connector-level security and other security features in Mule that require one or more security providers.
+
+== Configuring the MethodSecurityInterceptor
+
+The configuration for component authorization is similar to the one described in xref:3.7@component-authorization-using-spring-security.adoc[Component Authorization Using Spring Security]. A key point of configuration is `securityMetadataSource`:
+
+[source,xml,linenums]
+----
+<property name="securityMetadataSource" value="org.mule.api.lifecycle.Callable.onCall=ROLE_MANAGERS"/>
+----
+
+The roles are looked up by the `DefaultLdapAuthoritiesPopulator`, which you configured in the previous section. By default, a role is prefixed with `ROLE_`, and its value is extracted and converted to uppercase from the LDAP attribute defined by the `groupRoleAttribute`.
+
+== See Also
+
+For information on configuring an in-memory provider, see xref:3.7@configuring-security.adoc[Configuring Security].

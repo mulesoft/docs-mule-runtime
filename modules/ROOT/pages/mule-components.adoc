@@ -1,0 +1,190 @@
+= Mule Components
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+image:component.png[]Components are message processors which execute http://en.wikipedia.org/wiki/Business_logic[business logic] on messages. They enable you to perform specific actions without writing any Mule-specific code. You can drop a component – a POJO, Spring bean, Java bean, or script – into a flow to perform almost any customized task within your Mule application. For example, you can use a component to verify that items on an invoice are in stock in a warehouse, or to update a database with a customer's order history.
+
+
+== Scripting Components
+
+Mule includes several *scripting components* that you can use in flows in order to execute custom business logic. These components enable you to drop a chunk of custom-written logic into your flow to act upon messages.
+
+image::scripting-components.png[scripting_components]
+
+The example below illustrates the use of a Groovy script component. The script uses the value of `state` to determine which of four sales regions to which to assign the lead.
+
+== Web Service Components
+
+Also included are two components to facilitate *exposing, consuming, and proxying Web services.* The CXF component leverages the CXF framework Mule uses to support SOAP Web services; the REST component works with Jersey to support RESTful Web services; both are bound to HTTP.
+
+image::rest-cxf.png[]
+
+[TIP]
+*APIkit* offers a new and improved way of building a REST API. Access the xref:apikit::index.adoc[APIkit Documentation] to learn how to build REST APIs in a few hours or days.
+
+== HTTP Components
+
+Further, Mule provides two *HTTP components* to facilitate working with calls over HTTP. Use the *HTTP Response Builder* to convert a message into a format consistent with HTTP responses; use the *HTTP Static Resource Handler* to easily serve up static content when called.
+
+image::http-components.png[http_components]
+
+== Other Components
+
+Finally, Mule includes several other components designed to meet rather specific needs.
+
+image::misc-components.png[misc_components]
+
+* Use a *Logger component* to log activities in the flow as they occur.
+* Use an *Expression component* to evaluate a particular expression upon a message in a flow.
+* Use an *Invoke* component to invoke the method of an object specified with a Mule expression.
+* Use an *Echo component* to return the payload of a message as a call response.
+* Use a *Flow Ref component* to access another flow from within a flow.
+* Use a *Batch Execute* component to kick off processing of a batch job.
+
+== Examples
+
+*Groovy Script Component Example*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+...
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+
+...
+
+    <flow name="LookUpSalesRegionFlow" doc:name="LookUpSalesRegionFlow" doc:description="The script uses data in the state field to add a region to the payload according to location.">
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy">def region = "UNKNOWN"
+def state = payload['state']
+if (state != null) {
+ state = state.toUpperCase()
+}
+println "State to lookup is: " + state
+switch (state) {
+        case ["CT","ME","MA","NH","VT","RI","NY","NJ","DE","DC","MD","NH"]:
+            region = "North East"
+            break
+        case ["AL","AR","FL", "GA","LA" ,"SC","NC","TN","TX"]:
+            region = "South East"
+            break
+        case ["ID","IL", "IA","KS","MT", "WY","ND","SD","OH" ]:
+            region = "Mid West"
+            break
+        case ["AZ","CO","OK","NM", "NV"]:
+            region = "South West"
+            break
+        case ["CA","HI","WA","OR", "AK"]:
+            region = "West Coast"
+            break
+    }
+return ["region":region]</scripting:script>
+        </scripting:component>
+        <logger message="Region is : #[payload.region]" level="INFO" doc:name="Logger"/>
+    </flow>
+
+</mule>
+----
+
+=== REST Component Example
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd">
+
+    <flow name="rest_exampleFlow1" doc:name="rest_exampleFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <jersey:resources doc:name="REST">
+            <component class="example.RestExampleResource"/>
+        </jersey:resources>
+    </flow>
+</mule>
+----
+
+*example.RestExampleResource*
+
+[source,text,linenums]
+----
+package example;
+
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+
+
+@Path("/example1")
+public class RestExampleResource {
+
+    @GET
+    @Produces("text/plain")
+
+    public String getExampleMsg(){
+        return "REST and be well.";
+        //return Response.status(Status.OK).entity("Rest and be well.").build();
+
+    }
+
+}
+----
+
+=== Echo, Logger, and HTTP Components Examples
+
+[.ex]
+=====
+[discrete.view]
+=== HTTP Response Builder
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+    <flow name="response-Builder2Flow1" doc:name="response-Builder2Flow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="builder" doc:name="HTTP"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload == 'kittens']">
+                <echo-component doc:name="Echo"/>
+            </when>
+            <otherwise>
+                <http:response-builder status="400" contentType="text/plain" doc:name="HTTP Response Builder"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+</mule>
+----
+
+[discrete.view]
+=== XML Editor or Standalone
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <flow name="static-handlerFlow1" doc:name="statice-handlerFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="response" doc:name="HTTP"/>
+        <http:static-resource-handler resourceBase="src/main/resources/index.html" doc:name="HTTP Static Resource Handler"/>
+    </flow>
+
+</mule>
+----
+
+=====
+
+== See Also
+
+* *NEXT STEP*: Read on about xref:mule-transformers.adoc[transformers].
+* Skip ahead to understand the structure of a xref:mule-message-structure.adoc[Mule message].

@@ -1,0 +1,131 @@
+= @Transformer Annotation
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: annotations, custom java code
+
+* <<Creating Transformers>>
+* <<Working with XML and JSON>>
+* <<Accessing Message Information>>
+* <<Explicitly invoking your @Transformer>>
+* <<Making Mule aware of your @Transformer>>
+* <<Transformer Rules>>
+
+Transformers in Mule are used to convert messages from one data type to another. As well as the in-built xref:3.6@using-transformers.adoc[Mule transformers], it is now possible to create custom transformers using the `@Transformer` annotation.
+
+== Creating Transformers
+
+In their simplest form, transformers convert between different Java types. You create a transformer by performing the conversion in a method that you annotate with the `@Transformer` annotation:
+
+[source,java,linenums]
+----
+@ContainsTransformerMethods // since Mule 3.0.1
+public class MyTransformers
+{
+  @Transformer
+  public URL stringToURL(String string) throws MalformedURLException
+  {
+      return new java.net.URL(string);
+  }
+}
+----
+
+At runtime, this method will be discovered and registered with Mule. Then, whenever an Mule needs to convert from a String to a URL, this transformer will be used.
+
+Here we take an input of `java.lang.String`, this is referred to as the _source type_ and convert it to a `java.net.URL`, this is referred to as the _return type_.
+
+[TIP]
+If you create a transformer with the same source and return types as one of the standard transformers provided with Mule, your custom transformer will be given priority and used instead. Be careful not to create multiple transformers with the same source and return types, or an exception will be thrown due to multiple transformers matching the exact same source and return types.
+
+Note that the method throws `MalformedURLException`, which is an exception specific to creating URL objects. It's good practice to just re-throw any exceptions thrown in a transformer method and let the container handle them.
+
+=== Working with Collections
+
+The Mule transformation system support generics with collections, this means that transforms can be matched against collections of a specific type of object. To extend the example above, we could have a transformer that created a List of URL objects from a comma-separated list of URL strings.
+
+[source,java,linenums]
+----
+@Transformer
+public List<URL> stringsToURLs(String string) throws MalformedURLException
+{
+    List<URL urls = new ArrayList<URL>();
+    for (StringTokenizer tokenizer = new StringTokenizer(string); tokenizer.hasMoreTokens();)
+    {
+        urls.add(new URL(tokenizer.nextToken()));
+    }
+    return urls;
+}
+----
+
+[TIP]
+It is good practice to always provide types for any transforms that deal with collections. Doing so will provide more accurate information to Mule about how to match your transformers and it provides better type checking in your code.
+
+=== Multiple Source Types
+
+Transformers can only have one return type but we can define multiple _source types_. For example, lets say we might receive the URL string as s `java.lang.String` or `java.io.InputStream` we could add the additional source type to the `@Transformer annotation`. Note that you can add a comma-separated list of source type classes.
+
+[source,java,linenums]
+----
+@Transformer(sourceTypes = {InputStream.class})
+public URL transformStringToURL(String string) throws MalformedURLException
+{
+    return new URL(string);
+}
+----
+
+Now if a request is made to convert a a `java.io.InputStream` to a `java.net.URL`, this transformer is discovered and behind the scenes, Mule attempts to convert `java.io.InputStream` to String before calling the method. Note there needs to be a transformer registered that converts a `java.io.InputStream` to `java.lang.String`. Mule provides a selection of default transformers for dealing with JDK types such as String, byte arrays, InputStreams, Xml Documents, etc. If you need a transform that doesn't exist, you can just create a new transform method.
+
+== Working with XML and JSON
+
+Most web services deal with data formatted using XML or JSON (JavaScript Object Notation). Mule supports binding objects to XML and vice-versa using JAXB (Java API for XML binding) which is standard in JDK 6. JSON marshaling to objects and back again using a JSON parsing framework called https://github.com/codehaus/jackson[Jackson]. These frameworks are supported automatically by Mule.
+
+== Accessing Message Information
+
+All messages in Mule have headers. If you need to access the headers, add a parameter to the transformer method signature annotated with the xref:3.7@inboundheaders-annotation.adoc[@InboundHeaders] or xref:3.6@outboundheaders-annotation.adoc[@OutboundHeaders] annotations. If you need access to the message attachments use the xref:3.7@inboundattachments-annotation.adoc[@InboundAttachments] or xref:3.6@outboundattachments-annotation.adoc[@OutboundHAttachments] annotations.
+
+[source,java,linenums]
+----
+@Transformer
+public Person xmlToPerson(InputStream data, @InboundHeaders("*") Map headers,
+                   @OutboundAttachments Map<String, DataHandler> attachments)
+----
+
+The '*' indicates that all headers should be returned. The OutboundAttachments Map allows users to write attachments to the outgoing message.
+
+== Explicitly invoking your @Transformer
+
+There is no mechanism in Mule 3.x to actually invoke a transformer which is being constructed from an annotated method.
+
+If the datatypes that you are trying to transform are custom objects instead of Java data types, you can potentially use the *<auto-transform>* element.
+
+[source,xml,linenums]
+----
+<auto-transformer returnClass="Person.class"/>
+----
+
+The auto-transform element will use the transformer discovery service and search for a transformer that will convert the current message payload type into the specified returnClass. As you can see you are not actually invoking your transformer directly but instead using the Mule built-in discovery mechanism to do so.
+
+== Making Mule aware of your @Transformer
+
+For performance reasons Mule does not perform class path scanning. This means that even if you annotate your class with @ContainsTransformerMethods it won't be recognized automatically by just adding the class in the class path.
+
+You need to register the class in the Mule registry somehow that will effectively also (since it is annotated @ContainedTransformerMethods) register every transformer method inside of it.
+
+There are several ways to do so, one way would be to declare the class a Spring bean inside your Mule config as:
+
+[source,xml,linenums]
+----
+<spring:bean id="xxx" class="MyTransfomer.class"/>
+----
+
+Another way would be to add the class to the registry-bootstrap.properties file. Click xref:3.6@bootstrapping-the-registry.adoc[here] for more information about along side some example.
+
+== Transformer Rules
+
+* Since Mule 3.0.1, this class must be annotated with @ContainsTransformerMethods
+* If a transformer has state, all transformers defined in that class will share that state.
+* Primitive types must not be used for transformer method return types. Only objects can be used.
+* For collections use Lists or Sets, not arrays. Generics are supported and should be used wherever possible since generic types are also used when trying to match transformers.
+* The transformer methods must be public and concrete implementations, the `@Transformer` annotation cannot be used on an interface.
+* The transform method must have at least one parameter and a non-void return type.
+* `java.lang.Object` cannot be used for parameter types or return type.

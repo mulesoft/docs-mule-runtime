@@ -1,0 +1,223 @@
+= PGP Security
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, esb, pgp, pretty good privacy, security
+
+This extension adds PGP security on connector communication. With PGP you can achieve end-to-end security communication with signed and encrypted messages between parties.
+
+== Requirements
+
+=== Policy Files
+
+If you are running JDK 1.4+ that comes with the http://java.sun.com/javase/technologies/security[Sun JCE] by default, you must install the Unlimited Strength Jurisdiction Policy files, which can be downloaded from the following URL (note that they are listed entirely at the bottom of the page, in the Other Downloads section):
+
+http://java.sun.com/j2se/1.4/download.html[JDK 1.4] +
+http://java.sun.com/j2se/1.5.0/download.jsp[JDK 5] +
+http://java.sun.com/javase/downloads/index.jsp[JDK 6]
+
+These files must be installed in `$JAVA_HOME$/jre/lib/security`
+
+According to Sun, the default distribution of the JCE allows "strong, but limited strength cryptography." This means that you cannot use RSA keys bigger than 2048 bits and no symmetric ciphers that use more than 128 bits. ElGamal is not allowed at all, thus DH/DSS cannot be used for encryption.
+
+== Encrypting and Decrypting
+
+To encrypt and decrypt messages you need to configure the following elements:
+
+* A security manager: responsible of holding a security provider, which contains the key rings, and the encryption strategy to be used. This allows for the encryption of all messages using the same key or to facilitate the use of different key rings.
+* A key manager: which is responsible for reading the key rings.
+* A credential accessor: which determines the key ring and key manager to be used to encrypt/decrypt the message being processed.
+
+A full example is shown below:
+
+[source,xml,linenums]
+----
+<spring:beans>
+    <spring:bean id="pgpKeyManager" class="org.mule.module.pgp.PGPKeyRingImpl" init-method="initialise">
+        <spring:property name="publicKeyRingFileName" value="pubring.gpg"/>
+        <spring:property name="secretKeyRingFileName" value="secring.gpg"/>
+        <spring:property name="secretAliasId" value="${public.KeyId.LongValue}"/>
+            <spring:property name="secretPassphrase" value="${secret.Passphrase}"/>
+    </spring:bean>
+
+        <spring:bean id="credentialAccessor" class="com.somecompany.apps.AppCredentialAccessor">
+            <spring:property name="credentials" value="John Smith (TestingKey) &lt;john.smith@somecompany.com&gt;"/>
+        </spring:bean>
+</spring:beans>
+
+<pgp:security-manager>
+    <pgp:security-provider name="pgpSecurityProvider" keyManager-ref="pgpKeyManager"/>
+        <pgp:keybased-encryption-strategy
+        name="keyBasedEncryptionStrategy"
+        keyManager-ref="pgpKeyManager"
+        credentialsAccessor-ref="credentialAccessor"/>
+</pgp:security-manager>
+----
+
+The pgpKeyManager spring:beans tag is the one responsible for reading the rings. You have to set all the parameters: public and secret rings, the alias id (the long value in the ring) and the secret passphrase. In the same section, you can see the credentials accessor which needs to implement the CredentialsAccessor interface basically returning the key id based on the message (MuleEvent). Finally the pgp:security-manager glues both beans.
+
+You are ready to encrypt and decrypt messages in your flows. The following two flows show how to use the encrypt-transformer and decrypt-transformer to encrypt and decrypt files.
+
+[source,xml,linenums]
+----
+<flow name="processEncryptFiles">
+    <file:inbound-endpoint connector-ref="inputEncrypt"
+        path="file:///temp/fileInput" moveToDirectory="file:///temp/fileInputBackup"
+        moveToPattern="#[header:originalFilename].backup" transformer-refs="file2Bytes" />
+
+    <encrypt-transformer name="pgpEncrypt"
+        strategy-ref="keyBasedEncryptionStrategy" />
+
+    <file:outbound-endpoint connector-ref="output"
+        path="file:///temp/fileOutput" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+</flow>
+
+<flow name="processDecryptFiles">
+    <file:inbound-endpoint connector-ref="inputDecrypt"
+        path="file:///temp/fileOutput" moveToDirectory="file:///temp/fileOutputEncrypted"
+        moveToPattern="#[header:originalFilename].backup" transformer-refs="file2Bytes" />
+
+    <decrypt-transformer name="pgpDecrypt"
+        strategy-ref="keyBasedEncryptionStrategy" />
+
+    <file:outbound-endpoint connector-ref="output"
+        path="file:///temp/fileOutputDecrypted" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+</flow>
+----
+
+The following sections explain how to configure each element.
+
+=== Configuring the Security Manager
+
+To configure the Security Manager you need to reference your key manager and your encryption strategy. The Key manager is simple a reference to your key manager ring.
+
+=== Configuring the Key Manager
+
+To configure your key manager you have to create a spring bean as shown before. You will need to set the public and secret ring files, the alias id and the secret passphrase. As Mule uses the bouncy castle library to encrypt/decrypt messages we recommend to obtain the alias id (as a long value) using this library. If Mule does not find your id in the ring it will throw an exception and it will list all the available ids in your ring.
+
+=== Configuring a Credential Accessor
+
+To configure your credential accessor you need to define a class which determines your key id. For instance the following class (used in the example) returns always the same fixed string thus all the messages will be encrypted/decrypted using the same key id. If you need to use different key ids then return different strings according to the MuleEvent received as a parameter.
+
+[source,java,linenums]
+----
+public class FakeCredentialAccessor implements CredentialsAccessor
+{
+    private String credentials = "John Smith (TestingKey) <john.smith@somecompany.com>";
+
+    public FakeCredentialAccessor()
+    {
+    }
+
+    public FakeCredentialAccessor(String string)
+    {
+        this.credentials = string;
+    }
+
+    public String getCredentials()
+    {
+        return credentials;
+    }
+
+    public void setCredentials(String credentials)
+    {
+        this.credentials = credentials;
+    }
+
+    public Object getCredentials(MuleEvent event)
+    {
+        return this.credentials;
+    }
+
+    public void setCredentials(MuleEvent event, Object credentials)
+    {
+        // dummy
+    }
+}
+----
+
+== Configuration Reference
+
+== PGP Module
+
+This extension adds PGP security on endpoint communication. With PGP you can achieve end-to-end security communication with signed and encrypted messages between parties.
+
+== Security manager
+
+=== Attributes of <security-manager...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|===
+
+=== Child Elements of <security-manager...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|security-provider |0..1 |Security provider for PGP-related functionality.
+|keybased-encryption-strategy |0..1 |The key-based PGP encryption strategy to use.
+|===
+
+== Security provider
+
+Security provider for PGP-related functionality.
+
+=== Attributes of <security-provider...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|keyManager-ref |string |yes |  |Reference to the key manager to use.
+|===
+
+=== Child Elements of <security-provider...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
+
+== Keybased encryption strategy
+
+The key-based PGP encryption strategy to use.
+
+=== Attributes of <keybased-encryption-strategy...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|keyManager-ref |string |yes |  |Reference to the key manager to use.
+|credentialsAccessor-ref |string |no |  |Reference to the credentials accessor to use.
+|checkKeyExpirity |boolean |no |  |Check key expiration.
+|===
+
+=== Child Elements of <keybased-encryption-strategy...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
+
+== Security filter
+
+Filters messages based on PGP encryption.
+
+=== Attributes of <security-filter...>
+
+[%header,cols="5*"]
+|===
+|Name |Type |Required |Default |Description
+|strategyName |string |yes |  |The name of the PGP encryption strategy to use.
+|signRequired |string |yes |  |Whether signing is required.
+|keyManager-ref |string |yes |  |Reference to the key manager to use.
+|credentialsAccessor-ref |string |yes |  |Reference to the credentials accessor to use.
+|===
+
+=== Child Elements of <security-filter...>
+
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===

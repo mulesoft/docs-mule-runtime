@@ -1,0 +1,91 @@
+= Message Enricher
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, mule, esb, enrich, flow control
+
+One common scenario involves the need to enrich an incoming message with information that isn’t provided by the source system. You can use a content enricher if the target system needs more information than the source system can provide.
+
+Consider a message from a source system contains a zip code but the target system needs the two letter state. A message enricher can be used to lookup the state using the zip code from an enrichment resource. The enricher calls out to the enrichment resource with the current message (containing the zip code) then enriches the current message with the result.
+
+[source,xml,linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderEndpoint"/>
+   <enricher target="#[variable:state]">
+       <outbound-endpoint ref="stateLookup"/>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+This is a very simple flow with one-way inbound and outbound endpoints, and which acts as part of an order processing pipeline. This flow uses an enricher to add a state _flow variable_ to the current message with the state that the `stateLookup` endpoint returns.  The ‘target’ attribute defines how the current message is enriched using a `MessageEnricher` which uses the same syntax as expression evaluators.
+
+*Notes:*
+
+* Mule currently supports enrichment of _flow variables_ and message headers only.
+* Even though the Message Enricher receives a copy of the Mule message, the payload is not copied.
+In other words, if the payload of your message is a mutable object (for example a bean with different fields in it) and a message processor in your Message Enricher changes the value of one of the fields, the message processors outside of the Message Enricher only see the changed values.
+
+== More Complex Enrichment
+
+In this particular example the 'addressLookup' endpoint receives the full message, in some cases this might be a generic service that doesn’t know how to parse our order message but rather just a zip string. It is very easy to improve the configuration to support this, consider the following snippet:
+
+[source,xml,linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher target="#[variable:address]">
+       <outbound-endpoint ref="addressLookup">
+           <expression-transformer evaluator="xpath" expression="/order/address/zip" />
+       </outbound-endpoint>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+The “enrichment resource” can be any message processor, outbound connector, processor-chain or flow-ref.  If using an outbound-connector then of course it should have a `request-responseexchange` pattern.
+
+== More Advanced Examples
+
+The *enricher* element also supports more advanced use cases where the message returned by the enrichment resource isn’t just a simple string which is exactly what we need to enrich the current message with, often you may want to enrich your message with just part of the information from the result of the invocation of an external service.
+
+For example, if you have a requirement to validate the credit card used for the order as well as add the full address using the ZIP code.  The credit card validation process should populate a header call “paymentValidated” with either true or false, this will be used later on.  We can easily perform credit card validation by calling out to an authorization service like Authorize.Net to perform this validation, but we have a problem this cloud connector returns more than just a boolean.
+
+The solution is to use the enrichers ‘source‘ attribute which will select a value from the result message before using it to enrich the target.
+
+[source,xml,linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher target="#[variable:paymentValidated]" source="/authorizenet/authorization/@valid">
+       <authorizenet:authorize cardNumber="/order/cc/number" />
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+This approach allows you to map content in the response message from the enrichment resource to the current message.  If you have a more advanced use case you can also map `n` values in the enrichment resource response to m values enriched in the current message, this is done using child enricher elements each of which has source and target attributes.  Note: if you use child enricher elements the source/target attributes on enricher are not allowed.
+
+[source,xml,linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher>
+       <authorizenet:authorize cardNumber="/order/cc/number" />
+       <enrich target="#[variable:paymentValidated]" source="/authorizenet/authorization/@valid" />
+       <enrich target="#[variable:paymentAuthCode]" source="/authorizenet/authorization/code"/>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+== Variables and Enrichers
+
+You can make the source a namespace by simply populating the field with a xref:3.7@mule-expression-language-mel.adoc[Mule Expression Language MEL] expression, for example with an xpath expression that takes arguments from the Mule message.
+
+You can find information on using a variable with any enricher listed on these pages:
+
+* xref:3.6@non-mel-expressions-configuration-reference.adoc[Default enrichers] are loaded at runtime
+* Schema documentation for the http://www.mulesoft.org/docs/site/current/schemadocs/schemas/mule_xsd/elements/enricher.html[enricher element]
+* API documents for https://www.mulesoft.org/docs/site/current/apidocs/org/mule/enricher/MessageEnricher.html[org.mule.core.enricher.MessageEnricher]

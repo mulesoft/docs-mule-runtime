@@ -1,0 +1,217 @@
+= Message State
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+To better understand how Mule message processors act upon messages, it is useful to examine the state of a message before and after it is processed. When a transformer converts the content of a message payload from one data structure to another, or from one data format to another – for example, JSON to Java Object, Map to CSV, or Java Object to XML – you may wonder exactly how Mule has changed, removed or added to the contents of a message. Reviewing its "before and after" state should help you to be better able to work with the message further in the flow.
+
+This document uses an example application and draws upon the content of the xref:mule-message-structure.adoc[Mule Message Structure document] to examine the state of a message as it passes through a DataMapper transformer in a flow. Running the application in debug mode in Anypoint Studio, the screenshots illustrates the state of a message using the xref:studio-visual-debugger.adoc[Visual Debugger] which facilitates "frozen-in-time" viewing of a message.
+
+== Assumptions
+
+This document describes the details of the example within the context of *Anypoint Studio*, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration accompanies the Studio interface screenshots. This document assumes that you are familiar with Mule ESB and the Anypoint Studio interface. Further, it assumes you have read the xref:mule-message-structure.adoc[Mule Message Structure document] to understand the contents of a Mule message.
+
+== Example
+
+To examine the state of a message, this document uses an example application which converts the contents of a CSV file into contacts in Salesforce. Bundled as an example application in Studio, you can read the full details of its moving parts and how it works in the xref:connect-with-salesforce-example.adoc[Connect with Salesforce Example] documentation.
+
+Briefly, the File Endpoint** **polls the input folder for new files every ten seconds. When it spots a new file, it reads the content, then passes the data to the DataMapper Transformer. This transformer not only converts the format of the data from CSV to a collection, it automatically maps the input fields from the CSV file – FirstName, LastName, etc. – to output fields that Salesforce uses in a collection. Each mapping earns an arrow which helps you to visualize the activity that occurs within the DataMapper transformer. When it has converted all the contacts in the file to a collection of Salesforce-friendly data, the application uses a Salesforce Connector to push data into your Salesforce account. The connector's configurations specify the *operation* – `Create` – and the *sObject type* – `Contact` – which dictate exactly how the data uploads to Salesforce; in this case, it creates new contacts.
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+image::flow-contacts-to-sfdc.png[flow_contacts_to_sfdc]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <sfdc:config doc:name="Salesforce" name="Salesforce" password="password" username="salesforceuser@email.com">
+        <sfdc:connection-pooling-profile exhaustedAction="WHEN_EXHAUSTED_GROW" initialisationPolicy="INITIALISE_ONE"/>
+    </sfdc:config>
+    <data-mapper:config doc:name="DataMapper" name="datamapper_grf" transformationGraphPath="datamapper.grf"/>
+    <flow doc:description="Upload a csv file of contact information into Salesforce as new contacts." doc:name="Contacts_to_SFDC" name="Contacts_to_SFDC">
+        <file:inbound-endpoint doc:name="File Input" moveToDirectory="src/test/resources/output" path="src/test/resources/input" pollingFrequency="10000" responseTimeout="10000"/>
+        <data-mapper:transform config-ref="datamapper_grf" doc:name="DataMapper"/>
+        <sfdc:create config-ref="Salesforce" doc:name="Salesforce" type="Contact">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+    </flow>
+</mule>
+----
+
+=====
+
+=== Before DataMapper
+
+As discussed in the xref:mule-message-structure.adoc[Message Structure document], a Mule message consists of two main parts:
+
+* a *message header*, in which properties reside
+* a *message payload* which contains the data that Mule processes
+
+The **Mule message object, **which contains the Mule message itself, may also contain *variables*. The following sections examine the message header, payload and variable before the message encounters the DataMapper transformer.
+
+[TIP]
+====
+To access this information about the state of the message header and payload, we set breakpoints on the message processors in the application, then ran the application in debug mode in Studio. Studio's *Visual Debugger* displays the messages's header and payload information in the *Mule Debugger Console*, below the canvas.
+
+Learn more about how to examine the state of your messages using the xref:studio-visual-debugger.adoc[Visual Debugger].
+====
+
+==== Message Header
+
+The *Message* (see image below) contains data from the header of the message (i.e. metadata). In this example, you can see the message's identifiers and determine if there are attachments, which would be arrays if they existed.
+
+Note that the *Message Processor* name indicates a *Value* of DataMapper; the Message Processor item indicates the next message processor in the flow that the message will encounter.
+
+image::message.png[]
+
+==== Message Payload
+
+The *payload* (see image below), not surprisingly, contains the payload of the message, or rather, the data that the Mule application processes. Before it encounters the DataMapper, the payload contains a CSV file – `currentFile` – with type `java.io.File`.
+
+image::payload.png[]
+
+==== Properties
+
+The Visual Debugger also displays any inbound and outbound properties on the message as it enters the DataMapper. The *Inbound Properties* on the message include metadata about the payload, including its filename, timstamp and the endpoint through which it entered the application, MULE_ORIGINATING_ENDPOINT. Inbound properties are _read-only_ and cannot be added, removed or copied by message processors in the application.
+
+image::inbound.png[]
+
+The *Outbound Properties* indicate similar information about the payload, and can be removed or copied by message processors in the application.
+
+image::outbound.png[]
+
+==== Variables
+
+The Visual Debugger displays any variables or session variables included in the message object as it encounters the DataMapper. The File endpoint in this flow set two *Variables* on the message to indicate where DataMapper should move the file after processing, and the frequency with which the endpoint polls the input folder for new data.
+
+image::variables.png[]
+
+There are no *Session Variables* on this message before it encounters the DataMapper.
+
+image::session.png[]
+
+=== After DataMapper
+
+The task of the DataMapper in this application is to convert the contents of the CSV file into a Java object that Salesforce can process. Further, it maps the contents so that the value in the First Name column in the CSV file converts to the First Name field in the Salesforce contact, and so on for each field. The following displays the message state as it emerges from the DataMapper.
+
+==== Message Header
+
+DataMapper made no changes to the *message* header contents.
+
+image::message2.png[]
+
+==== Message Payload
+
+DataMapper has dramatically changed the *payload*! Now an array list of maps (image below, top), the contacts from the CSV file appear as values of each hashmap. Expanding the contents further, each hashmap contains a key-value pair (below, bottom).
+
+image::payload2.png[]
+
+image::keyvaluepair.png[keyValuePair]
+
+==== Properties
+
+As Mule message processors cannot add, remove or act upon *inbound properties*, none has changed.
+
+image::inbound2.png[]
+
+DataMapper did not set, remove or copy any *outbound properties* on the message.
+
+image::outbound2.png[]
+
+==== Variables
+
+DataMapper did not add or remove any *Variables* or *Session Variables*.
+
+image::variables2.png[]
+
+image::session2.png[]
+
+== More Examples
+
+=== Setting a Variable on a Message
+
+The xref:variable-transformer-reference.adoc[Variable transformer] in a flow sets the payload of the message as a minPrice variable on the message. Recall that the Message Processor item indicates the next message processor in the flow that the message will encounter.
+
+[source,xml,linenums]
+----
+<flow>
+...
+    <set-variable doc:name="Variable" value="#[payload]" variableName="minPrice"/>
+...
+</flow>
+----
+
+BEFORE
+
+image::beforevariable.png[beforeVariable]
+
+AFTER
+
+image::aftervariable.png[afterVariable]
+
+=== Setting a Property on a Message
+
+The xref:property-transformer-reference.adoc[Property transformer] in a flow sets the payload of the message as a `size` property on the message.
+
+[source,xml,linenums]
+----
+<flow>
+...
+    <set-property doc:name="Property" propertyName="size" value="small"/>
+...
+</flow>
+----
+
+BEFORE
+
+image::beforeproperty.png[beforeProperty]
+
+AFTER
+
+image::afterproperty.png[afterProperty]
+
+=== Setting a Payload on a Message
+
+The xref:set-payload-transformer-reference.adoc[Set Payload transformer] in a flow replaces the payload of the message with the string `Hello, World`.
+
+[source,xml,linenums]
+----
+<flow>
+...
+    <set-payload value="#['Hello, world.']" doc:name="Set Payload"/>
+...
+</flow>
+----
+
+
+BEFORE
+
+image::beforesetpayload.png[beforeSetPayload]
+
+AFTER
+
+image::aftersetpayload.png[afterSetPayload]
+
+[TIP]
+====
+To access the property or variable that you have set on a message earlier in a flow, or in a different flow in the application, use a MEL expression.
+
+Learn more in the xref:mule-message-structure.adoc[Mule Message Structure] document, under the heading Setting and Using Properties and Variables.
+====
+
+== See Also
+
+* *NEXT STEP:* Read about xref:global-elements.adoc[Global Elements].
+* Learn more about xref:studio-visual-debugger.adoc[Studio Visual Debugger].

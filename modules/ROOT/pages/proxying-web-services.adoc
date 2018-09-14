@@ -1,0 +1,94 @@
+= Proxying Web Services
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, esb, proxy
+
+Mule can act as a Web Service gateway/proxy. Gateways can perform several useful functions:
+
+* Routing to the appropriate backend service (whether remote or local)
+* Message transformations, such as converting from old versions of the message format
+* Protocol bridging, such as HTTP to JMS
+* Validation
+* Security enforcement
+* WS-Policy enforcement
+
+
+Mule provides several utilities that help you do this:
+
+* Protocol bridging - allows you to forward requests from one endpoint to another. This is generally the best option for proxying Web Services.
+* WSProxyService - allows you to service WSDLs locally while proxying remote web services.
+* Proxying Web Services - perform WS-Security or WS-Policy actions, route based on information such as the operation or SOAP Action, and easily work with just the payload by taking advantage of CXF's web service capabilities.
+
+The following sections provide more information on these utilities.
+
+== Protocol Bridging
+
+The simplest type of Web Service proxy just involves forwarding a request from one endpoint to another via service bridging. You can forward the data streams directly, or you can process and transform the XML. If you are doing content-based routing, this is often the best option, as it will add less overhead than a full CXF proxy (which is only needed in certain cases).
+
+Following is a simple configuration example that forwards a request from one HTTP endpoint to another:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+  <flow name="HttpProxyService">
+      <http:inbound-endpoint host="localhost" port="8888" path="/"/>
+      <http:outbound-endpoint host="www.webservicex.net#[header:INBOUND:http.request]" port="8888" path="#[message.inboundProperties.'http.listener.path']" method="#[message.inboundProperties.'http.method']" exchange-pattern="one-way" />
+  </flow>
+</mule>
+----
+
+This type of bridge can be combined with filters for easy message routing. For fast XPath routing of messages, you can use the xref:sxc-module-reference.adoc[SXC Module Reference].
+
+Alternatively, you can use xref:bridge-pattern.adoc[Bridge Pattern].
+
+== WSProxyService
+
+The WSProxyService allows you to serve WSDLs locally while proxying remote web services. This is handy when you have an alternate WSDL you want to service, or if you don't want WSDL requests to be routed with all the other SOAP message requests. Any request that comes in with a "?wsdl" attached to the HTTP URL will be redirected, and the specified WSDL will be served instead.
+
+To configure this in your flow, you must first define a WSProxyService bean with your WSDL:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <spring:bean name="WSProxyService" class="org.mule.module.cxf.WSProxyService">
+        <spring:property name="wsdlFile" value="localWsdl.wsdl"/>
+    </spring:bean>
+----
+
+Next, define your service bridge to use this component:
+
+[source,xml,linenums]
+----
+<flow name="HttpWebServiceBridge">
+        <http:inbound-endpoint host="localhost" port="8080" path="/my/service"/>
+        <component>
+         <spring-object bean="WSProxyService" />
+        </component>
+        <http:outbound-endpoint host="acme.come" port="8080" path="#[message.inboundProperties.'http.listener.path']"
+method="#[message.inboundProperties.'http.method']" exchange-pattern="one-way" />
+</flow>
+----
+
+Now any request to "http://localhost:8080/my/service?wsdl" will cause your WSDL to be served.
+
+== Using CXF Proxy
+
+While many times you can proxy web services without using CXF, there are several cases where you might want to use CXF proxies:
+
+* To work directly with the SOAP body, such as adding XML directly to it
+* To take advantage of the CXF web service standards support to use WS-Security or WS-Addressing
+* To enforce WS-Policy assertions
+* To easily service a WSDL associated with your service
+* To transform a SOAP body
+
+See the xref:3.6@proxying-web-services-with-cxf.adoc[Proxying Web Services with CXF] for more details.

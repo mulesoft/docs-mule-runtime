@@ -1,0 +1,81 @@
+= Application Deployment
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Starting Mule
+
+Start mule by running `<MULE_HOME>/bin/mule` or starting Mule as a service. By default, applications in the `<MULE_HOME>/apps` directory are deployed. You can also designate specific applications to start (separated by a colon - **:**) and Mule 3.0  respects the order when starting the applications. In this scenario, only the applications specified will be started.
+
+Start Mule by specifying an app to run:
+
+----
+mule -app foo
+----
+
+Where `foo` is a Mule app at `$MULE_HOME/apps/foo`.
+
+From this moment, Mule checks every three seconds for the `$MULE_HOME/apps/foo/mule-config.xml` updates. One can update the application jar contents and touch/modify this file to have Mule reload the config and class modifications.
+
+== Deploying Applications
+
+Mule applications, either zipped or exploded can be dropped into **$MULE_HOME/apps**. If Mule is already running, the application deploys dynamically.
+
+*Note:* All applications in Mule are unpacked at runtime and the original zip removed. This means, that if you drop a zip file into the example 'apps' dir, Mule creates a new folder with the same name (without the 'zip' extension) and deletes the zip.
+
+A successful app deployment is confirmed by:
+
+* Having an unpacked application folder in the apps dir, for example, for `stockTrader.zip`- `$MULE_HOME/apps/stockTrader`.
+* An anchor file created for a running app, for example, `$MULE_HOME/apps/stockTrader-anchor.txt`
+
+If you wish to store your applications in a different location, you can do this on Unix-based systems by creating a symlink to your application directory from `$MULE_HOME/apps`
+
+== Undeploying Applications
+
+Don't delete the application folder directly, but rather delete an app's anchor file only:
+
+Deleting only the app's anchor file:
+
+* Prevents any interference from the hot-deployment layer and doesn't leave room for concurrent conflicting actions.
+* Avoids potential application jar locking issues on some operation systems and allows for clean shutdown and undeployment.
+
+For example, if the `stockTrader` app is running (app folder is there as well as the `$MULE_HOME/apps/stockTrader-anchor.txt` file, just delete the anchor file to have the app removed from the Mule instance at runtime. Application folder is removed after the app terminates.
+
+*Note:* After undeploying a Mule Application, there is a timeout of 15 seconds until LoggerContext stops. Log files for an application only release after this timeout expires. This information is important in Windows, where you can’t remove files that are in use by other processes.
+
+== Updating Applications at Runtime
+
+Updating a Mule application at runtime can be a complex change involving class modifications, endpoint modifications. such as when changing ports, etc, as well as reconfigured flows. As a result, any application update does a graceful app shutdown under the hood and reconfigures itself. In practice, this is pretty transparent to the user and happens within seconds.
+
+There are several ways an application can be updated:
+
+* By dropping the modifications over an existing exploded app folder and touching the 'master' configuration file (`mule-config.xml` in app root by default).
+* By dropping a new *zipped* version of the app into `$MULE_HOME/apps` dir. Mule  detects this as an existing app update and  ensures a clean redeployment of the app. Note that any modifications to the old app folder are discarded - the new app folder is a clean exploded application from a zip.
+
+As you see, both integrate pretty well with existing build tools, the preference for one over another really depends on established development practices only.
+
+== Disabling the Mule Container Mode
+
+If you want to run Mule 3 the legacy 2.x way, edit `$MULE_HOME/conf/wrapper.conf` file and replace the following line:
+
+[source,java]
+----
+#Java Main classwrapper.java.mainclass=org.mule.module.reboot.MuleContainerBootstrap
+----
+
+With:
+
+[source,java]
+----
+#Java Main classwrapper.java.mainclass=org.mule.module.boot.MuleBootstrap`
+----
+
+When run in this legacy mode, none of the new application deployment features apply.
+
+== Embedded Mule
+
+When Mule is embedded in an application server, Java application, unit test, IDE, etc and started programmatically, the deployment functionality is disabled and Mule follows the legacy application model.
+
+== Troubleshooting
+
+If application fails to start such as when a broken configuration file provided, Mule doesn't monitor the app for changes (as there technically is no application running). To update such an app, simply redeploy the app by dropping an updated archive into the apps folder.

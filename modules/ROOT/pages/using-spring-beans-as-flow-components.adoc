@@ -1,0 +1,136 @@
+= Using Spring Beans as Flow Components
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, spring, beans
+
+* <<Defining the Beans>>
+* <<Configuring the Beans>>
+* <<Configuring the Component>>
+* <<Using JNDI and EJB Session Beans>>
+
+You can construct components from Spring beans that you define in a separate Spring context file or right in the Mule ESB configuration file. This pages provides an example using two beans; a RestaurantWaiter bean that receives and logs orders and then passes them to the KitchenService bean, which receives the orders.
+
+== Defining the Beans
+
+The Java code for the beans look like this:
+
+[source,java,linenums]
+----
+public class RestaurantWaiter
+{
+    private KitchenService kitchen = null;
+
+    public void takeOrder(Order order) {
+    //log order
+
+    //notify kitchen
+    this.kitchen.submitOrder(order);
+     }
+
+    public void setKitchenService(KitchenService kitchen) {
+        this.kitchen = kitchen;
+    }
+
+    public KitchenService getKitchenService() {
+        return kitchen;
+    }
+}
+----
+
+== Configuring the Beans
+
+First, you configure the beans in your Spring application context:
+
+[source,xml,linenums]
+----
+<beans>
+  <bean id="restaurantWaiter" scope="prototype" class="com.foo.RestaurantWaiter">
+    <property name="kitchenService">
+      <ref local="kitchenService"/>
+    </property>
+  </bean>
+
+  <bean id="kitchenService" class="com.foo.KitchenService"/>
+</beans>
+----
+
+We now have beans called restaurantWaiter and kitchenService that will be created by Spring. Notice the resturantWaiter bean scope is set to prototype (by default, all beans in Spring are singletons unless specified otherwise). This is important if you want to pool component instances--telling Spring not to create a singleton ensures that each pooled instance will be a unique instance. If you want a singleton instance of your component, you would use Spring's default singleton scope.
+
+If you want to configure the beans right in your Mule configuration file instead of in a separate Spring context file, you could specify them like this:
+
+[source,text,linenums]
+----
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+    <spring:bean id="restaurantWaiter" scope="prototype" class="com.foo.RestaurantWaiter">
+        <spring:property name="kitchenService">
+            <spring:ref local="kitchenService"/>
+        </spring:property>
+    </spring:bean>
+    <spring:bean id="kitchenService" class="com.foo.KitchenService"/>
+</spring:beans>
+----
+
+== Configuring the Component
+
+After you have configured the beans, you can create your reference to restaurantWaiter in the component. For example, the following configuration creates a component that will enable restaurantWaiter to receive events from VM. This example assumes the beans are in a separate file, so if you configured them right in the Mule configuration file, you do not need the `<spring:import>` tag.
+
+Note that the `conf` folder does not exist by default in the `src/main/app` folder. Before pointing the `spring:import resource` to the filepath as per the example below, create the `conf` folder, then move the `xml` file into the folder.
+
+[source,text,linenums]
+----
+xmlns:vm="http://www.mulesource.org/schema/mule/vm/2.0"
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+    <spring:import resource="classpath:src/main/app/conf/applicationContext.xml"/>
+</spring:beans>
+...
+
+<flow name="Restaurant Waiter">
+    <vm:inbound-endpoint path="order.queue"/>
+    <component>
+      <spring-object bean="restaurantWaiter"/>
+    <component>
+</flow>
+----
+
+When the Mule server starts, each of the <flow> elements are loaded, and the bean you specified in the `<spring-object>` tag is created. When an event is received on `vm://orders.queue`, an Order object is passed to the `takeOrder()` method on the `RestaurantWaiter`, which then logs the order and passes it to the `KitchenService`.
+
+For more information on component configuration, see xref:3.7@configuring-components.adoc[Configuring Components]. For more information on the elements you use to configure components, see xref:3.6@component-configuration-reference.adoc[Component Configuration Reference].
+
+== Using JNDI and EJB Session Beans
+
+If you define JNDI and EJB session beans in Spring using the generic `<bean>` element, you configure them exactly as any other Spring bean in Mule. However, if you use the `<jee>` elements to define them in Spring (`<jee:jndi-lookup>`, `<jee:local-slsb>`, and `<jee:remote-slsb>`), you must include the jee namespace and schema locations in your Mule configuration file as follows:
+
+[source,text,linenums]
+----
+xmlns:jee="http://www.springframework.org/schema/jee"
+       xsi:schemaLocation="
+...
+http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-2.5.xsd"
+...
+<jee:remote-slsb id="creditAgencyEJB" jndi-name="local/CreditAgency"
+business-interface="org.mule.example.loanbroker.credit.CreditAgency">
+    <jee:environment>
+      java.naming.factory.initial=org.openejb.client.LocalInitialContextFactory
+      java.naming.provider.url=rmi://localhost:1099 openejb.base=${openejb.base}
+      openejb.configuration=${openejb.configuration} logging.conf=${logging.conf}
+      openejb.nobanner=${openejb.nobanner}
+    </jee:environment>
+</jee:remote-slsb>
+...
+<flow name="CreditAgencyService">
+    <mule:inbound>
+        <mule:inbound-endpoint ref="CreditAgency" />
+    </mule:inbound>
+    <component>
+        <mule:spring-object bean="creditAgencyEJB" />
+    </component>
+</flow>
+...
+----
+
+For more information, see http://static.springframework.org/spring/docs/2.5.x/reference/ejb.html[Enterprise Java Beans (EJB) integration] and the http://static.springframework.org/spring/docs/2.5.x/reference/xsd-config.html#xsd-config-body-schemas-jee[jee schema reference] on the Spring site.

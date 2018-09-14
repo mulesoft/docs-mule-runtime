@@ -1,0 +1,176 @@
+= Mule Application Architecture
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, server, architecture, big picture, deploy
+
+[NOTE]
+This page describes typical application architecture in terms of flows, the default structure with which you build applications in Mule. Note, however, that Mule also supports batch jobs for large and streaming messages. Batch jobs can be combined with flows in the same application, but their structure and functionality differs from that described here. To learn more, see xref:3.6@batch-processing.adoc[Batch Processing].
+
+At the simplest level, Mule applications accept one message at a time, processing received messages in the order in which they are received. Such processing can lead to a variety of results. Sometimes, the Mule application returns an altered or replacement message to the source of the original message. Additionally or instead, the application can send the message in its original or altered form to one or more third parties. In still other cases, Mule can decline to process the message if it has not met specific criteria.
+
+Sophisticated Mule applications go far beyond this sort of linear message processing. Advanced mechanisms can process different messages in very different ways. Furthermore, you can construct applications that utilize:
+
+* various queue-and-thread arrangements to maximize throughput
+* transactionality or clustered nodes to maximize reliability
+* object stores to ensure data persistence
+* batch jobs to process large and streaming messages by breaking them up into records
+
+These represent only a fraction of the features you can implement through Mule applications.
+
+The following sections discuss *flow architecture* using the concept of building blocks within Anypoint Studio. Building blocks correspond to XML elements in the XML configuration file, but for the purposes of modeling flows and explaining concepts, this document uses building blocks and Studio graphical representations.
+
+== Flow Building Blocks
+
+Studio building blocks fall into several functional categories, some of which are processing blocks that comprise several building blocks themselves.
+
+Not all building blocks can occupy all positions within a flow. Often, the position of a building block in relation to the rest of the flow (or in relation to the building blocks in its immediate vicinity) greatly influences the behavior of the building block and how it must be configured.
+
+The following sub-sections detail the various types of building blocks (and processing blocks) that can populate a Mule Flow.
+
+=== Message Source
+
+The first building block in most flows is a *message source*, which receives messages from one or more external sources, thus triggering a *flow instance*. Each time it receives another message, the message source triggers another flow instance.
+
+Typically, a message source comes in the form of an xref:3.7@anypoint-connectors.adoc[*Anypoint Connector*].
+
+Sometimes the message source immediately places the incoming message into a queue. This allows the message source to close the receiver thread it used to accept the message, and immediately open another thread to accept another incoming message. The message just placed into the queue waits until it reaches the head of the queue for processing through the rest of the flow. Since the message is processed sequentially by two distinct threads (with an intervening wait inside the queue), start-to-finish transaction processing is not possible.
+
+image::message-source-and-queue.png[Message+source+and+queue]
+
+Sometimes, a message source can accept incoming messages from multiple transport channels. For instance, you can embed an HTTP endpoint and a Servlet endpoint into a composite message source. Or you can create a composite message source to receive both IMAP and POP3 mail. Either embedded connector can trigger a flow instance as soon as it receives an incoming message.
+
+Under certain conditions, flows do not need to be triggered by message sources. For instance, a xref:3.6@flow-reference-component-reference.adoc[Flow Reference Component] can trigger a different flow in the same application. Similarly, the xref:3.6@async-scope-reference.adoc[Async Scope] can trigger a another flow that executes asynchronously, (i.e. in parallel with the originating flow).
+
+=== Message Processors
+
+Typically, *message processors* are pre-packaged units of functionality that process messages in various ways. Message processors offer the following advantages:
+
+* generally, they don’t have to be custom-coded
+* multiple message processors can be combined into various structures that provide the exact functionality you need for your application
+
+You can assemble message processors into application (i.e., flow) sequences in two distinct ways:
+
+* by arranging icons on the Studio canvas
+* by inserting XML code into the application configuration file
+
+Message processors fall into a number of convenient categories, as the following table indicates:
+
+[%header,cols="2*"]
+|===
+|Category |Brief Description
+|*Connectors* |They provide a means for Mule applications to communicate with the outside world. Connectors often serve as message sources, but they can also appear elsewhere in a flow, performing operations that require data exchange outside the flow, or defining a final destination of the message.
+|*Scopes* |They enhance, in a wide variety of ways, the functionality of other message processors or functional groups of message processors known as *Processing Blocks*.
+|*Components* |They allow you to enhance a flow by attaching functionality such as logging, or displaying output. Alternatively, they facilitate integration with existing systems by providing language-specific "shells" that make custom-coded business logic available to a Mule application.
+|*Transformers* |They enhance or alter the message payload, properties, variables, or attachments.
+|*Filters* |Singly and in combination, they determine whether a message can proceed through an application flow.
+|*Flow Controls* |They specify how messages get routed among the various Message Processors within a flow. They can also process messages (i.e., aggregate, split, or resequence) before routing them to other message processors.
+|*Error Handlers* |They specify various procedures for handling exceptions under various circumstances.
+|*Miscellaneous* |This special category currently contains just one member: the *Custom Business Event* building block, which you place between other building blocks to record *Key Performance Indicator* (KPI) information, which you monitor through the Mule Console.
+|===
+
+After you have arranged the various building blocks in your flow into proper sequence, you may need to configure these message processors using one or both of the available options:
+
+* completing text fields in the properties editor in Studio's graphical interface
+* entering attribute values within the XML configuration code.  +
+
+=== Message Processing Blocks
+
+Mule provides several ways to combine multiple message processors into functional processing blocks.
+
+For instance, the *composite source* scope allows you to embed into a single message source two or more Anypoint Connectors, each one listening to a different channel. Whenever one of these listeners receives an incoming message, it triggers a flow instance and starts the message through the message processing sequence.
+
+Other building blocks known as *scopes* provide multiple ways to combine message processors into convenient functional groups that can:
+
+* make your XML code much easier to read
+* implement parallel processing
+* create reusable sequences of building blocks +
+
+=== Exchange Patterns
+
+Many Anypoint Connectors are endpoint-based, meaning they manifest as inbound endpoints (which always appear at the beginning of a flow) or outbound endpoints (which appear in the middle or end of a flow) to implement communication over a universally recognized protocol (HTTP, FTP, SMTP, etc). Inbound and outbound endpoints can implement one-way or request-response exchange patterns.
+
+When an inbound endpoint-based connector such as HTTP or VM are configured for a **request-response exchange pattern**, it effectively becomes a hybrid inbound-outbound endpoint. Even if other outbound endpoints exist to conduct data out of the flow, an inbound endpoint configured for a request-response exchange pattern also conducts data out of the flow by returning a response to the original sender of the message.
+
+image::request-response-endpoints.png[request+response+endpoints]
+
+When outbound endpoints are configured with request-response exchange patterns, they can exchange data with resources outside the flow or with a string of message processors entirely within the same Mule application.
+
+Not all endpoints can be configured for the request-response exchange pattern, and of those that can, request-response is the default exchange pattern for only some of them. When none of the endpoints in a main flow is configured to the request-response exchange pattern, the flow follows a **one-way** *exchange pattern* in which it receives incoming messages, but is not expected to provide any response to the original sender. However, the flow may send data to other parties such as a log file, a database, an email server, or a Web-based API.
+
+== Processing Strategies
+
+A processing strategy determines how Mule executes the sequence of message processors in your application. For example, when the message source is configured with a request-response exchange pattern, Mule sets the processing strategy to *synchronous,* which means that the entire flow gets executed on a single processing thread, thus ensuring that the entire sequence of message processors executes, and the client receives a response, as expected.
+
+By contrast, when the flow is configured for a one-way exchange pattern and is non-transactional (i.e. no response to the original message sender is required, and it isn’t necessary to verify that all steps in the flow have been completed), Mule sets the processing strategy to *queued asynchronous,* which has the potential to raise flow throughput. Under this processing strategy, the inbound endpoint places the incoming message into the queue as soon as it is received, then closes the receiver thread. When the message reaches the top of the queue, it resumes processing, but this time on a different thread. By implication, this sort of processing does not qualify as transactional end-to-end, because the transfer from one thread to the next means that the processing can not be rolled back if an exception is thrown.
+
+image::processing-strategies.png[processing+strategies]
+
+For further details, see xref:3.7@flow-processing-strategies.adoc[Flow Processing Strategies].
+
+== Exception Strategies
+
+An *exception strategy* determines how Mule responds if and when an error occurs during the course of message processing. In the simplest case, the error is simply logged to a file.
+
+You can configure a custom exception strategy to respond in a variety of ways to a variety of conditions. For example, if an exception is thrown after a message has been transformed, you can set Mule to commit the message as it existed after being transformed, but immediately before the error occurred, so that the message cannot inadvertently be processed twice.
+
+Studio provides four pre-packaged error handling strategies to handle exceptions thrown at various points during the message processing sequence. For details, see xref:3.7@error-handling.adoc[Error Handling].
+
+== Flow Architecture
+
+Mule flows are extremely flexible, so you can combine building blocks in many ways, often to achieve the same result. For many use cases, however, certain message processors tend to fall into loosely ordered patterns. For example, suppose you wanted to create an application that receives product catalog requests from a Web page then sends a PDF of the catalog back to the client who submitted the request. In addition, you want this flow to record the client’s customer information to a log file and record the transaction. Your flow might look something like the following:
+
+image::catalog-flow-schematic-2.png[]
+
+Note that you could embed the filter and the transformers inside the inbound endpoint, but placing them in the main flow sequence makes the sequence of events easier to “read” on the Studio Visual Editor canvas and in the XML-based application configuration file.
+
+image::mule-application-architecture.png[mule+application+architecture]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+
+    <flow name="Catalog_DownloaderFlow1" >
+        <http:inbound-endpoint address="http://localhost:8081/"/>
+        <mulexml:xml-to-object-transformer doc:name="XML to Object"/>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy" file="myScript.groovy"/>
+        </scripting:component>
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+== Flow Configuration
+
+Although flows are very flexible, you cannot place _any_ building block in _any_ position within a flow. The proximity or absence of certain building blocks within a sequence can determine whether a given building block can be placed at a certain point within a flow. Finally, depending where it resides in a flow, a given building block, especially an endpoint, can expose an significantly different set of attributes for configuration.
+
+If you choose to develop using the visual editor in Anypoint Studio, Studio keeps track of all these contingencies, and it will not let you place a building block icon where it is not allowed.
+
+Although it is impossible to cover all the possible sequences of building blocks that can produce workable flows, a typical flow might utilize the following sequence:
+
+. A *message source* consisting of one or more inbound endpoints or other streaming connectors triggers the flow each time it receives a message.
+. A **filter **may identify invalid messages and decline to pass them to the rest of the flow for processing.
+. A *transformer* can convert the incoming message into a data format consumable by the other message processors in the flow.
+. A *message enricher* can add certain vital information to a message. For instance, if a message arrives with an address attached, the message enricher might use the postal code to look up the associated telephone area code, then append this information to the message header for marketing purposes.
+. After the message has been “prepared” for processing, it is generally sent to some pre-packed or custom business logic (usually called a *component*) so that it can be processed in a manner appropriate for its particular content.
+. The final stages of a flow can vary considerably; some or all of the following can occur: +
+* Mule returns a response to the original sender of the message
+* Mule logs the results of the business processing to a database or sends them to some a third party
+
+Throughout the flow, you can do the following:
+
+* send messages to queues (even more than one type on the same flow)
+* specify threading models
+* call various other xref:3.7@flows-and-subflows.adoc[flows]  +
+
+== See Also
+
+* *NEXT STEP:* Learn about how xref:3.7@flows-and-subflows.adoc[flows and subflows] work together in an application.
+* Examine an xref:3.6@flow-architecture-advanced-use-case.adoc[advanced use case] showing a more complex flow architecture.

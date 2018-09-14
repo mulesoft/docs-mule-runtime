@@ -1,0 +1,146 @@
+= Using the DataSense Explorer
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+//35x
+Anypoint Studio includes a *DataSense Explorer* that surfaces information about the Mule message as it passes through your flow. The DataSense explorer lists information about the message payload, flow variables, session variables, inbound properties, and outbound properties of your message, relative to the building block you currently have selected on the canvas.
+
+Use the DataSense Explorer at design-time to:
+
+* Get quick insight into the contents of your payload and all of its metadata to ensure your message carries the information that later processing steps in your flow require
+* Understand how message processors act upon your message by comparing the state of the message before and after each building block processes it
+* Work with DataMapper to confirm that the input and output values of your transformed data match the expected values
+* Work with a message enricher scope to verify your enricher has successfully added the expected data to your message
+
+== Basic Anatomy
+
+The DataSense Explorer is a panel that appears in the lower right corner of the default Mule perspective in Anypoint Studio.
+
+To toggle it *on* and *off* click image:dsexplorer-icon.png[].
+
+As you select the building blocks on the Message Flow canvas, the DataSense Explorer displays information on the *In* tab about the payload, flow variables, session variables, inbound properties, and outbound properties that Mule detects as the message _arrives_ at that building block.
+
+Observe, for example, how the outbound properties differ from the moment when the message arrives at a Property Transformer to the moment when the message leaves the Property Transformer (see images below).
+
+*Before:*
+
+image::full-window.png[full+window]
+
+*After:*
+
+image::full-window-after.png[full+window-after]
+
+== Example
+
+This simple example illustrates how, when you manipulate your message using enrichers and transformers, the DataSense Explorer tracks the effects of the message processors on the payload and metadata of your message as it passes through your flow.
+
+image::full-flow.png[full+flow]
+
+In the XML Editor, enter:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+
+    xmlns:spring="http://www.springframework.org/schema/beans"
+
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+    <flow name="datasense-explorerFlow1" doc:name="datasense-explorerFlow1">
+
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+
+        <set-payload value="#[[&quot;Hello&quot;, &quot;World&quot;]]" doc:name="Set Payload"/>
+
+        <set-variable variableName="timestamp" value="#[server.dateTime]" doc:name="SetTimestamp"/>
+
+        <enricher  doc:name="Message Enricher" source="#[message.payload.color]" target="#[flowVars['colorchoice']]">
+
+            <processor-chain doc:name="Processor Chain">
+
+                <flow-ref name="datasense-explorerFlow2" doc:name="Flow Reference"/>
+
+                <logger level="INFO" doc:name="Logger 2"/>
+
+            </processor-chain>
+
+        </enricher>
+
+        <logger level="INFO" doc:name="Logger 3"/>
+
+    </flow>
+
+    <flow name="datasense-explorerFlow2" doc:name="datasense-explorerFlow2">
+
+        <set-payload value="#[[&quot;type&quot;:&quot;shoe&quot;,&quot;size&quot;:20,&quot;color&quot;:&quot;blue&quot;]]" doc:name="Set New Payload"/>
+
+        <logger level="INFO" doc:name="Logger 1"/>
+
+    </flow>
+
+</mule>
+----
+
+The table below tracks the message state as it arrives at each building block shown on the canvas.
+
+[%header,cols="34,33,33"]
+|===
+|When the message arrives at the... |the message state is... |because...
+
+|image:me-1.png[] |image:metadata1.png[] |At the point that the message arrives at the HTTP inbound connector, Mule does not yet have any information about the payload or its metadata.
+
+|image:set-payload-bb.png[Set-payload-bb] |image:metadata2.png[]
+|The message leaves the inbound connector with a set of inbound properties that are set by the message source (HTTP) and one outbound property reflecting the default encoding type.
+
+
+|image:set-timestamp-bb.png[] |image:de-3-ann.png[DE-3-ann] a|The previous message processor set a payload of type List, which DataSense Explorer now reflects as the message arrives at the following message processor.
+
+|image:me-5.png[]
+|image:de-4-ann.png[DE-4-ann]
+|In the previous step, the Variable Transformer set a flow variable called timestamp, which is now visible in the DataSense explorer as the message reaches this flow reference building block. Note that you can expand the timestamp variable to view all the components accessible via the #[server.dateTime] expression used for this variable:
+image:timestamp.png[]
+
+
+|image:logger1-1.png[] |image:me7-ann.png[]
+|The xref:3.6@flow-reference-component-reference.adoc[flow reference] in the previous step sent the message to a new flow. Note that the variables and properties are not available to the message as it enters this new flow, because they were only valid for the flow in which they were set.
+
+| - |image:metadata6.png[] |The Set Payload transformer in the previous step set the payload as a map with three elements. DataSense Explorer shows the map keys and types.
+
+|image:me-8.png[] |image:me-7-ann.png[ME-7-ann]
+|When processing is finished in the flow referenced by the flow reference element, the message returns to the original flow with its newly set payload. Compare the display in the DataSense Explorer for this logger to the previous logger. Note that the flow variable and the properties are available to the message again, now that it has returned to this flow.
+
+|image:enricherscope.png[] |image:metadata8.png[]
+
+a|The Enricher acts on the message after processing within its scope is completed. Click on the Message Enricher header bar to view the message as it is about to be enriched. Note that the Payload is once again a List, because the Enricher inputs and outputs the payload from the message processor before its scope, not from the contents of its scope. However, the configuration of the enricher acts upon the contents of its scope. In this case, the enricher extracts the key "color" from the map and sets it as a flow variable, "colorchoice":
+image:enricher-configuration.png[]
+
+The results are visible in the DataSense Explorer in the next building block.
+
+|image:logger3.png[] |image:metadata9.png[]
+|Observe that the flow variable colorchoice, added by the Enricher, now appears in the DataSense Explorer.
+
+|===
+
+== Tips
+
+* The DataSense Explorer displays only the payload and metadata information that Anypoint Studio can determine at design-time. Thus, for example, imagine you set a session variable on the message in one flow. That session variable is not visible in the DataSense Explorer in another flow within the same application because at design-time, Studio cannot determine the message origin of a flow or subflow and thus cannot predict whether the session variable would propagate to that flow. To observe the details of how your session variables move through your message, use the Visual Debugger to inspect your message in a controlled test run of your application.
+* Hover over the items listed in the DataSense Explorer for more information. For properties or variables that you set explicitly in your flow with transformers and enrichers, the hovertext indicates the name of the building block earlier in the flow that was responsible for adding that metadata.
+
+image::property-was-defined-in.png[property+was+defined+in]
+
+== See Also
+
+* xref:3.7@mule-message-structure.adoc[Mule message]
+* xref:5@studio::studio-visual-debugger.adoc[Debug mode]
+* xref:3.7@mule-expression-language-mel.adoc[Mule Expression Language]

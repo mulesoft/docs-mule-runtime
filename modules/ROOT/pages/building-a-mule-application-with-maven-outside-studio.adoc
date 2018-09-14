@@ -1,0 +1,240 @@
+= Building a Mule Application with Maven outside Studio
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This guide walks you through creating  a Mule Application project from scratch using a Maven archetype. It covers generating a project template, revising the configuration to create a simple "Hello World" application, manually maintaining its POM file, then building and deploying the project.
+
+== Assumptions
+
+The document assumes you have downloaded http://maven.apache.org/[Apache Maven] and are familiar with using it to build and maintain projects. Read more about xref:using-maven-with-mule.adoc[Using Maven with Mule].
+
+== Configuring Maven
+
+Add the two blocks of code to the file `settings.xml` (usually in your Maven `conf` or `$HOME/.m2` directory)
+
+This will have Maven allow you to execute Mule plugins:
+
+*settings.xml*
+
+[source,xml,linenums]
+----
+<settings>
+    <pluginGroups>
+        <pluginGroup>org.mule.tools</pluginGroup>
+    </pluginGroups>
+    ...
+</settings>
+----
+
+This will tell your Maven instance where to find the Mule repositories:
+
+*settings.xml*
+
+[source,xml,linenums]
+----
+<profile>
+    <id>Mule Org</id>
+    <activation>
+        <activeByDefault>true</activeByDefault>
+    </activation>
+    <repositories>
+        <repository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Repository</name>
+            <url>https://repository-master.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>mulesoft-snapshots</id>
+            <name>MuleSoft Snapshot Repository</name>
+            <url>https://repository-master.mulesoft.org/snapshots/</url>
+            <layout>default</layout>
+        </repository>
+    </repositories>
+</profile>
+----
+
+[TIP]
+If you need to add dependencies that are not included (for example to the Salesforce connector), or if you're using Mule Enterprise and need the enterprise repositories, see xref:configuring-maven-pom-files-and-settings.adoc[Configuring Maven POM Files and Settings].
+
+== Creating a Project Template
+
+. Open a command shell and navigate to the directory where you want to create your project.
+. Execute the *mule-project-archetype* as shown. If this is your first time running this command, Maven downloads the archetype for you.
++
+
+[source,text,linenums]
+----
+mvn mule-project-archetype:create -DartifactId=helloWorld -DmuleVersion=3.5.0
+----
++
+
+[NOTE]
+====
+*Running the archetype*
+
+Maven uses by default the latest available version of the archetype. This can cause problems if you want to create a project for an earlier version of Mule. In this case, run the mule-project-archetype specifying the full version of the plugin like this:
+
+[source,text,linenums]
+----
+mvn org.mule.tools:mule-project-archetype:3.1.1:create ...
+----
+====
++
+
+At minimum, you pass in two system parameters:
+
+* *`artifactId`:* The short name for the project (such as myApp). This should be a single word in lower camel case with no spaces, periods, hyphens, etc.
++
+
+[NOTE]
+*artifactId* +
+ +
+The artifactId can contain characters such as underscore or hyphen. However, the plug-in will convert the name into a usable form suitable for Java. For example, if the argument is specified as **-DartifactId=My#Awesome-Mule_Project**, the project will be created in a directory of that name, but the project name will be *MyAwesomeMuleProject* and the package name will be *.myawesomemuleproject*
+
+* *`muleVersion`:* The version of the Mule project archetype you want to use. This will also be the default Mule version used for the generated artifact. +
+
+. The plugin asks a series of questions. The table below shows a set of possible responses.
++
+
+[%header,cols="2*"]
+|===
+|Question |Answer
+|Provide a description of what the project does. |`This is a basic "Hello, World" test project.`
+|Which version of Mule is this project targeted at? |`3.5.0`
+|What is the base Java package path for this project? a|com/mycompany/project
+|Which Mule transports do you want to include in this project? |`http`
+|Which Mule modules to you want to include in this project? |(Leave blank.)
+|===
++
+
+You can also choose to run this archetype in "silent mode" by including -DinteractiveMode=false, then passing in any of the following parameters.
++
+
+[%header,cols="34,33,33"]
+|===
+|Name |Example |Default Value
+|groupId |-DgroupId=org.mule.application.<artifactId> |org.mule.application.<artifactId>
+|packagePath |-DpackagePath=org/mule/application |none
+|transports |-Dtransports=http,vm |cxf,file,http,jdbc,jms,stdio,vm
+|muleVersion |-DmuleVersion=3.5.0 |none
+|packageName |-DpackageName=project |none
+|description |-Ddescription="My Hello World app" |none
+|modules |-Dmodules=xml,scripting |client,management,scripting,sxc,xml
+|basedir |-Dbasedir=/projects/mule/tools |<current dir>
+|package |-Dpackage=org/mycompany/project |none
+|artifactId |-DartifactId=helloWorld |<artifactId>
+|version |-Dversion=1.0-SNAPSHOT |<muleVersion>
+|===
++
+
+. After you have answered all the questions, the archetype creates a directory using the project name you specified. This directory includes:
+
+..  a POM file for building with Maven
+..  a Mule configuration file ( `src\main\app\mule-config.xml` ) that includes the namespaces for the transports and modules you specified and has placeholder elements for creating your first flow
+..  a `package.html` file under `src\main\java` using the package path you specified, i.e. `src\main\java\com\mycompany\project\package.html`
+..  some template files under `src\test` to help you get started creating a unit test for the project
+..  A new `MULE-README.txt` file in the root of your project, explaining what files were created
+
+== Creating a Mule Application from the Template
+
+. Open *src/main/app/mule-config.xml*. Delete the flow that exists by default and add this one:
++
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost"
+port="8081" />
+    <set-payload value="Hello World!"/>
+</flow>
+----
+
+. Save this mule-config.xml. You now have a working project that can be packaged and deployed.
+
+
+== Managing Dependencies
+
+If you add logic into your project that relies on a dependency that isn't already included in the POM file generated by the archetype, you have to modify your POM file manually to add this dependency, as described here. This example walks you through revising your project test case in a way that requires an additional Maven dependency: the https://code.google.com/p/rest-assured/[REST-assured DSL] .
+
+. Open the example test case file, src/test/java/com/mycompany/project/helloWorld/HelloWorldTestCase.java and replace the existing code with the following:
++
+
+[source,java,linenums]
+----
+package com.mycompany.project.helloworld;
+
+import static org.junit.Assert.*;
+import static com.jayway.restassured.RestAssured.*;
+import org.junit.Test;
+import org.mule.tck.junit4.FunctionalTestCase;
+import org.apache.commons.cli.ParseException;
+
+public class HelloWorldTestCase extends FunctionalTestCase {
+    private static String MESSAGE = "Hello world!";
+
+    @Override
+    protected String getConfigResources()
+    {
+    return "mule-config.xml";
+    }
+
+    @Test
+    public void dependencyClientTestCase() throws Exception
+    {
+    String response = get("http://localhost:8081").body().asString();
+    assertEquals(MESSAGE, response);
+    }
+}
+----
++
+
+Notes: +
+* Line 4: Imports REST-assured +
+* Lines 21-22: use REST-assured
+
+. Add the following dependencies to your pom.xml file, located in the application's root folder.
++
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>com.jayway.restassured</groupId>
+  <artifactId>rest-assured</artifactId>
+  <version>2.3.1</version>
+  <scope>test</scope>
+  <exclusions>
+    <exclusion>
+      <groupId>org.codehaus.groovy</groupId>
+      <artifactId>groovy</artifactId>
+    </exclusion>
+  </exclusions>
+</dependency>
+<dependency>
+  <groupId>org.codehaus.groovy</groupId>
+  <artifactId>groovy-all</artifactId>
+  <version>2.2.1</version>
+  <scope>test</scope>
+</dependency>
+<dependency>
+  <groupId>commons-cli</groupId>
+  <artifactId>commons-cli</artifactId>
+  <version>1.1</version>
+</dependency>
+----
+
+. While in the directory where the pom.xml file resides, package your Mule project from the command line by executing the following syntax:
++
+`mvn package`
++
+The maven-mule-plugin packages the project in a `.` `zip` file.  Copy the `.zip` file to the `apps` folder of your standalone Mule ESB instance to run the application.
+. The console should print *BUILD SUCCESS*.  +
++
+image::build-success-image-1.png[build-success-image(1)]
+
+== See Also
+
+* Read more about xref:using-maven-with-mule.adoc[Using Maven with Mule].
+* Learn how to xref:importing-a-maven-project-into-studio.adoc[import an existing Maven project into Anypoint Studio].
+* Access additional Maven xref:maven-reference.adoc[reference] and xref:configuring-maven-pom-files-and-settings.adoc[configuration] information.

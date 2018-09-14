@@ -1,0 +1,95 @@
+= Request-Reply Scope
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: request reply, asynchronous,
+
+The **Request-Reply** scope enables you to embed a "pocket" of asynchronous processing within a Mule flow. This functionality enables you to receive a response from an asynchronous flow without hardcoding the destination of the response. For example, you can use request-reply to convert a **one-way** VM or JMS flow to a **request-response** flow without having to change it's configuration.  In other words, the request-reply converts part of a synchronous process into an asynchronous one.
+
+
+== Assumptions
+
+This document assumes that you understand the difference between xref:3.7@flows-and-subflows.adoc[synchronous and asynchronous flows]. Furthermore, you're also familiar with xref:3.6@scopes.adoc[Scopes] in general.
+
+== Basic Anatomy
+
+Request-reply consists of two parts:
+
+* the *request* portion wraps the connector or outbound connector which submits an asynchronous request to another flow or an external resource
+* the *response* portion wraps the connector or inbound connector which receives an asynchronous response from another flow or an external resource
+
+image::request-reply-scope-1.png[request+reply+scope+1]
+
+Request-reply obviates the need to explicitly reference the outbound- and inbound-connectors to each other. When Mule asynchronously sends a request via the VM outbound-connector in the Request-Reply scope, it implicitly sets the message's outbound property – `MULE_REPLYTO` – to the URL of its corresponding inbound connector. In other words, in the example above, you do not need to include a reference in the VM in the Reply portion to reference the VM in the Request portion which submitted the request.
+
+[TIP]
+ VM or JMS connectors that are set up to be *transactional* can't be used inside a request-reply scope. Both VM and JMS connectors allow you to perform transactions of several different types, but none of these are compatible with how the request-reply scope works. This is because the request that is to be sent out by the request-response isn't sent until the transaction is committed – but the transaction in turn is not committed until the entire flow has been executed (including the execution of the request-response scope). This leads to a situation where both processes are blocking each other: the flow isn't fully executed because it's still waiting for the response on the request-reply scope, but this response will never arrive since the request hasn't been sent yet (as mentioned before, this message is sent only once the transaction is committed).
+
+== Configuring Request-Reply
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. Add a *Request-Reply* scope to your flow, then configure the attributes according to the table below. +
+
++
+image::req-rep-config.png[req_rep_config]
++
+[%header,cols="4*"]
+|===
+|Field |Value |Req'd |Description
+|*Display Name* |string |x |Defines unique value for the element in the application.
+|*Prefix of the Object Store* |string |  |Defines the object store name prefix in which Mule should store request-reply messages.
+|*Timeout (ms)* |integer |  |Defines the time the asynchronous process remains alive before timing out. (i.e. defines how long the inbound-connector waits for a response)
+|===
+
+. Add a or connector (the outbound-connector) to the *Request* portion of the scope, then add a connector (the inbound-connector) to the *Response* portion of the scope. Configure each connector to submit requests and receive responses, respectively. The scope ensures that the activity that occurs within it proceeds asynchronously, relative to the rest of the flow.
++
+image::request-response-2.png[request+response+2]
+
+[discrete.view]
+=== XML Editor or Standalone
+
+
+. Add a *request-reply* element to your flow, then configure the attributes according to the table below.
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+
+    <flow name="request-replyFlow1" doc:name="request-replyFlow1">
+        <http:inbound-endpoint host="localhost" port="8081" path="/" />
+        <request-reply doc:name="Request-Reply">
+            <vm:outbound-endpoint exchange-pattern="one-way" path="request" doc:name="VM"/>
+            <vm:inbound-endpoint exchange-pattern="one-way" path="reply" doc:name="VM"/>
+        </request-reply>
+    </flow>
+</mule>
+----
++
+[%header%autowidth.spread]
+|===
+|Element |Attribute |Value |Req'd |Description
+|*`request-reply`* |`doc:name` |string |x |Defines unique value for the element in the application.
+|*`request-reply`* |`storePrefix` |string |  |Defines the object store name prefix in which Mule should store request-reply messages.
+|*`request-reply`* |`timeout` |integer |  |Defines the number of milliseconds the asynchronous process remains alive before timing out. (i.e. defines how long the inbound-connector waits for a response)
+|===
+. As a child element of the request-reply element, add an *outbound connector* or connector to define how Mule submits a request to an external source.
+. As a child element of the request-reply element, add an *inbound connector* or connector to define how Mule receives a response to an external source. The scope ensures that the activity that occurs within it proceeds asynchronously, relative to the rest of the flow.
+
+=====
+
+== See Also
+
+* Learn more about xref:3.7@flows-and-subflows.adoc[synchronous and asynchronous flows].

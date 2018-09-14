@@ -1,0 +1,239 @@
+= Auto-Paging in Anypoint Connectors
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+When an Anypoint Connector in your flow produces output that is significantly large, processing it may cause significant performance delays in your application. To prevent this from happening, you can split the connector's output into several "pages" for more efficient processing. Within Mule this behavior in an Anypoint Connector is referred to as "auto-paging" because the connector automatically paginates its output to prevent memory issues. However, if memory use is not an issue, you can forgo any auto-paging configuration and simply treat the entire payload as a single unit.
+
+*<<Complete Example>>*
+
+== Configuring Auto-Paging
+
+The table below lists the Anypoint Connectors which support auto-paging functionality. (Additionally, you can use auto-paging with any custom-built connector which supports auto-paging functionality.)
+
+[%header,cols="2*"]
+|===
+|Connectors with Auto-Paging |Bundled with Studio
+|Box |
+|Google Calendars |
+|Google Drive |
+|Google Contacts |
+|Google Prediction |
+|Google Spreadsheets |
+|Google Tasks |
+|Microsoft Dynamics CRM (on Demand) |
+|Microsoft Dynamics CRM (on Premise) |
+|NetSuite |
+|QuickBooks |
+|Salesforce |✔
+|===
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. To make the *Paging* section visible, you must first select an *Operation* which outputs a collection, for example `Get groups`. Otherwise, Studio does not display the Paging section in the properties editor.
+. Enter an integer in the *Fetch Size* field to indicate the batch size of objects in a "page". For example, set the Fetch Size to `50` to return information in batches of 50 objects. +
+
++
+image::googlecontacts1.png[]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Default Value |Description
+|*Fetch Size* |100 |Specify the number of objects that Mule returns in each page.
+|===
+
+[discrete.view]
+=== XML Editor
+
+. To the connector in your flow, add a `fetchSize` attribute.
+. Set the value of the attribute to an integer to indicate the batch size of objects in a "page". For example, set `fetchSize` to `50` to return information in batches of 50 objects.
+
+[source,xml,linenums]
+----
+<flow name="Flow1">
+    <google-contacts:get-groups config-ref="google" doc:name="paging" fetchSize="50"/>
+</flow>
+----
+
+[%header%autowidth.spread]
+|===
+|Property |Default Value |Description
+|`fetchSize` |100 |Specify the number of objects that Mule returns in each page.
+|===
+=====
+
+=== Handling Auto-Paged Output
+
+When you use a connector that employs paging, Mule creates an iterator object that splits the payload into manageable pages. Regardless of the page-size, the iterator pushes out objects one at a time, then fetches the next pages on demand. To process the paginated output, you must use elements in your flow that can handle collections, such as a xref:3.6@foreach.adoc[Foreach scope], a collection splitter, a xref:5@studio::datamapper-concepts.adoc[DataMapper] transformer, etc. Because Mule processes the set of pages one page at a time, it prevents memory usage from exceeding its limits.
+
+=== Example
+
+[.ex]
+=====
+[discrete.view]
+=== Studio visual Editor
+
+. Drag an *HTTP* endpoint onto the canvas
+. Set its *Path* to `authenticate`. +
+. Add a *Google Contacts* connector to the flow, then set its *Operation* to `Authorize.`
+. Create a *Google Contacts* *Global Element,* then configure its *Consumer Key* and *Consumer secret*.
+. Create a new flow with a new *HTTP* endpoint.
+. Set its *Path* to `get_contacts`.
+. Add a new *Google Contacts connector* in the new flow.
+. Set its *Operation* to `Get Contacts` and its *Fetch Size* to `50`. +
+
++
+image::googlecontacts2.png[]
++
+
+. Add a *Foreach* *scope* after the Google Contacts connector.
+. Add a *Logger* inside the Foreach scope. +
+
++
+image::autopaging-flow.png[autopaging+flow]
++
+
+When a message reaches the Google Contacts connector, the Logger outputs a separate message for each object. If there are more than 50 objects, Mule paginates the output.
+
+[discrete.view]
+=== XML Editor
+
+. Create a *google-contacts* *Global Element,* then define its *Consumer Key* and *Consumer secret*. +
++
+
+[source,xml,linenums]
+----
+<google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+    <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+</google-contacts:config-with-oauth>
+----
+
++
+. Create an *HTTP* connector and set the value of its *Path* to `authenticate`.
++
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint host="localhost" port="8080" path="authenticate" doc:name="HTTP"/>
+----
+
++
+. Add a *Google Contacts connector* setting its *operation* to `authorize.`
++
+
+[source,xml,linenums]
+----
+<google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/>
+----
+
+. Create a new flow with a new *HTTP* endpoint. Set the value of its *Path* to `get_contacts`, and reference the same configuration element as the other connector.
++
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint host="localhost" port="8080" path="get_contacts" doc:name="HTTP"/>
+----
+
+. Add a new *Google Contacts connector* in the new flow setting its *operation* to `get-contacts` and *fetchSize* to `50`.
++
+
+[source,xml,linenums]
+----
+<google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+----
+
+. After the Google Contacts connector, add a *Foreach* to the flow, then add a *Logger* as a child element inside Foreach element.
+
+[source,xml,linenums]
+----
+<foreach doc:name="For Each">
+    <logger message="#[message.payload.getEmailAddresses()]" level="INFO" doc:name="Logger"/>
+</foreach>
+----
+
+When a message reaches the Google Contacts connector, the Logger outputs a separate message for each object. If there are more than 50 objects, Mule paginates the output. See below for a <<Complete Example>>.
+=====
+== Additional MEL Expressions
+
+When working with paginated output in a flow, you can use MEL expressions to call two functions.
+
+[%header%autowidth.spread]
+|===
+|Function |Syntax |Description
+|*size* |`#[payload.size()]` |Returns the total amount of available objects.
+|*close* |`#[payload.close()]` |Abort iteration. +
+This function frees up the resources that auto-paging is using.
+|===
+
+==  Example
+
+You can call both the `size()` and the `close()` functions in any expression that supports MEL. The simple example below illustrates how to call `size()` in a logger so that it records the total amount of objects that the connector is outputting.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:google-contacts="http://www.mulesoft.org/schema/mule/google-contacts" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/google-contacts http://www.mulesoft.org/schema/mule/google-contacts/1.7.4/mule-google-contacts.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+
+    <google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+        <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+    </google-contacts:config-with-oauth>
+
+    <flow name="authorizationAndAuthenticationFlow">
+        <http:inbound-endpoint host="localhost" port="8080" path="authenticate" doc:name="HTTP"/>
+        <google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/>
+    </flow>
+    <flow name="googleContactsTest" doc:name="googleContactsTest">
+        <http:inbound-endpoint host="localhost" port="8080" path="get_contacts" doc:name="HTTP"/>
+        <google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+        <logger message="#[payload.size()]" level="INFO" doc:name="Log_Size"/>
+        <foreach doc:name="For Each">
+             <logger message="#[payload.getEmailAddresses()]" level="INFO" doc:name="Log_Size"/>
+        </foreach>
+    </flow>
+</mule>
+----
+
+== Complete Example
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:google-contacts="http://www.mulesoft.org/schema/mule/google-contacts" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/google-contacts http://www.mulesoft.org/schema/mule/google-contacts/1.7.4/mule-google-contacts.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+
+    <google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+        <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+    </google-contacts:config-with-oauth>
+
+    <flow name="authorizationAndAuthenticationFlow">
+        <http:inbound-endpoint host="localhost" port="8080" path="authenticate" doc:name="HTTP"/>
+        <google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/>
+    </flow>
+    <flow name="googleContactsTest" doc:name="googleContactsTest">
+        <http:inbound-endpoint host="localhost" port="8080" path="get_contacts" doc:name="HTTP"/>
+        <google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+         <logger message="#[payload.size()]" level="INFO" doc:name="Log_Size"/>
+         <foreach doc:name="For Each">
+            <logger message="#[payload.getEmailAddresses()]"  level="INFO" doc:name="Logger"/>
+        </foreach>
+    </flow>
+</mule>
+----
+
+== See Also
+
+* Learn more about xref:3.6@scopes.adoc[Scopes].
+* Learn more about the xref:3.6@foreach.adoc[Foreach] scope.
+* Need to handle really large payloads? Learn about xref:3.6@mule-high-availability-ha-clusters.adoc[Mule High Availability HA Clusters].

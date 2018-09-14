@@ -1,0 +1,322 @@
+= Configuring Reconnection Strategies
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint, studio, esb, on premises, on premise, reconnection strategies, retry policies
+
+[NOTE]
+====
+In Mule 2.x, *Reconnection Strategies* were referred to as "Retry Policies," because the underlying classes provided a generic framework for retrying the same operation over and over again. However, this terminology generated significant confusion among users who expected messages to get re-delivered and message exchanges to be re-executed.
+
+To thwart further misunderstanding, we have, as of Mule 3.x, resumed use of the term "Reconnection Strategies."
+====
+
+Reconnection Strategies specify how a connector behaves when its connection fails. You can control how Mule attempts to reconnect by specifying a number of criteria:
+
+* The type of exception
+
+* Number and frequency of reconnection attempts
+
+* The notifications generated, and more
+
+For example, if the connection for an FTP transport goes down, the associated polling receiver tries to connect every 1000 ms (or whatever interval has been specified). This consumes resources and generates increasingly large log files because, typically, a connection continues to fail until you stop the reconnection process manually. Additionally, this reconnection behavior leaves the system in an unstable state, because the connector is theoretically "connected," even though it's failing repeatedly, which is to say, continuously.
+
+With a reconnection strategy, you can better control the behavior of a failed connection, by configuring it, for example, to re-attempt the connection only once every 15 minutes, and to give up after 30 attempts. You can also send an automatic notification to your IT administrator whenever this reconnection strategy goes into effect. You can even define a strategy that attempts to reconnect only during business hours. Such a setting can prove useful if your server is frequently shut down for nightly maintenance.
+
+For an FTP transport configured with synchronous inbound and outbound endpoints, but no reconnection strategy, all inbound messages fail if the outbound connection goes down, because the inbound endpoint continues to receive messages. By contrast, with a reconnection strategy in place, the system loses the first message that fails (since FTP is not transactional) but once the reconnection strategy goes into effect, no further messages are accepted by the inbound endpoint (and thus, none are lost) until the connection is re-established.
+
+[NOTE]
+====
+*For both Mule ESB Enterprise and Community _later than Mule 3.2_, you don't need to specify the `mule-ee.xsd` schema, since reconnection strategies are now built in to the core schema.*
+
+Mule ESB Enterprise _prior to version 3.2_ provides standard reconnection strategies that you can configure using the mule-ee.xsd schema:
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="iso-8859-1"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/3.1/mule-ee.xsd">
+----
+
+For Mule ESB Community _prior to Mule 3.2_, you must create your own strategies and configure them using standard Spring syntax rather than the mule-ee.xsd schema.
+====
+
+== Using XML to Configure Reconnection Strategies
+
+This section describes the reconnection strategies you can configure by editing your Mule application's XML configuration file.
+
+=== Reconnect
+
+A reconnection strategy that allows the user to configure how many times a reconnection should be attempted and how long to wait between attempts.
+
+.Attributes of <reconnect...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|blocking |boolean |no |true |If false, the reconnection strategy will run in a separate, non-blocking thread
+|frequency |long |no |2000 |How often (in ms) to reconnect
+|count |integer |no |2 |How many reconnection attempts to make
+|===
+
+.Child Elements of <reconnect...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|abstract-reconnect-notifier |0..1 |A placeholder for a reconnection notifier element. The RetryNotifier interface is a callback that allows actions to be performed after each reconnection attempt, e.g., firing server notification events on success or failure.
+|===
+
+For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect count="5" frequency="1000"/>
+</jms:activemq-connector>
+----
+
+=== Reconnect forever
+
+A reconnection strategy that retries an infinite number of times at the specified frequency.
+
+.Attributes of <reconnect-forever...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|blocking |boolean |no |true |If false, the reconnection strategy will run in a separate, non-blocking thread
+|frequency |long |no |2000 |How often (in ms) to reconnect
+|===
+
+.Child Elements of <reconnect-forever...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|abstract-reconnect-notifier |0..1 |A placeholder for a reconnection notifier element. The RetryNotifier interface is a callback that allows actions to be performed after each reconnection attempt, e.g., firing server notification events on success or failure.
+|===
+
+For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect-forever frequency="5000"/>
+</jms:activemq-connector>
+----
+
+=== Reconnect custom strategy
+
+A user-defined reconnection strategy.
+
+.Attributes of <reconnect-custom-strategy...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|blocking |boolean |no |true |If false, the reconnection strategy will run in a separate, non-blocking thread
+|class |class name |yes |  |A class that implements the RetryPolicyTemplate interface.
+|===
+
+.Child Elements of <reconnect-custom-strategy...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|abstract-reconnect-notifier |0..1 |A placeholder for a reconnection notifier element. The RetryNotifier interface is a callback that allows actions to be performed after each reconnection attempt, e.g., firing server notification events on success or failure.
+|spring:property |0..* |
+|===
+
+For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect-custom-strategy class="org.mule.retry.test.TestRetryPolicyTemplate">
+        <spring:property name="fooBar" value="true"/>
+        <spring:property name="revolutions" value="500"/>
+    </reconnect-custom-strategy>
+</jms:activemq-connector>
+----
+
+=== Non-Blocking Reconnection
+
+By default, a reconnection strategy will block Mule application message processing until it is able to connect/reconnect. When you enable *non-blocking* reconnection, the application does not need to wait for all endpoints to re-connect before it restarts. Furthermore, if a connection is lost, the reconnection takes place on a thread separate from the application thread. Note that such behavior may or may not be desirable, depending on your application needs.
+
+Any reconnection strategy can be made non-blocking simply by setting the attribute `blocking="false"`. For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect frequency="3000" blocking="false" />
+</jms:activemq-connector>
+----
+
+If not specified, the `blocking` attribute defaults to `"true"`.
+
+[NOTE]
+====
+In Mule 2.x, the attribute `asynchronous` was used for this purpose. The new attribute `blocking` is the inverse of `asynchronous`, so a Mule 2.x configuration which specified `asynchronous="true"` should be changed to `blocking="false"` for Mule 3.x.
+====
+
+=== Transactions
+
+When xref:3.6@transaction-management.adoc[transactions] are properly configured, any message being routed by Mule at the moment a reconnection strategy goes into effect will not be dropped. Instead, the transaction is rolled back and only committed once the transport successfully reconnects via the reconnection strategy.
+
+=== Reconnect Notifiers
+
+A reconnect notifier is called for each reconnection attempt and is also configurable. You can create a custom reconnect notifier that implements the  org.mule.api.retry.RetryNotifier interface.
+
+==== Reconnect notifier
+
+Fires a ConnectionNotification upon each reconnection attempt.
+
+.Attributes of <reconnect-notifier...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|===
+
+.Child Elements of <reconnect-notifier...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|===
+
+For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect>
+        <reconnect-notifier/>
+    </reconnect>
+</jms:activemq-connector>
+----
+
+==== Reconnect custom notifier
+
+A user-defined reconnection notifier.
+
+.Attributes of <reconnect-custom-notifier...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|class |class name |yes |  |A class that implements the RetryNotifier interface.
+|===
+
+.Child Elements of <reconnect-custom-notifier...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|spring:property |0..* |
+|===
+
+For example:
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect>
+        <reconnect-custom-notifier class="org.mule.retry.test.TestRetryNotifier">
+            <spring:property name="color" value="red"/>
+        </reconnect-custom-notifier>
+    </reconnect>
+</jms:activemq-connector>
+----
+
+=== Configuring Separate Connectors for Inbound and Outbound Endpoints
+
+A connector reconnection strategy is used for both inbound and outbound connections. If you require different behaviors for inbound and outbound connections, you can achieve this by configuring a different connectors for each strategy, then reference one connector each from the inbound and outbound endpoint, respectively.
+
+=== Default Reconnection Strategy
+
+The default reconnection strategy is used for any connector that does not have reconnection explicitly configured. You can set the default strategy using the `<configuration>` element:
+
+=== Creating a Custom Reconnection Strategy
+
+To create a custom reconnection strategy, implement the interface RetryPolicy, where the method `PolicyStatus applyPolicy(Throwable cause)` takes some action based on the type of exception, then returns PolicyStatusto indicate whether the policy has been exhausted or should continue to retry. You also create a RetryPolicyTemplate, which is what you actually configure on the connector. Typically, the template inherits from AbstractPolicyTemplate, and the method `RetryPolicy createRetryInstance()` returns an instance of your custom `RetryPolicy`. At runtime, a new instance of the `RetryPolicy` is created each time the policy goes into effect, thereby resetting any state information it may contain, such as counters. For example:
+
+[source,java,linenums]
+----
+package com.acme.retry;
+
+public class AstronomicalRetryPolicyTemplate extends AbstractPolicyTemplate
+{
+    int totalPlanets;
+
+    public RetryPolicy createRetryInstance()
+    {
+        return new AstronomicalRetryPolicy(totalPlanets);
+    }
+
+    protected static class AstronomicalRetryPolicy implements RetryPolicy
+    {
+        int totalPlanets;
+
+        public AstronomicalRetryPolicy(int totalPlanets) { this.totalPlanets = totalPlanets; }
+
+        public PolicyStatus applyPolicy(Throwable cause)
+        {
+            if (AstronomyUtils.getPlanetsAligned() == totalPlanets)
+            {
+                return PolicyStatus.policyExhausted(cause);
+            }
+            else
+            {
+                Thread.sleep(5000);
+                return PolicyStatus.policyOk();
+            }
+        }
+    }
+
+    public int getTotalPlanets() { return totalPlanets; }
+    public void setTotalPlanets(int totalPlanets) { this.totalPlanets = totalPlanets; }
+}
+----
+
+=== Configuring Reconnection Strategies Using Studio
+
+Within the Studio environment, you typically set reconnection strategies for your application through global connectors. In rare cases where you want to set _different_ reconnection strategies for the inbound and outbound endpoints in your flow, MuleSoft recommends that you configure two separate global connectors, then associate one with the inbound endpoint and the other with the outbound endpoint.
+
+[TIP]
+====
+*Best Practice*
+
+In addition to setting reconnection strategies on most connectors (Ajax, File, and VM are notable exceptions), you have the option to set them on global endpoints. (Once again, Ajax represents a major exception, which means that you can't set a reconnection strategy on Ajax). However, MuleSoft recommends that whenever possible, you set your reconnection strategies on global connectors, rather than global endpoints, because this Best Practice generally allows you to reuse a once-written reconnection strategy again and again across all your flows and Mule projects.
+
+The only situation in which MuleSoft recommends configuring a reconnection strategy on a global endpoint(rather than a global connector) involves Jetty, whose connector doesn't support reconnection. This is why MuleSoft recommends the Jetty global endpoint instead.
+====
+
+=== About the Reconnection Strategy Tab
+
+The *Properties* pane for almost every global endpoint and global connector that appears in the Studio interface features a *Reconnection* tab, as pictured below:
+
+image::reconnectiontab.png[ReconnectionTab]
+
+To display the Reconnection tab associated with the specific global connector or global endpoint you want to configure, complete the following steps:
+
+. Launch the Studio interface
+
+. Open the project for which you wish to set a reconnection strategy
+
+. Click the *Global Elements* tab beneath the *Message Flow* canvas
+
+. Select the global connector or global endpoint on which you wish to set the reconnection strategy, then double-click on it to open its *Properties* pane +
+ *or . . .* +
+ if the global connector or global endpoint does not exist, click *Create* on the right side on the *Global Mule Configuration Elements* pane, then navigate through the *Choose Global Type* pop up, select the global element you want to create, then click *OK* to open its *Properties* pane.
+
+. Click the *Reconnection* tab to display it.
+
+By default, the "Do not use reconnection strategy" button is selected; in other words, the connector will not attempt to reconnect unless you tell it to. If you select one of the other radio buttons, then decide you don't want a reconnection strategy after all, reset to the default simply by clicking "Do not use reconnection strategy."
+
+For convenience you can select the *Standard Reconnection* radio button, which attempts to reconnect every 2000 ms, until a total of two reconnection attempts have been attempted.
+
+Once you have selected *Standard Reconnection*, you can change the defaults for *Frequency* and *Reconnection Attempts*, and you can check the *Reconnect Forever* option so that the connector or endpoint will keep trying to connect until it succeeds. Be warned, however, that _large (or infinite) numbers of closely spaced reconnection attempts can consume significant resources and generate extremely long log files_.
+
+You can prevent the reconnection attempts from completely blocking the main application flow thread by checking the option near the bottom of the *Reconnection* tab labeled *Run the reconnection as a separate thread*.
+
+*Custom Reconnection* allows advanced users to implement reconnection strategies they have custom coded in the form of java classes. After you select the radio button to activate this option, begin to type the name of your custom java class within the text field labeled *Class*. After you have typed enough letters to identify the class uniquely, press *enter* to accept the entry. After the *Class Browser* displays, click *OK* again to commit your choice.
+
+In the *Properties* panel on the *Reconnection* tab, click the "plus" icon to select and set one of the properties exposed by your custom reconnection strategy. Repeat this for all the properties you wish to configure for this particular instance of the reconnection strategy. If, subsequently, you want to edit the value you have assigned to a property, click on the property, then click on the pencil icon to open the property for editing.
+
+When you are satisfied with the type of reconnection you have selected as well as the values you have specified for the configurable properties, click *OK* at the bottom of the *Reconnection* tab.

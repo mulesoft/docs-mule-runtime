@@ -1,0 +1,618 @@
+= Tuning Performance
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+A Mule application is a collaboration of a set of flows. Conceptually, messages are processed by flows in three stages:
+
+. The message being received by the inbound connector
+. The message being processed
+. The message being sent via an outbound connector
+
+Stage 1 always comes first. Stages 2 and 3 can be interleaved, since a flow can intermix message processors and outbound endpoints.
+
+Tuning performance in Mule involves analyzing and improving these three stages for each flow. You can start by applying the same tuning approach to all flows and then further customize the tuning for each flow as needed.
+
+== About Threads in Mule
+
+Each request that comes into Mule is processed on its own thread. A connector's receiver has a _thread pool_ with a certain number of threads available to process requests on the inbound endpoints that use that connector.
+
+Keep in mind that Mule can send messages asynchronously or synchronously. Messages are processed asynchronously, unless one of the following is true:
+
+* The flow uses the synchronous processing strategy
+* The flow takes part in a transaction
+* The inbound endpoint which received the message uses the request-response message exchange pattern
+
+If you are using *synchronous* processing, the same thread is used to carry the message all the way through Mule. As the message is processed, if it needs to be sent to an outbound endpoint, one of the following applies:
+
+* If the outbound endpoint is one-way, the message is sent using the same thread. Once it has been sent, the thread resumes processing the same message. It does not wait for the message to be received by the remote endpoint.
+* If the outbound endpoint is request-response, the flow thread sends the message to the outbound endpoint and waits for the response. When the response arrives, the flow threads resumes by processing the response.
+
+If you are doing *asynchronous* processing, the receiver thread is used only to place the message on a staged event-driven architectur (SEDA) queue, at which point the message is transferred to a _flow thread_, and the receiver thread is released back into the receiver thread pool so it can carry another message. As the message is processed, if it needs to be sent to an outbound endpoint, one of the following applies:
+
+* If the outbound endpoint is one-way, the message is copied and the copy processed by a dispatcher thread, while the flow thread continues processing the original message in parallel.
+* If the outbound endpoint is request-response, the flow thread sends the message to the outbound endpoint and waits for the response. When the response arrives, the flow threads resumes by processing the response.
+
+Note that several kinds of threads are used to process a message:
+
+* The receiver thread, which originally receives the message, either: +
+** Processes the entire flow (synchronous), or
+** Ends by writing the message to a SEDA queue (asynchronous)
+* The flow thread, which processes the bulk of the flow (asynchronous)
+* Dispatcher threads, which send messages to one-way endpoints (asynchronous)
+
+The following diagram illustrates these threads.
+
+image::thread-pooling.png[thread_pooling]
+
+== About Thread Pools and Threading Profiles
+
+A _thread pool_ is a collection of available threads. There is a separate thread pool for each receiver, flow (shared by all the message processors in that flow), and dispatcher.
+
+The _threading profile_ specifies how the thread pools behave in Mule. You can specify a separate threading profile for each receiver thread pool, flow thread pool, and dispatcher thread pool. The most important setting of each is `maxThreadsActive`, which specifies how many threads are in the thread pool. The <<Calculating Threads>> section below describes methodologies for determining what this setting should be, whereas the <<Threading Profile Configuration Reference>> section describes the options you can set for each threading profile.
+
+== About Pooling Profiles
+
+Unlike singleton components, pooled components (see PooledJavaComponent) each have a _component pool_, which contains multiple instances of the component to handle simultaneous incoming requests. A component's _pooling profile_ configures its component pool. The most important setting is `maxActive`, which specifies the maximum number of instances of the component that Mule will create to handle simultaneous requests. Note that this number should be the same as the `maxThreadsActive` setting on the receiver thread pool, so that you have enough component instances available to handle the threads. You can use the Mule Enterprise Console to monitor your component pools and see the maximum number of components you've used from the pool to help you tune the number of components and threads.
+
+For more information on configuring the pooling profile, see <<Pooling Profile Configuration Reference>> below.
+
+== Calculating Threads
+
+To calculate the number of threads to set, you must take the following factors into consideration.
+
+* *Concurrent User Requests*: In general, the number of concurrent user requests is the total number of requests to be processed simultaneously at any given time by the Mule server. For a *flow*, concurrent user requests is the number of requests the flow's inbound endpoints can process simultaneously. Concurrent user requests at the *connector* level is the total concurrent requests of all flows that share the same connector. Typically, you get the total concurrent user requests from the business requirements.
+
+* *Processing Time*: Processing time is the average time Mule takes to process a user request from the time a connector receiver starts the execution until it finishes (optionally, by sending a response back to the caller by the connector receiver after a round trip). Processing time must be calculated empirically.
+
+* *Response Time*: If a flow runs in *synchronous* mode, the response time is the actual amount of time the end user is required to wait for the response to come back. If the flow runs in *asynchronous* mode, it is the total time from when a request arrives in Mule until the flow finishes processing it. In a thread pooling environment, when a request arrives, there is no guarantee that a thread will be immediately available. In this case, the request is put into an internal thread pool _work queue_ to wait for the next available thread. Therefore, the response time is a function of the following: +
+ Response time = average of thread pool waiting time in work queue + average of processing time +
+ Your business requirements will dictate the actual response time required from the application.
+
+* *Timeout Time*: If your business requirements dictate a maximum time to wait for a response before timing out, it will be an important factor in your calculations below.
+
+
+=== Calculating the Flow Threads
+
+Even if you are performing synchronous messaging only, you must calculate the flow threads so that you can correctly calculate the receiver threads. This section describes how to calculate the flow threads.
+
+Your business requirements dictate how many threads each flow must be able to process concurrently. For example, one flow might need to be able to process 50 requests at a time, while another might need to process 40 at a time. Typically, you use this requirement to set the `maxThreadsActive` attribute on the flow (`maxThreadsActive`="40").
+
+If you have requirements for timeout settings for synchronous processing, you must do some additional calculations for each flow.
+
+. Run synchronous test cases to determine the response time.
+. Subtract the response time from the timeout time dictated by your business requirements. This is your _maximum wait time_ (maximum wait time = timeout time - response time).
+. Divide the maximum wait time by the response time to get the number of _batches_ that will be run sequentially to complete all concurrent requests within the maximum wait time (batches = maximum wait time / response time). Requests wait in the queue until the first batch is finished, and then the first batch's threads are released and used by the next batch.
+. Divide the concurrent user requests by the number of batches to get the thread size for the flow's `maxThreadsActive` setting (that is, `maxThreadsActive` = concurrent user requests / processing batches). This is the total number of threads that can be run simultaneously for this flow.
+
+In summary, the formulas for synchronous processing with timeout restrictions are:
+
+* Maximum wait time = timeout time - response time
+* Batches = maximum wait time / response time
+* `maxThreadsActive` = concurrent user requests / batches
+
+=== Calculating the Receiver Threads
+
+A connector's receiver is shared by all flows that specify the same connector on their inbound endpoint. The previous section described how to calculate the `maxThreadsActive` attribute for each flow. To calculate the `maxThreadsActive` setting for the receiver, that is, how many threads you should assign to a connector's receiver thread pool, sum the `maxThreadsActive` setting for each flow that uses that connector on their inbound endpoints:
+
+`maxThreadsActive` = ∑ (flow 1 `maxThreadsActive`, flow 2 `maxThreadsActive`...flow _n_ `maxThreadsActive`)
+
+For example, if you have three flows whose inbound endpoints use the VM connector, and your business requirements dictate that two of the flows should handle 50 requests at a time and the third flow should handle 40 requests at a time, set `maxThreadsActive` to 140 in the receiver threading profile for the VM connector.
+
+=== Calculating the Dispatcher Threads
+
+Dispatcher threads are used only for asynchronous outbound processing (that is, one-way outbound dispatching from asynchronous flows). Typically, set `maxThreadsActive` for the dispatcher to the sum of `maxThreadsActive` values for all flows that use that dispatcher.
+
+=== Other Considerations
+
+You can trade off queue sizes and maximum pool sizes. Using large queues and small pools minimizes CPU usage, OS resources, and context-switching overhead, but it can lead to artificially low throughput. If tasks frequently block (for example, if they are I/O bound), a system may be able to schedule time for more threads than you otherwise allow. Use of small queues generally requires larger pool sizes, which keeps CPUs busier but may encounter unacceptable scheduling overhead, which also decreases throughput.
+
+== Additional Performance Tuning Tips
+
+* In the `log4j.properties` file in your `conf` directory, set up logging to a file instead of the console, which will bypass the wrapper logging and speed up performance. To do this, create a new file appender (org.apache.log4j.FileAppender), specify the file and optionally the layout and other settings, and then change "console" to the file appender. For example:
++
+[source,text,linenums]
+----
+log4j.rootCategory=INFO, mulelogfile
+
+log4j.appender.mulelogfile=org.apache.log4j.FileAppender
+log4j.appender.mulelogfile.layout=org.apache.log4j.PatternLayout
+log4j.appender.mulelogfile.layout.ConversionPattern=%-22d{dd/MMM/yyyy HH:mm:ss} - %m%n
+log4j.appender.mulelogfile.file=custommule.log
+----
+
+* If you have a very large number of flows in the same Mule instance, if you have components that take more than a couple seconds to process, or if you are processing very large payloads or are using slower transports, you should increase the `shutdownTimeout` attribute (see xref:3.7@global-settings-configuration-reference.adoc[Global Settings Configuration Reference]) to enable graceful shutdown.
+* If polling is enabled for a connector, one thread will be in use by polling, so you should increment your `maxThreadsActive` setting by one. Polling is available on connectors such as File, FTP, and STDIO that extend AbstractPollingMessageReceiver.
+* If you are using VM to pass a message between flows, you can typically reduce the total number of threads because VM is so fast.
+* If you are processing very heavy loads, or if your endpoints have different simultaneous request requirements (for example, one endpoint requires the ability to process 20 simultaneous requests but another endpoint using the same connector requires 50), you might want to split up the connector so that you have one connector per endpoint.
+
+== Threading Profile Configuration Reference
+
+Following are the elements you configure for threading profiles. You can create a threading profile at the following levels:
+
+* <<Configuration Level>>
+* <<Connector Level>>
+* <<Flow Level>>
+
+The rest of this section describes the elements and attributes you can set at each of these levels.
+
+== Configuration Level
+
+The <default-threading-profile>, <default-receiver-threading-profile>, and <default-dispatcher-threading-profile> elements can be set in the <configuration> element to set default threading profiles for all connectors. Following are details on each of these elements.
+
+=== Default Threading Profile
+
+The default threading profile, used by components and by endpoints for dispatching and receiving if no more specific configuration is given.
+
+Attributes of default-threading-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|maxThreadsActive |The maximum number of threads to use.
+
+Type: integer +
+Required: no +
+Default: none
+|maxThreadsIdle |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+Type: integer +
+Required: no +
+Default: none
+|doThreading |Whether threading should be used (default is true).
+
+Type: boolean +
+Required: no +
+Default: true
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as a kind of throttling for thread creation, before requests are processed.  <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer +
+Required: no +
+Default: none
+|===
+
+[[mbsinfo]]
+=== maxBufferSize Warnings
+
+Do not use maxBufferSize unless instructed by MuleSoft Customer Support. Incorrect use of this parameter can cause system outages.
+
+Incorrect combinations of thread configurations and maxBufferSize
+values can cause timeouts with no apparent cause. Counter-intuitively,
+this issue is more probable with lower loads that don't fully fill
+the buffer queue. This can cause outages. Load tests with high and
+low loads should be used to find and validate appropriate configurations.
+
+If you configure a threading profile with poolExhaustedAction=WAIT
+and a maxBufferSize of a positive value, the thread pool does not
+grow from maxThreadsIdle (corePoolSize) towards
+maxThreadsActive (maxPoolSize) _unless_ the queue is completely filled up.
+
+
+=== Default Receiver Threading Profile
+
+The default receiving threading profile, which modifies the default-threading-profile values and is used by endpoints for receiving messages. This can also be configured on connectors, in which case the connector configuration is used instead of this default.
+
+Attributes of default-receiver-threading-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+
+|maxThreadsActive |The maximum number of threads to use.
+
+Type: integer +
+Required: no +
+Default: none
+|maxThreadsIdle |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+Type: integer +
+Required: no +
+Default: none
+|doThreading |Whether threading should be used (default is true).
+
+Type: boolean +
+Required: no +
+Default: true
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer  +
+Required: no +
+Default: none
+|===
+
+=== Default Dispatcher Threading Profile
+
+The default dispatching threading profile, which modifies the default-threading-profile values and is used by endpoints for dispatching messages. This can also be configured on connectors, in which case the connector configuration is used instead of this default.
+
+Attributes of default-dispatcher-threading-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|maxThreadsActive |The maximum number of threads to use.
+
+Type: integer +
+Required: no +
+Default: none
+|maxThreadsIdle |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+Type: integer +
+Required: no +
+Default: none
+|doThreading |Whether threading should be used (default is true).
+
+Type: boolean +
+Required: no +
+Default: true
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no  +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer  +
+Required: no +
+Default: none
+|===
+
+== Connector Level
+
+The <receiver-threading-profile> and <dispatcher-threading-profile> elements can be set in the <connector> element to configure the threading profiles for that connector. Following are details on each of these elements.
+
+=== Receiver Threading Profile
+
+The threading profile to use when a connector receives messages.
+
+Attributes of receiver-threading-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+
+|maxThreadsActive |The maximum number of threads to use.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxThreadsIdle |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+Type: integer +
+Required: no  +
+Default: none
+|doThreading |Whether threading should be used (default is true).
+
+Type: boolean +
+Required: no +
+Default: true
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no  +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer  +
+Required: no +
+Default: none
+|===
+
+=== Dispatcher Threading Profile
+
+The threading profile to use when a connector dispatches messages.
+
+Attributes of dispatcher-threading-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+
+|maxThreadsActive |The maximum number of threads to use.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxThreadsIdle |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+Type: integer +
+Required: no  +
+Default: none
+|doThreading |Whether threading should be used (default is true).
+
+Type: boolean +
+Required: no +
+Default: true
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no  +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer  +
+Required: no +
+Default: none
+|===
+
+== Flow Level
+
+The threading profile for a flow can be on any of the asynchronous processing strategies, for example <queued-asynchronous-processing-strategy>. In particular, you can set the attributes:
+
+* maxThreads – The maximum number of threads to use when under load. (Same as maxThreadsActive)
+* minThreads – The number of idle threads to keep in the pool when there is no load. (Same as maxThreadsIdle)
+* threadTTL – Determines how long an inactive thread is kept in the pool before being discarded.
+* poolExhaustedAction – The action to take when no threads are available.
+* threadWaitTimeout – How long to wait for a thread to become available.
+* maxBufferSize – How many requests are queued when no threads are available. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+== Queued Asynchronous Processing Strategy
+
+Decouples the receiving of a new message from its processing using a queue. The queue is polled and a thread pool is used to process the pipeline of message processors asynchonously in a worker thread.
+
+Attributes of queued-asynchronous-processing-strategy:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|name |The name used to identify the processing strategy.
+
+Type: name +
+Required: no  +
+Default: none
+|maxThreads |The maximum number of threads to use when under load.
+
+Type: integer +
+Required: no  +
+Default: none
+|minThreads |The number of idle threads to keep in the pool when there is no load.
+
+Type: integer +
+Required: no  +
+Default: none
+|threadTTL |Determines how long an inactive thread is kept in the pool before being discarded.
+
+Type: integer +
+Required: no  +
+Default: none
+|poolExhaustedAction |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - The default; the thread making the execute request runs the task itself, which helps guard against lockup.
+
+Type: WAIT, DISCARD, DISCARD_OLDEST, ABORT, RUN +
+Required: no +
+Default: RUN
+|threadWaitTimeout |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxBufferSize |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. <<mbsinfo,Do not use maxBufferSize without reading these warnings>>.
+
+Any BlockingQueue may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+
+* If fewer than corePoolSize threads are running, the Executor always prefers adding a new thread rather than queuing. *Note*: corePoolSize is an attribute of the underlying implementation.
+* If corePoolSize or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.
+* If a request cannot be queued, a new thread is created unless this would exceed maximumPoolSize, in which case, the task is rejected.
+
+Type: integer  +
+Required: no +
+Default: none
+|queueTimeout |The timeout used when taking messages from the service queue.
+
+Type: integer +
+Required: no  +
+Default: none
+|maxQueueSize |Defines the maximum number of messages that can be queued.
+
+Type: integer +
+Required: no  +
+Default: none
+|===
+
+
+Child Elements of queued-asynchronous-processing-strategy:
+
+[%header,cols="34a,33a,33a"]
+|===
+|Name |Cardinality |Description
+|annotations |0..1 |
+|abstract-queue-store |0..1 |The queue store that stortes the queue's elements. If not specified, this is the default-in-memory-queue-store. A placeholder for queue store elements.
+|===
+
+== Pooling Profile Configuration Reference
+
+Each pooled component has its own pooling profile. You configure the pooling profile using the <pooling-profile> element on the<pooled-component> element.
+
+=== Pooling Profile
+
+Attributes of pooling-profile:
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|maxActive |Controls the maximum number of Mule components that can be borrowed from a session at one time. When set to a negative value, there is no limit to the number of components that may be active at one time. When maxActive is exceeded, the pool is said to be exhausted.
+
+Type: string +
+Required: no  +
+Default: none
+|maxIdle |Controls the maximum number of Mule components that can sit idle in the pool at any time. When set to a negative value, there is no limit to the number of Mule components that may be idle at one time.
+
+Type: string +
+Required: no  +
+Default: none
+|initialisationPolicy |Determines how components in a pool should be initialized.
+
+Possible values are:
+
+* INITIALISE_NONE - Do not load any components into the pool on startup.
+* INITIALISE_ONE - Load one initial component into the pool on startup.
+* INITIALISE_ALL - Load all components in the pool on startup.
+
+Type: INITIALISE_NONE, INITIALISE_ONE, INITIALISE_ALL +
+Required: no  +
+Default: INITIALISE_ONE
+|exhaustedAction |Specifies the behavior of the Mule component pool when the pool is exhausted.
+
+Possible values are:
+
+* WHEN_EXHAUSTED_FAIL - Throws a NoSuchElementException.
+* WHEN_EXHAUSTED_WAIT - Blocks by invoking Object.wait(long) until a new or idle object is available.
+* WHEN_EXHAUSTED_GROW - Creates a new Mule instance and returns it, essentially making maxActive meaningless. If a positive maxWait value is supplied, it blocks for at most that many milliseconds, after which a NoSuchElementException is thrown. If maxThreadWait is a negative value, it  blocks indefinitely.
+
+Type: WHEN_EXHAUSTED_GROW, WHEN_EXHAUSTED_WAIT, WHEN_EXHAUSTED_FAIL +
+Required: no +
+Default: WHEN_EXHAUSTED_GROW
+|maxWait |Specifies the number of milliseconds to wait for a pooled component to become available when the pool is exhausted and the exhaustedAction is set to WHEN_EXHAUSTED_WAIT.
+
+Type: string +
+Required: no  +
+Default: none
+|evictionCheckIntervalMillis |Specifies the number of milliseconds between runs of the object evictor. When non-positive, no object evictor is executed.
+
+Type: string +
+Required: no  +
+Default: none
+|minEvictionMillis |Determines the minimum amount of time an object may sit idle in the pool before it is eligible for eviction. When non-positive, no objects are evicted from the pool due to idle time alone.
+
+Type: string +
+Required: no  +
+Default: none
+|===
+
+No Child Elements of pooling-profile.

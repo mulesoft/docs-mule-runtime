@@ -1,0 +1,80 @@
+= Object Scopes
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, objects, scopes, cardinality
+
+A scope, also referred to as cardinality, describes how Mule creates and manages objects in a Mule container.
+
+Object scopes defined in Mule:
+
+* Singleton - Only one object creates for all requests. Singleton objects must be thread-safe, because multiple threads access the same object. Therefore, any member variables need to be guarded when writing to ensure only one thread at a time changes the data.
+* Prototype - A new object creates for every request or every time the object is requested from the registry. Objects that are given prototype scope are created for each request on the object, so the object does not need to be thread-safe, since there can only ever be one thread accessing it. However, the object must be stateless, because member variables only exist for the lifetime of the request.
++
+See Also: <<About Transformers>>
++
+* Pooled - Only applies to component objects, but these are stored in a pool that guarantees that only one thread can access an object at a time. Pooled objects are thread safe since Mule guarantees that only one thread can access the object at a time. Pooled objects can't easily maintain state on the object itself since multiple instances are created. The advantage of pooled over prototype is when an object may be expensive to create, and creating a new instance for every message it receives, slows down the application.
+
+When configuring Mule through XML, Spring is used to translate the XML into objects that define how the Mule instance runs. All top-level objects in Mule are singletons including Flow, Connector, Endpoint, Agent, Security Manager, and Transaction Manager.
+
+Components, POJO objects used by your flow, can either be singleton, prototype or pooled.
+
+== About Transformers
+
+The only object that has prototype scope is a Transformer. This is because transformers can be used in different contexts and potentially in different threads at the same time.
+
+Transformers are expected to be accessed by multiple threads. Concurrency is important for performance in this case. The reason to avoid using a singleton pattern is that transformers can exist in different contexts but that does not imply that after a flow invocation, the transformer beans created for that flow may be disposed despite their having a prototype scope.
+For example, if you define a flow like this:
+
+[source,xml,linenums]
+----
+<flow>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T1"/>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T2"/>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T2"/>
+</flow>
+----
+
+Because transformers have prototype scope by default, a getBean operation from the Spring context invokes three times. The com.mule.support.MyTransformer has a prototype scope, so three bean instances are created.
+
+This does not mean that each time a flow is invoked a new getBean executes. The same transformer is cached and is ready to provide concurrency because each of these bean instances has a well-determined context, which is provides a different relative position in the execution flow. If a getBean is performed for each invocation, concurrency for each of the instances is lost and performance degrades.
+
+== About Spring Scopes
+
+You can reference Spring as a component where the scope of the object is defined by Spring:
+
+[source,xml,linenums]
+----
+<component >
+     <spring-object ref="myBean">
+</component>
+----
+
+== Example: Singleton
+
+[source,xml,linenums]
+----
+<component >
+     <singleton-object class="com.foo.Bar"/>
+</component>
+----
+
+== Example: Prototype
+
+[source,xml,linenums]
+----
+<component >
+     <prototype-object class="com.foo.Bar">
+</component>
+
+<!—or short form -->
+
+<component class="com.foo.Bar"/>
+----
+
+== Example: Pooled
+
+[source,xml]
+----
+<pooled-component class="com.foo.Bar"/>
+----
