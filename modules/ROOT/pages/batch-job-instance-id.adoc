@@ -2,7 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: connectors, anypoint, studio, esb, batch, batch processing
+:keywords: connectors, anypoint, studio, batch, batch processing
 
 Users of xref:batch-processing.adoc[Batch] processing frequently need the ability to determine a Batch job's instance ID during the execution phases of a Batch job.
 
@@ -57,6 +57,62 @@ INFO 2015-05-08 18:18:09,644 [batch-job-batchBatch-work-manager.01] com.mulesoft
 
 INFO 2015-05-08 18:18:09,644 [batch-job-batchBatch-work-manager.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Finished execution for instance 'ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d' of job 'batchBatch'. Total Records processed: 1. Successful records: 1. Failed Records: 0
 ----
+
+== Custom Batch Job Instance ID
+
+You can use a Mule expression to specify a unique identifier for each batch job by passing a *Job Instance Id* attribute that takes a MEL expression. +
+Note that constant values are not allowed for batch jobs and if the MEL expression returns a previously seen value, Mule throws an exception and does not create the job instance.
+If you don't set a job instance ID, Mule auto generates a UUID to assign to your instance.
+
+The UUID generated for the job instance described above is `ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d`. As you can tell, it's not a human readable identifier making it hard to correlate to an actual execution and considering you could be running multiple jobs at the same time, this ID is not meaningful at all.
+
+In order to guarantee uniqueness, you can set the Job Id to take server date through the MEL expression: +
+`#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]`.
+
+This names the execution instance `Job From 15/01/16 05:23:12`.
+
+[source,text,linenums]
+----
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Created instance Job From 15/01/16 05:23:12 for batch job contacts-to-SFDCBatch
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Starting input phase
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Input phase completed
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Starting loading phase for instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Finished loading phase for instance Job From 15/01/16 05:23:12 of job contacts-to-SFDCBatch. 3 records were loaded
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Started execution of instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+----
+
+The logs of a properly identified instance are easier to read.
+
+The batch job properties tab, now looks like this:
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::batchjobproperties.png[batchJobProperties]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<batch:job name="batchBatch" job-instance-id="#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]">
+        <batch:input>
+            <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+            <set-payload doc:name="Set Payload"/>
+            <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+                <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+        </batch:on-complete>
+    </batch:job>
+----
+=====
 
 == See Also
 

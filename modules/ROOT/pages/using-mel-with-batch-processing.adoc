@@ -42,6 +42,44 @@ These functions can be used anywhere in your batch jobs, in any component that s
 |`getLastException()` |Returns the Exception object for the last step in which the current record has failed. If the record hasn’t failed in any step, then it returns null.
 |===
 
+These MEL expressions evaluate batch step failures. Consider that failed asynchronous processes inside your batch step would not be considered as step failures by the runtime. +
+For example, if you have this batch step:
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+  <file:outbound-endpoint path="output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+</batch:step>
+----
+Because the file outbound endpoint is one-way, the message is dispatched and the batch step continues processing. So no step failure would be recorded by the runtime.
+This would mean that the MEL function `isFailedRecord()` would still return false, even if the outbound endpoint inside the batch step fails.
+
+You can force the runtime to record the outbound-endpoint failure as a batch step failure by referencing the outbound endpoint as a synchronous process:
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+    <logger message=" #[server.dateTime]: payload is: #[payload]" level="INFO" category="BATCH_STEP_BEGIN" />
+    <flow-ref name="create-file" />
+</batch:step>
+
+<flow name="create-file" processingStrategy="synchronous">
+    <file:outbound-endpoint path="src/test/resources/output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+</flow>
+----
+
+Or by enclosing the asynchronous process inside a transactional scope:
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+    <logger message=" #[server.dateTime]: payload is: #[payload]" level="INFO" category="BATCH_STEP_BEGIN" />
+    <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+    	<file:outbound-endpoint path="src/test/resources/output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+    </transactional>
+</batch:step>
+----
+
 == Example Use of A MEL Function in a Batch Job
 
 For example, suppose you have a batch job with the following Batch Step:
@@ -53,6 +91,7 @@ Here you can add the following expression into the Set Payload transformer:
 image::batch-function2.png[batch+function2]
 
 In this case, this expression will return a Java Map for the current record where the key is the name of the batch step and the value is the exception object. This expression will of course only evaluate batch steps through which the current record has already passed, it can't evaluate any batch steps that may come after it.
+
 
 == See Also
 

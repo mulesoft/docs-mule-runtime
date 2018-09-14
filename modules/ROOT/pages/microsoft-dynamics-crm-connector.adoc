@@ -6,12 +6,12 @@ endif::[]
 
 *Select*
 
-*Latest version: 2.6.0*
+*Latest version: 2.9.0*
 
 The Microsoft Dynamics Customer Relationship Management (CRM) connector lets you access Microsoft Dynamics CRM’s SOAP Organization Service. You can add this connector to an Anypoint Studio flow.
 
-*Release Notes*: xref:release-notes::connector/microsoft-dynamics-crm-connector-release-notes.adoc[Microsoft Dynamics CRM Connector Release Notes]
-
+*Release Notes*: xref:release-notes::connector/microsoft-dynamics-crm-connector-release-notes.adoc[Microsoft Dynamics CRM Connector Release Notes] +
+*Technical Reference*: https://mulesoft.github.io/mule-microsoft-dynamics-crm-connector[MS Dynamics CRM Connector Technical Reference] +
 *Samples*: link:{attachmentsdir}/dynamics-crm-connector-samples.zip[dynamics-crm-connector-samples.zip]
 
 == Overview
@@ -27,22 +27,22 @@ This connector lets you perform the following operations:
 
 This connector supports these Microsoft Dynamics CRM versions:
 
+* Microsoft Dynamics CRM 2016 (on-premise)
 * Microsoft Dynamics CRM 2015 (on-premise)
 * Microsoft Dynamics CRM 2013 (on-premise)
 * Microsoft Dynamics CRM 2011 (on-premise)
-* Microsoft Dynamics CRM Online
+* Microsoft Dynamics CRM Online (8.0, 8.1, 8.2)
 
 Configuring the connector requires minimal parameters except for advanced use:
 
 * Username and password for users granted access to CRM
-* Organization Service URL - usually in the format: +https://mulesoft03.api.crm.dynamics.com/XRMServices/2011/Organization.svc+
+* Organization Service URL - usually in the format: `+https://mulesoft03.api.crm.dynamics.com/XRMServices/2011/Organization.svc+`
 
 == Installing and Configuring
 
-Install the Java Cryptography Extensions (JCE) package before installing the connector.
-Download JCE for Java 7 from http://www.oracle.com/technetwork/java/javase/downloads/jce-7-download-432124.html[Oracle's Java 7 JCE Download site].
-Download JCE for Java 8 from http://www.oracle.com/technetwork/java/javase/downloads/jce8-download-2133166.html[Oracle's Java 8 JCE Download site].
-
+. Install the Java Cryptography Extensions (JCE) package before installing the connector.
+. Download JCE for Java 7 from http://www.oracle.com/technetwork/java/javase/downloads/jce-7-download-432124.html[Oracle's Java 7 JCE Download site].
+. Download JCE for Java 8 from http://www.oracle.com/technetwork/java/javase/downloads/jce8-download-2133166.html[Oracle's Java 8 JCE Download site].
 . In Anypoint Studio, click the Exchange icon in the Studio taskbar.
 . Click Login in Anypoint Exchange.
 . Search for the connector and click Install.
@@ -180,7 +180,7 @@ In case the Kerberos configuration settings cannot be automatically detected, yo
 
 * *SPN*: The Service Principal Name can usually be automatically discovered from the Organization Service’s WSDL. If the SPN cannot be discovered automatically, the value has to be set in the connector’s connection configuration property SPN. The SPN usually looks like host/SERVER-NAME.MYREALM.COM.
 +
-If the Organization Service WSDL reports a User Principal Name (UPN) instead of an SPN, then the CRM service is configured to run under a domain account. In this case, you must ensure that the domain admin has created an SPN under this service account in AD for the CRM hostname. In this case, the SPN is in the form: +http://crm.mycompany.com+. Note that the SPN is typically created to match a fully qualified DNS name that is used to access the CRM service.
+If the Organization Service WSDL reports a User Principal Name (UPN) instead of an SPN, then the CRM service is configured to run under a domain account. In this case, you must ensure that the domain admin has created an SPN under this service account in AD for the CRM hostname. In this case, the SPN is in the form `+http://crm.mycompany.com+` – note that the SPN is typically created to match a fully qualified DNS name that is used to access the CRM service.
 
 * *Realm*: The Domain that the user belongs to. Note that this value is case-sensitive and must be specified exactly as defined in Active Directory.
 
@@ -245,6 +245,8 @@ For connecting to Microsoft Dynamics CRM with NTLM authentication, the connector
 
 The Anypoint Platform Gateway Service runs as a Windows service. Install using the instructions in the xref:windows-gateway-services-guide.adoc[Windows Gateway Service guide] on a machine that is joined to the same domain as the Dynamics CRM instance that you want to authenticate against.
 
+IMPORTANT: Windows Gateway Services has an issue that when installed in the same machine as CRM Dynamics, the Host name is resolved to IPv6, which is not supported by NTLM. So this needs to be accessed through IP. In addition, for CRM Dynamics Connector and Windows Gateway Services, when using the CRM Dynamics Connector using NTLM, HTTPS is not supported.
+
 To install Windows Gateway Service:
 
 . Unzip the downloaded file and run the `.exe` contained within.
@@ -269,7 +271,7 @@ For these cases, there are optional connection configuration parameters:
 *  Sts Username Port Qname (optional): The name of port that accepts username and password credentials as described in the STS's metadata exchange URL. Specify this value as a `Qname` in the format `{namespace}/port_name`. For ADFS, this is usually:
 +
 ----
-{http://schemas.microsoft.com/ws/2008/06/identity/securitytokenservice}UserNameWSTrustBinding_IWSTrust13Async}
+{+http://schemas.microsoft.com/ws/2008/06/identity/securitytokenservice+}UserNameWSTrustBinding_IWSTrust13Async}
 ----
 
 == Proxy
@@ -277,7 +279,41 @@ For these cases, there are optional connection configuration parameters:
 Configure the proxy that is used by the connector. This can be specified in the connector's Global Element configuration, under the `Proxy` tab.
 The value of the proxy address has to be in the format `{hostname/IP}:{port}`. For example, if the proxy is running in the same server under the port 8080: `127.0.0.1:8080` or `localhost:8080`.
 
+== Metadata caching
+
+The connector does cache metadata by default.
+
+Metadata is retrieved for data sense and also for allow completing some operations. Default configuration is the recommended way to use the connector, but there might be scenarios where often changes on metadata requires not to use this caching feature.
+
+The metadata retrievers are grouped within three categories as described below:
+
+. Data sense: As data sense requires all entities to be retrieved, the entities retriever does that and caches it by entity to be reused between different calls. In addition, data sense also exposes attributes for each entity, and this is done by an attributes retriever. For data sense the attributes retriever that is used gets all entitiy's attributes and caches it (for each one of the entities for which you perform a data sense operation).
+. Attributes: Some operations within the connector require just to retrieve referenced (by the operation) attributes from a entity. The default attribute retriever for these operations works optimizing data throughput doing single attribute querying, while also doing caching. You can configure these operations (Create, Update, CreateMultiple, UpdateMultiple) behavior to share the data sense retriever if works better on your scenario (ie. if you often create/update entities using most of its attributes).
+. Relationships: This particular retriever that gets relationships information, and caches it, is just used for the following operations: Associate and Dissasociate.
+
+In the table shown below you can find custom configuration settings to disable metadata caching on particular subsets of operations and/or to customize the retrievers behavior on particular cases.
+
+[%header%autowidth.spread]
+|===
+|Setting |Usage |Values
+|org.mule.module.dynamicscrm.metadata.retrievers.nocache |Disable caching for all metadata retrievers |1- disabled, otherwise enabled
+|org.mule.module.dynamicscrm.metadata.retrievers.entities.nocache |Disable caching for entities metadata retriever used with data sense only |1- disabled, otherwise enabled
+|org.mule.module.dynamicscrm.metadata.retrievers.relationships.nocache |Disable caching for relationships metadata retriever |1- disabled, otherwise enabled
+|org.mule.module.dynamicscrm.metadata.retrievers.attributes.nocache |Disable caching for attributes metadata retriever |1- disabled, otherwise enabled
+|org.mule.module.dynamicscrm.metadata.retrievers.attributes.share | Share attributes metadata retriever (for metadata scopes and connector's operations). Set this value to '1' to use the full attribute metadata retriever for operations as well as metadata scopes |1- shared, otherwise use single attribute retriever for operations
+|===
+
+These system settings can be passed to the VM executing the mule app by doing:
+
+[source,text,linenums]
+----
+-Dorg.mule.module.dynamicscrm.metadata.retrievers.nocache=1
+----
+
+
 == Operations
+
+For the technical reference documentation for all connector operations, see the https://mulesoft.github.io/mule-microsoft-dynamics-crm-connector[Dynamics CRM APIdoc].
 
 === Create Record
 
@@ -289,10 +325,10 @@ The following table lists operation inputs:
 |===
 |Property |Usage
 |*Logical Name* |The logical name of the entity that the record belongs to.
-|*Attributes* |A `Map<String, Object>` with the entity attribute names as the map's keys. To create a payload for this operation, place a DataMapper transformer before the connector in the Mule flow.
+|*Attributes* |A `Map<String, Object>` with the entity attribute names as the map's keys. To create a payload for this operation, place a ‘DataWeave’ transformer before the connector in the Mule flow.
 |===
 
-Output: A String containing the ID of the created record.
+*Output*: A String containing the ID of the created record.
 
 === Create Multiple Records
 
@@ -302,10 +338,11 @@ Creates a set of multiple records for an entity. The following table details the
 |===
 |Property |Usage
 |*Logical Name* |The logical name of the entity that the record will belong to.
-|*AttributesList* |A `List<Map<String, Object>>` with a list of the entity attribute names as the map’s keys. The payload for this operation can be created easily by placing a DataMapper transformer before the connector in the Mule flow.
+|*Attributes List* |A `List<Map<String, Object>>` with a list of the entity attribute names as the map’s keys. The payload for this operation can be created easily by placing a ‘DataWeave’ transformer before the connector in the Mule flow.
+|*Use Single Transaction*|(Optional) Indicates if Dynamics CRM should use a single transaction to create all items (supported since Microsoft Dynamics CRM 2016).
 |===
 
-Output: `BulkOperationResult<Map<String,Object>>` object
+*Output*: `BulkOperationResult<Map<String,Object>>` object
 
 See <<Data Considerations>>.
 
@@ -323,7 +360,7 @@ The following table details the operation inputs.
 |*Attributes* |A `List<String>` with the entity attribute names that returns for the record.
 |===
 
-Output: `Map<String, Object>`
+*Output*: `Map<String, Object>`
 
 The map's keys are the entity attribute names for the retrieved record.
 
@@ -337,17 +374,17 @@ The following table details the operation inputs.
 |===
 |Property |Usage
 |*Query* a|
-DataSense Query Language: The DSQL to run. The query is translated by the connector to a Fetch XML. For more information, see xref:5@studio::datasense-query-language.adoc[DataSense Query Language].
+DataSense Query Language: The DSQL to run. The query is translated by the connector to a Fetch XML. For more information, see xref:6@studio::datasense-query-language.adoc[DataSense Query Language].
 
 Native Query Language: The raw FetchXML to run. More information on how to create this queries can be found at http://msdn.microsoft.com/en-us/library/gg328332.aspx.
 
 |===
 
-Output: `ProviderAwarePagingDelegate<Map<String, Object>, DynamicsCRMConnector>`
+*Output*: `ProviderAwarePagingDelegate<Map<String, Object>, DynamicsCRMConnector>`
 
 In a Mule flow, this passes on to the next flow component a `List<Map<String, Object>`, where each `Map<String, Object>` element in the list contains a record of the queried entity. The map’s keys are the entity attribute names for the records.
 
-== Update Record
+=== Update Record
 
 Updates an existing record in an entity.
 
@@ -358,10 +395,10 @@ The following table lists operation inputs:
 |Property |Usage
 |*Logical Name* |The logical name of the entity that the record belongs to.
 |*ID* |The ID of the record to update.
-|*Attributes* |A `Map<String, Object>` with the entity attribute names as the map's keys. To create a payload for this operation, place a DataMapper transformer before the connector in the Mule flow.
+|*Attributes* |A `Map<String, Object>` with the entity attribute names as the map's keys. To create a payload for this operation, place a ‘DataWeave’ transformer before the connector in the Mule flow.
 |===
 
-Output: Void. This operation does not return a value.
+*Output*: Void. This operation does not return a value.
 
 === Update Multiple Records
 
@@ -373,10 +410,11 @@ The following table details the operation inputs.
 |===
 |Property |Usage
 |*Logical Name* |The logical name of the entity that the record belongs to.
-|*AttributesList* |A `List<Map<String, Object>>` with the entity attribute names as the map’s keys. The payload for this operation can be created easily by placing a ‘Data Mapper’ transformer before the connector in the Mule flow.
+|*Attributes List* |A `List<Map<String, Object>>` with the entity attribute names as the map’s keys. The payload for this operation can be created easily by placing a ‘DataWeave’ transformer before the connector in the Mule flow.
+|*Use Single Transaction*|(Optional) Indicates if Dynamics CRM should use a single transaction to update all items (supported since Microsoft Dynamics CRM 2016).
 |===
 
-Output: `BulkOperationResult<Map<String,Object>>` object
+*Output*: `BulkOperationResult<Map<String,Object>>` object
 
 === Delete Record
 
@@ -391,7 +429,7 @@ The following table lists operation inputs:
 |*ID* |The ID of the record to delete.
 |===
 
-Output: Void. This operation does not return a value.
+*Output*: Void. This operation does not return a value.
 
 === Delete Multiple Records
 
@@ -404,11 +442,12 @@ The following table details the operation inputs.
 |Property |Usage
 |*Logical Name* |The logical name of the entity that the record belongs to.
 |*Ids* |The `List<String>` with the ids of the records to delete.
+|*Use Single Transaction*|(Optional) Indicates if Dynamics CRM should use a single transaction to delete all items (supported since Microsoft Dynamics CRM 2016).
 |===
 
-Output:  `BulkOperationResult<String>` object
+*Output*:  `BulkOperationResult<String>` object
 
-== Associate Records
+=== Associate Records
 
 Creates a link between records.
 
@@ -436,7 +475,7 @@ Each `Map<String, Object>` contains two keys:
 
 |===
 
-Output: Void. This operation does not return a value.
+*Output*: Void. This operation does not return a value.
 
 === Disassociate Records
 
@@ -466,7 +505,7 @@ Each `Map<String, Object>` contains two keys:
 
 |===
 
-Output: Void. This operation does not return a value.
+*Output*: Void. This operation does not return a value.
 
 === Execute
 
@@ -477,13 +516,32 @@ Executes a Dynamics CRM organization request and returns the response. The follo
 |Property |Usage
 |Request Name |The request name to execute.
 |Request Id |(Optional) The ID of the request.
-|Request Parameters |The request parameters are taken from the message Payload. To set these parameters correctly for each operation, a data mapper is typically used before the connector is called.
+|Request Parameters |The request parameters are taken from the message Payload. To set these parameters correctly for each operation, a ‘DataWeave’ is typically used before the connector is called.
+
+In addition of using a POJO (from the https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.organizationrequest.aspx[OrganizationRequest] hierarchy tree), this operation supports providing the payload as a Map<String, Object> (which is the most efficient/compact way of usage).
 |===
 
-*Output*:  A POJO containing the results of the method executed. The structure of each response is described in the operation’s metadata.
+*Output*:  A POJO (from the https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.organizationresponse.aspx[OrganizationResponse] hierarchy tree) containing the results of the method executed. The structure of each response is described in the operation’s metadata.
 
-*Supported Operations*: The full set of the Microsoft Dynamics CRM organization request operations described at file://localhost/x-webdoc/::859D6B8E-CFBB-45B9-B6CC-1FEBA703BE43:%2522[https://msdn.microsoft.com/en-us/library/gg309482.aspx].
+*Supported Operations*: The full set of the Microsoft Dynamics CRM organization request entities described at https://msdn.microsoft.com/en-us/library/microsoft.crm.sdk.messages.aspx[Microsoft.Crm.Sdk.Messages] and https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.messages.aspx[Microsoft.Xrm.Sdk.Messages] namespaces (operation availability depends on the Microsoft Dynamics CRM version you are working with - check the documentation related to yours).
 
+=== Execute Multiple
+
+Executes multiple Dynamics CRM organization requests and returns their responses. The following table details the operation inputs.
+
+[%header,cols="2*"]
+|===
+|Property |Usage
+|Requests |The requests are taken from the message Payload. To set these parameters correctly for each operation, a ‘DataWeave’ is typically used before the connector is called.
+
+In addition of using an array or list with POJOs (from the https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.organizationrequest.aspx[OrganizationRequest] hierarchy tree), this operation supports providing the payload as a list or array of Map<String, Object> (which is the most efficient/compact way of usage).
+|Request Id |(Optional) The ID of the request.
+|*Use Single Transaction*|(Optional) Indicates if Dynamics CRM should use a single transaction to execute all items (supported since Microsoft Dynamics CRM 2016).
+|===
+
+*Output*:  `BulkOperationResult<OrganizationResponse>` object (from the https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.organizationresponse.aspx[OrganizationResponse] hierarchy tree) containing the results of the requests executed.
+
+*Supported Operations*: The full set of the Microsoft Dynamics CRM organization request entities described at https://msdn.microsoft.com/en-us/library/microsoft.crm.sdk.messages.aspx[Microsoft.Crm.Sdk.Messages] and https://msdn.microsoft.com/en-us/library/microsoft.xrm.sdk.messages.aspx[Microsoft.Xrm.Sdk.Messages] namespaces (operation availability depends on the Microsoft Dynamics CRM version you are working with - check the documentation related to yours).
 
 == Exceptions Handling
 
@@ -501,14 +559,31 @@ The following table lists the exception types that are thrown for every operatio
 |===
 |Operation |Exception Type
 |Create |IOrganizationServiceCreateOrganizationServiceFaultFaultFaultMessage
+|Create Multiple |IOrganizationServiceExecuteOrganizationServiceFaultFaultFaultMessage
 |Update |IOrganizationServiceUpdateOrganizationServiceFaultFaultFaultMessage
+|Update Multiple |IOrganizationServiceExecuteOrganizationServiceFaultFaultFaultMessage
 |Delete |IOrganizationServiceDeleteOrganizationServiceFaultFaultFaultMessage
+|Delete Multiple |IOrganizationServiceExecuteOrganizationServiceFaultFaultFaultMessage
 |Retrieve |IOrganizationServiceRetrieveOrganizationServiceFaultFaultFaultMessage
 |Retrieve Multiple |IOrganizationServiceRetrieveMultipleOrganizationServiceFaultFaultFaultMessage
 |Associate |IOrganizationServiceAssociateOrganizationServiceFaultFaultFaultMessage
 |Disassociate |IOrganizationServiceDisassociateOrganizationServiceFaultFaultFaultMessage
 |Execute |IOrganizationServiceExecuteOrganizationServiceFaultFaultFaultMessage
+|Execute Multiple |IOrganizationServiceExecuteOrganizationServiceFaultFaultFaultMessage
 |===
+
+== Maven Dependency Snippet
+
+Make sure that this snippet is included in your Maven project using the connector.
+
+[source,xml,linenums]
+----
+<dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-module-ms-dynamics-crm</artifactId>
+            <version>2.8.0</version>
+        </dependency>
+----
 
 == Data Considerations
 
@@ -584,9 +659,9 @@ Options for authentication against on-premises CRM instances include Kerberos, C
 
 All out-of-box and custom entities are available via the connector, including primary entities and association entities.
 
-=== Are DataSense and DataMapper supported by this connector?
+=== Are DataSense and DataWeave supported by this connector?
 
-Yes, all entities and entity attributes are exposed to Studio by the connector for use with DataMapper and DataSense.
+Yes, all entities and entity attributes are exposed to Studio by the connector for use with DataWeave and DataSense.
 
 === What operations can I perform with the connector?
 

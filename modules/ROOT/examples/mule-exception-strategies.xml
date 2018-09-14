@@ -1,0 +1,66 @@
+<mule xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http
+	http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+	http://www.springframework.org/schema/beans
+	http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	http://www.mulesoft.org/schema/mule/core
+	http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+<http:listener-config name="HTTP_Listener_Configuration"
+host="0.0.0.0" port="11081" doc:name="HTTP Listener Configuration"/>
+<flow  name="loan-broker-sync">
+        <description>
+            The main loan broker flow:
+            1) Receives a customer request
+            2) Performs a lookup of the customer credit profile using a component
+            binding
+            3) Determines the bank that should be used to request quotes
+            4) Sends the request to the selected banks and aggregates responses
+            5) Selects the lowest quote from the list of quotes
+            6) Returns the response to the client
+        </description>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="!(payload.name == null || payload.ssn == null || payload.amount == null || payload.term == null)">
+                <expression-component doc:name="create customer request">
+<![CDATA[import org.mule.example.loanbroker.message.CustomerQuoteRequest;
+import org.mule.example.loanbroker.model.Customer;
+payload = new CustomerQuoteRequest(new Customer(payload.name, Integer.parseInt(payload.ssn)),
+Integer.parseInt(payload.amount), Integer.parseInt(payload.term));]]></expression-component>
+                <enricher doc:name="Enrich with creditProfile" source="#[payload]"
+target="#[flowVars.creditProfile]">
+                    <flow-ref doc:name="lookupCustomerCreditProfile" name="loan-broker-sync"/>
+                </enricher>
+                <enricher doc:name="Enrich with banks" source="#[payload]"
+target="#[flowVars.banks]">
+                    <flow-ref doc:name="lookupBanks" name="loan-broker-sync"/>
+                </enricher>
+                <set-variable doc:name="create empty quotes"
+value="#[new java.util.LinkedList()]" variableName="quotes"/>
+                <foreach collection="#[flowVars.banks]" doc:name="Foreach">
+                    <enricher doc:name="Message Enricher" target="#[quotes.add($)]">
+                        <flow-ref doc:name="lookupLoanQuote" name="loan-broker-sync"/>
+                    </enricher>
+                </foreach>
+                <flow-ref doc:name="findLowestLoanQuote" name="loan-broker-sync"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </when>
+            <otherwise>
+                <expression-component doc:name="set error message">
+                <![CDATA[payload="Error: incomplete request"]]></expression-component>
+            </otherwise>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload doc:name="Set error message" value="Error processing loan request"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>

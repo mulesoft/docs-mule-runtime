@@ -2,11 +2,11 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: anypoint studio, connector, endpoint, microsoft, sharepoint, share point, intranet
+:keywords: anypoint studio, connector, endpoint, microsoft, sharepoint, share point, intranet, online
 
 *Select*
 
-*Latest version: 2.1.11*
+*Latest version: 2.3.0*
 
 Microsoft SharePoint is a web application platform for content and document management, intranet portals, collaboration, extranets, websites, and enterprise search.
 
@@ -17,8 +17,7 @@ xref:release-notes::connector/microsoft-sharepoint-2013-connector-release-notes.
 
 *Samples*: link:{attachmentsdir}/sharepoint-connector-samples.zip[sharepoint-connector-samples.zip]
 
-*FAQ*:
-<<Frequently Asked Questions>>
+*FAQ*: <<Frequently Asked Questions>>
 
 == Overview
 
@@ -33,8 +32,9 @@ Supported Microsoft SharePoint versions:
 
 * Microsoft SharePoint 2013
 * Microsoft SharePoint Online
+** *FileQuery* and *FolderQuery* operations are not supported when interacting with Sharepoint Online.
 
-=== Authentication
+== Authentication
 
 The Microsoft SharePoint connector supports different authentication schemes based on which
 Microsoft SharePoint that you access:
@@ -43,27 +43,112 @@ Supported Microsoft SharePoint authentication on-premise:
 
 * NTLM
 * Claims-based authentication against Microsoft ADFS
-* Unsupported authentication: Kerberos
+* Kerberos
 
 Supported Microsoft SharePoint Online authentication:
 
 * Microsoft Online (Office 365) managed users
 * Microsoft Online (Office 365) federated users against Microsoft ADFS
+* Microsoft Online (Office 365) federated users with Okta
 
-==== Claims-Based Authentication
+Note: all above connections can be configured to use NTLM proxy for NTLM connection types and
+HTTP Proxy for all other types
+
+=== Claims-Based Authentication
 
 Configuring the connector to use claims-based authentication requires the following information from the Security Token Service (STS) that to use for authenticating:
 
-* *Sts Url*: The STS endpoint that accepts username and password for authenticating users and understands the WS-Trust 1.3 protocol. When the STS is Microsoft’s ADFS (Active Directory Federation Services), this url usually is `+https://youradfs.com/adfs/services/trust/13/usernamemixed+`.
-* *Sts App Identifier*: A string that identifies the Sharepoint site in the STS. It is also known as Relying Party Identifier, Client Identifier, Scope, or Realm. When the STS is Microsoft’s ADFS, this value can be discovered in the AD FS Management console under AD FS at *Trust Relationships* > *Relying Party Trusts* > _(Sharepoint Site’s relying part properties)_ > *Identifiers* tab. +
- +
- You can obtain the Sts App Identifier by logging into the Sharepoint Site that you want to be accessed by opening the Site Url in a web browser. If there is more than one authentication provider configured for a site, a drop-down menu lists the options. Select the desired STS to be redirected to the STS’s login page. At this point, the address bar of the web browser contains a URL that includes the following query parameters: +
- +
- `wa=wsignin1.0&wtrealm=uri%3amule%3asp80` +
- +
-The parameter *_wa_* tells the STS that a sign in is being initiated. The *_wtrealm_* contains the URI-encoded value for the Sts App Identifier. In the example, `uri%3amule%3asp80` is `uri:mule:sp80`. The unencoded value is the parameter for the connector’s configuration.
+* *Sts Url*: The STS endpoint that accepts username and password for authenticating users and understands the WS-Trust 1.3 protocol. When the STS is Microsoft’s ADFS (Active Directory Federation Services), this URL usually is `+https://youradfs.com/adfs/services/trust/13/usernamemixed+`.
+* *Sts App Identifier*: A string that identifies the Sharepoint site in the STS. It is also known as Relying Party Identifier, Client Identifier, Scope, or Realm. When the STS is Microsoft’s ADFS, this value can be discovered in the AD FS Management console under AD FS at *Trust Relationships* > *Relying Party Trusts* > _(Sharepoint Site’s relying part properties)_ > *Identifiers* tab.
++
+You can obtain the STS App Identifier by logging into the Sharepoint Site that you want to be accessed by opening the Site URL in a web browser. If there is more than one authentication provider configured for a site, a drop-down menu lists the options. Select the desired STS to be redirected to the STS’s login page. At this point, the address bar of the web browser contains a URL that includes the following query parameters: +
++
+`wa=wsignin1.0&wtrealm=uri%3amule%3asp80`
++
+The parameter *_wa_* tells the STS that a signin is being initiated. The *_wtrealm_* contains the URI-encoded value for the Sts App Identifier. In the example, `uri%3amule%3asp80` is `uri:mule:sp80`. The unencoded value is the parameter for the connector’s configuration.
 
-== Install and Configure
+==== Kerberos Authentication
+
+Configuring the connector to use Kerberos authentication requires the following information:
+
+* *Username*: User to authenticate with.
+* *Password*: Password for the user to authenticate with.
+* *Site URL*: The path to the Microsoft SharePoint Site (_https://sharepoint.myorganization.com/site_).
+* *Service Principal Name (SPN)*: The SPN will usually look like host/SERVER-NAME.MYREALM.COM
+* *Realm*: The Domain that the user belongs to. Note that this value is case-sensitive and must be specified exactly as defined in Active Directory.
+* *KDC*: The Key Distribution Center;usually the Domain Controller (server name or IP). More info at https://msdn.microsoft.com/en-us/library/windows/desktop/aa378170(v=vs.85).aspx
+* *Disable Cn Check*: When dealing with HTTPS certificates, if the certificate is not signed by a trusted partner, the server might respond with an Exception. To prevent this it
+is possible to disable the CN (Common Name) check. [underline]_Note:_ this is not recommended for production environments.
+
+===== Advanced scenarios
+If the environment is complex and requires further settings, a Kerberos configuration file has to be created manually and referenced in the connector’s connection configuration.
+
+The following parameters are available for advanced scenarios:
+
+* *Login Properties File Path*: Path to a customized Login Properties File. The Kerberos login module (Krb5LoginModule) can be tuned with scenario-specific configurations by defining a JAAS
+login configuration file. When not specified, default values which usually work for most cases will be set up. There are 2 options for setting this property:
+-	Place the file in the class path (usually under src/main/resources) and set the value of the property to classpath:jaas.conf.
+-	Provide the full path to the file as in C:\kerberos\jaas.conf.
+* *Kerberos Properties File path*: Path to a customized Kerberos Properties File. There are 2 options for setting this property:
+-	Place the file in the class path (usually under src/main/resources) and set the value of the property to classpath:krb5.conf.
+-	Provide the full path to the file as in C:\kerberos\krb5.conf.
+
+.JAAS login configuration file
+Following is a sample of the JAAS login configuration file for the Kerberos login module:
+-----------------
+Kerberos {
+    com.sun.security.auth.module.Krb5LoginModule required
+    debug=true
+    refreshKrb5Config=true;
+};
+-----------------
+
+More information on how to create the JAAS login configuration file for the Kerberos login module can be found at _http://docs.oracle.com/javase/7/docs/jre/api/security/jaas/spec/com/sun/security/auth/module/Krb5LoginModule.html_
+
+.Kerberos configuration file
+Following is a sample of the content of a Kerberos configuration file:
+---------------------
+[libdefaults]
+default_realm = MYREALM.COM
+
+[realms]
+MYREALM.COM = {
+ kdc = mydomaincontroller.myrealm.com
+ default_domain = MYREALM.COM
+}
+
+[domain_realm]
+.myrealm.com = MYREALM.COM
+myrealm.com = MYREALM.COM
+---------------------
+
+WARNING: realm / default_domain are case-sensitive and must be specified exactly as defined in Active Directory. Receiving an error during Test Connection stating "Message stream modified (41)"
+is an indication that the domain name is not correctly formed.
+
+More information on how to create the Kerberos configuration file can be found at _http://web.mit.edu/kerberos/krb5-devel/doc/admin/conf_files/krb5_conf.html_
+
+==== Okta Authentication
+
+Configuring the connector to use Okta authentication requires the following information:
+
+* *Okta domain*: The Okta endpoint that accepts okta username and password for authentication: your-domain.okta.com
+* *Okta username*: Your Okta username : your-email@example.com
+* *Okta username*: Your Okta password
+* *Okta API token*: Okta uses a bearer token for API authentication with a sliding scale expiration. Reference: http://developer.okta.com/docs/api/getting_started/getting_a_token.html
+* *Sharepoint Online embedded link*: The link of your Microsoft Office 365 SharePoint Online application from Okta. Example: https://your-domain.okta.com/home/office365/0oa14mz7f4HAWypdZ1t7/31737
+
+=== Security Token Authentication
+
+In cases where it is not possible to configure a connection depending on username and password, or when you need to authenticate using a custom Security Token Service (STS) (different from the supported ones), the `Security Token Connection` settings allow you to provide the security token that you obtained from your custom STS. This configuration requires you that you set up the following information to use for authenticating:
+
+* *Security Token*: (Optional) A string containing the security token (that is, a full XML document) obtained from your STS to authenticate the connection with your Sharepoint instance. If you don't configure the security token in this setting, you need to provide a `Security Token Provider` as defined in the advanced section's setting detailed below.
+* *Instance Type*: Indicates if the connector should authenticate to an on-premises or an on-line instance as each one provides different endpoints and methods to attach the security token and authenticate the connection.
+
+In addition to the basic configuration shown above, there is an advanced setting where you can provide a `Security Token Provider` instance of your own. This mechanism allows you to obtain the security token using a custom implementation and allows the connector refreshing the connection when the token has expired (which is not the case for when just providing the `Security Token` as XML document).
+
+* *Security Token Provider*: (Optional) A string that references to a Spring bean which should be a class that implements the `org.mule.module.sharepoint.connection.providers.SecurityTokenProvider` interface. Within the implementation you are responsible of providing a security token each time the connector requests one. In order to provide a reference to your own implementation as a Spring bean, refer to the following xref:using-spring-beans-as-flow-components.adoc[documentation].
+
+== To Install this Connector
 
 . In Anypoint Studio, click the Exchange icon in the Studio taskbar.
 . Click Login in Anypoint Exchange.
@@ -72,7 +157,7 @@ The parameter *_wa_* tells the STS that a sign in is being initiated. The *_wtre
 
 When Studio has an update, a message displays in the lower right corner, which you can click to install the update.
 
-=== Configuring Your First Flow
+== Configuring Your First Flow
 
 To configure:
 
@@ -82,10 +167,10 @@ To configure:
 . Click *Create*.
 . In the *Search* text box, type *sharepont*.
 . Click *Microsoft SharePoint* and click *OK*.
-. Choose the Global Type to configure: +
- +
-image::windowsglobaltypes.png[WindowsGlobalTypes]
-
+. Choose the Global Type to configure:
++
+image::windowsglobaltypes.png[WindowsGlobalTypes]
++
 . Legacy Connection:
 .. Fill in the *Username*, *Password*, and *Site URL*.
 .. For authentication:
@@ -93,12 +178,10 @@ To configure:
 * To connect with Claims Authentication, fill in STS URL (Security Token Service) and scope (Relying Party Identifier).  The STS URL has to point to the endpoint of the STS that accepts username and password as authentication credentials and understands WS-Trust 1.3 standard. In ADFS, the endpoint is usually `+https://myadfs.com/adfs/services/trust/13/usernamemixed+`. Also, the endpoint has to be enabled in ADFS (it is enabled by default).
 * To connect with NTLM Authentication, fill in *Domain*.
 * To connect to SharePoint Online, leave  NTLM and Claims inputs empty. Just specify a *Username*, *Password*, and *Site URL*.
-
-//^
-
-.. Click *Test Connection* to ensure the connection works correctly: +
- +
-image::spglobalelementprops.png[SPGlobalElementProps]
++
+.. Click *Test Connection* to ensure the connection works correctly:
++
+image::spglobalelementprops.png[SPGlobalElementProps]
 
 The other connection types require similar information.
 
@@ -110,45 +193,44 @@ To create an Anypoint Studio flow:
 
 . From Anypoint Studio, click *File* > *New* > *Mule Project*.
 . Specify a *Project Name* and click *Finish*.
-. In the Search box, type *http* and drag an *HTTP Endpoint* from the Connectors section to the canvas.
-. In the Search box, type *sharepoint* and drag a Microsoft SharePoint connector instance next to the HTTP Endpoint connector.
-. In the Search box, type *json* and drag an *Object to JSON* transformer next to the Microsoft SharePoint connector. +
-
+. In the Search box, type *http* and drag an *HTTP Connector* to the canvas.
+. In the Search box, type *sharepoint* and drag a Microsoft SharePoint connector instance next to the HTTP connector.
+. In the Search box, type *json* and drag an *Object to JSON* transformer next to the Microsoft SharePoint connector.
 +
 image::spmuleflow.png[SPMuleFlow]
 +
-
-. Double-click the HTTP Endpoint. Make sure *Host* is set to *localhost* and *Port* is set to *8081*. Set the *Path* to *query*. Click *OK*.
+. Double-click the HTTP connector. Make sure *Host* is set to *localhost* and *Port* is set to *8081*. Set the *Path* to *query*. Click *OK*.
 . Double-click the Microsoft SharePoint connector and click the green plus symbol.
 . Update the following configuration values: +
 .. From the Connector Configuration list, click the *Microsoft SharePoint* configuration that was previously created.
-.. From the Operation list, click *List query*.  +
- *Note*: The *List query* option only appears in the Operation list after you have successfully connected to a SharePoint instance.
+.. From the Operation list, click *List query*.
++
+*Note*: The *List query* option only appears in the Operation list after you have successfully connected to a SharePoint instance.
++
 .. From the Language list, click *DataSense Query Language*.
 . Click Query Builder: +
 .. From the list of Types, click *Documents*.
 .. From the list of Fields, click *ID*, and *Title*.
 .. From Order By, click *Title*.
-.. From Direction, click  *DESCENDING*  +
- +
-image::msspquerybuilder.png[MSSPQueryBuilder]
+.. From Direction, click  *DESCENDING*.
++
+image::msspquerybuilder.png[MSSPQueryBuilder]
 
 == Running the Flow
 
 . In Package Explorer, right click on sharepoint2013-demo and select *Run As > Mule Application*.
-. Check the console to see when the application starts. You should see the following  message if no errors occurred: +
+. Check the console to see when the application starts. You should see the following  message if no errors occurred:
 +
-
 [source,text,linenums]
 ----
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 + Started app 'sharepoint2013-demo'                        +
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 ----
-
-. Open an Internet browser and visit `+http://localhost:8081/query+`
-. The list of documents are ordered by descending title and returns in JSON format  (results vary according to your SharePoint 2013 instance). +
-
++
+. Open an Internet browser and visit http://localhost:8081/query.
+. The list of documents are ordered by descending title and returns in JSON format  (results vary according to your SharePoint 2013 instance).
++
 [source,text,linenums]
 ----
 [{"__metadata":{"id":"Web/Lists(guid'2af685ae-5aec-4f60-b175-
@@ -160,7 +242,7 @@ sItem"},"Id":4,"ID":4,"Title":"folder"}]
 
 == Operations: Lists and List Items API
 
-Using the Lists and List Items API lets you create, retrieve, update, and delete SharePoint lists and list items.
+Use the Lists and List Items API to create, retrieve, update, and delete SharePoint lists and list items.
 
 === Creating, Updating, and Deleting List Items
 
@@ -168,24 +250,25 @@ When creating or updating an item, specify the list ID. After you specify an ID,
 
 [source,xml,linenums]
 ----
-<sharepoint-2013:list-create config-ref="Sharepoint_2013" doc:name="Sharepoint 2013" baseTemplate="GENERIC_LIST" title="Title"> <sharepoint-2013:list ref="#[payload]"/> </sharepoint-2013:list-create>
+<sharepoint-2013:list-create config-ref="Sharepoint_2013" doc:name="Sharepoint 2013" baseTemplate="GENERIC_LIST" title="Title">
+  <sharepoint-2013:list ref="#[payload]"/>
+</sharepoint-2013:list-create>
 ----
 
 Or define the attributes in the connector itself:
 
 [source,xml,linenums]
 ----
-<sharepoint-2013:list-create config-ref="Sharepoint_2013" doc:name="Sharepoint 2013"
-baseTemplate="GENERIC_LIST" title="Title"> <sharepoint-2013:list contentTypesEnabled="true"
-description="Description"/> </sharepoint-2013:list-create>
+<sharepoint-2013:list-create config-ref="Sharepoint_2013" doc:name="Sharepoint 2013" baseTemplate="GENERIC_LIST" title="Title">
+  <sharepoint-2013:list contentTypesEnabled="true" description="Description"/>
+</sharepoint-2013:list-create>
 ----
 
 For retrieving and deleting lists, only the list ID is necessary:
 
-[source,xml,linenums]
+[source,xml]
 ----
-<sharepoint-2013:list-delete config-ref="Sharepoint_2013" doc:name="Sharepoint 2013"
-listId="8e306633-c600-40ab-80db-80f57968c0a1" />
+<sharepoint-2013:list-delete config-ref="Sharepoint_2013" doc:name="Sharepoint 2013" listId="8e306633-c600-40ab-80db-80f57968c0a1" />
 ----
 
 === Creating, Updating, and Deleting List Items
@@ -226,10 +309,10 @@ If any of these fields are selected to be returned by the query, two types of re
 ----
 +
 This object can later be used in another connector to retrieve the referenced object
-together with a for each component:
+together with a for-each component:
 +
 image::mssplistitemquery.png[MSSPListItemQuery]
-
++
 * *checked*. Retrieves the full object graph. In case there is a cycle, the summary reference object displays:
 +
 [source,json,linenums]
@@ -255,14 +338,14 @@ image::mssplistitemquery.png[MSSPListItemQuery]
     ]
 }
 ----
-+
-Example *Query Text*:
-+
-image::spexampleqtext.png[SPExampleQText]
-+
-> Warning: Checking this option may cause large item lists with many reference fields to take a long time to retrieve.
 
-Since version 2.1.10 you can use the _internal_ or _title_ field names in DSQL queries (as well as in other list's operations as detailed below).
+Example *Query Text*:
+
+image::spexampleqtext.png[SPExampleQText]
+
+*Note:* Checking this option may cause large item lists with many reference fields to take a long time to retrieve.
+
+Since version 2.1.10 of this connector you can use the _internal_ or _title_ field names in DSQL queries (as well as in other list's operations as detailed below).
 
 For example for the previous query:
 
@@ -288,7 +371,7 @@ Using _internal_ and/or _title_ field names is supported within the following li
 - Updating an existent item in the list
 - Querying items in the list
 
-Note: To filter by a datetime field type you need to write the value using ISO8601 format when specified in a DSQL clause (for example, Created > 2000-01-01T00:00:00-03:00).
+*Note:* To filter by a datetime field type, write the value using ISO-8601 format when specified in a DSQL clause (for example, Created > 2000-01-01T00:00:00-03:00).
 
 == Operations: File and Folder API
 
@@ -296,7 +379,7 @@ Using the File and Folder API allows you to create, retrieve, update, and delete
 
 When using the folders operations, the server's relative URL refers to where the folder is or will be. The URL can be in the format _/site/docList/innerFolder_ or in _docList/innerFolder_  format. In the second case, the site specified in the connector's configuration site URL parameter is used.
 
-When using the files operations, the file server relative url refers to a folder server relative URL plus the filename: _/site/docList/innerFolder/filename_ or _docList/innerFolder/filename_.
+When using the files operations, the file server relative URL refers to a folder server relative URL plus the filename: _/site/docList/innerFolder/filename_ or _docList/innerFolder/filename_.
 
 === Creating and Deleting a Folder
 
@@ -327,13 +410,13 @@ fileContentStream-ref="#[payload]" overwrite="true"
 doc:name="Sharepoint 2013"/>
 ----
 
-To upload large files you need to configure your Sharepoint and IIS servers:
+In order to upload large files you need to configure your Sharepoint and IIS servers:
 
 - Set 'Maximum Upload Size' to 2047MB (max) at SP management console for site.
 - Set connection timeout for IIS site to high value.
 - Set the 'Maximum Allowed Content Length' to 2147483647 for IIS app (at request filtering).
 
-Note: The Sharepoint REST API (which the connector uses) supports uploading files up to 2GB. When working with large files it's recommended to provide the system local path to the file (_localFilePath_ parameter's value) as it's the most efficient way to upload it through the connector.
+NOTE: The Sharepoint REST API (which the connector uses) supports uploading files up to 2GB. When working with large files it's recommended to provide the system local path to the file (_localFilePath_ parameter's value) as it's the most efficient way to upload it through the connector.
 
 === Getting File Contents
 
@@ -504,7 +587,7 @@ The exception message helps debug the cause of the exception.
 
 === Exception in Operations
 
-If when executing an operation, an error occurs, then a SharepointException is thrown with a message about the error.
+If when executing an operation, an error occurs, a SharepointException is thrown with a message about the error.
 
 == Frequently Asked Questions
 
@@ -526,20 +609,19 @@ Yes, all supported entities and entity attributes are exposed to Studio by the c
 
 === What operations can I perform with the connector?
 
-For the Lists and ListItems API, supported operations include Create, Retrieve, Update and Delete. For Files and Folders, operations include Add, retrieve content, retrieve metadata, delete, check out, undo check out, check in, publish, unpublish, approve, deny, recycle, and copy.
+For the Lists and ListItems API, supported operations include Create, Retrieve, Update, and Delete. For Files and Folders, operations include Add, retrieve content, retrieve metadata, delete, check out, undo check out, check in, publish, unpublish, approve, deny, recycle, and copy.
 
 === Are there any examples that show how to use the connector?
 
-Yes, an example project for Anypoint Studio is freely available in the link;_attachments/sharepoint-connector-samples.zip[sharepoint-connector-samples.zip].
+Yes, an example project for Anypoint Studio is freely available in the link:{attachmentsdir}/sharepoint-connector-samples.zip[sharepoint-connector-samples.zip].
 
 === What Mule editions can I use this connector on?
 
-This connector is supported on any Enterprise Edition Anypoint platform running on any operating system and bit-ness, including the CloudHub integration PaaS.
+This connector is supported on any Enterprise Edition Anypoint platform running on any operating system and bitness, including the CloudHub integration PaaS.
 
 == See Also
 
 * xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)]
 * xref:endpoint-configuration-reference.adoc[Configuring Endpoints]
 * xref:transformers.adoc[Studio Transformers]
-*  xref:flow-reference-component-reference.adoc[Flow References]
-* Webinars and additional documentation related to Mule ESB can be found under the Resources menu option.
+* xref:flow-reference-component-reference.adoc[Flow References]

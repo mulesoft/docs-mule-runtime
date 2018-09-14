@@ -2,11 +2,14 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: mule, deploy, launch, run, terminate
+:keywords: mule, esb, deploy, launch, run, terminate
+
+This document deals with deploying to standalone instances of the Mule runtime. To take full advantage of managing and monitoring features, you can deploy to the same Mule runtime via the xref:runtime-manager::index.adoc[Runtime Manager]. See xref:runtime-manager::deployment-strategies.adoc[Deployment Strategies] for a deeper look at the different deployment alternatives offered by the platform.
 
 Mule uses the http://wrapper.tanukisoftware.org/[Java Service Wrapper] to control the Java Virtual Machine (JVM) from your native OS. The wrapper provides many options and features, including the ability to run Mule as a Unix daemon or install or remove Mule as a Windows Service. The wrapper can handle system signals and start parameters, and overall provides much better interaction between the JVM and the underlying OS.
 
 For more information about the Java Service Wrapper, consult the http://wrapper.tanukisoftware.com/doc/english/introduction.html[online documentation].
+
 
 == Startup and Shutdown Script
 
@@ -25,11 +28,11 @@ The table below lists all the parameters that the script accepts.
 |===
 |Parameter |Description
 | `start` |Starts the Mule server in the terminal background.
-| `stop` |Stops the Mule server.
+| `stop` |Stops the Mule server. The stopping process stops inbound endpoints to process in-flight messages. However due to a timeout duration not all messages are ensured to be processed before final shutdown occurs.
 | `restart` |Restarts the Mule server.
-| `status` |Displays the status of the Mule server (`running` or `not running`) and the process PID if running.
+| `status` | *(Unix only.)* Displays the status of the Mule server (`running` or `not running`) and the process PID if running.
 | `dump` | *(Unix only.)* Dumps the Mule wrapper's core to `$MULE_HOME/log/mule_ee.log`.
-| `console` |Start Mule  in the terminal foreground (console mode). Same as running `mule` with no parameters.
+| `console` |Start Mule in the terminal foreground (console mode). Same as running `mule` with no parameters.
 | `install` | *(Windows only.)* Install Mule as a Windows service.
 | `remove` | *(Windows only.)* Remove Mule from your Windows services.
 |===
@@ -44,7 +47,7 @@ The table below lists all the parameters that the script accepts.
 * *Unix:* `./mule start`
 * *Windows:* `mule.bat start`
 
-Alternatively, instead of using the `cd` command, type the full path of the script, for example `/opt/mule/mule-ee-3.7.0/bin/mule start`.
+Alternatively, instead of using the `cd` command, type the full path of the script, for example `/opt/mule/mule-ee-3.8.0/bin/mule start`.
 
 To stop Mule, run the script with the `stop` parameter.
 
@@ -56,7 +59,7 @@ To stop Mule, run the script with the `stop` parameter.
 * *Unix:* `./mule`
 * *Windows:* `mule`
 
-Alternatively, instead of using the `cd` command, type the full path of the script, for example `/opt/mule/mule-ee-3.7.0/bin/mule`.
+Alternatively, instead of using the `cd` command, type the full path of the script, for example `/opt/mule/mule-ee-3.8.0/bin/mule`.
 
 When running in foreground mode, the startup script displays information on the terminal's standard output. You can't issue further commands on the terminal as long as Mule is running.
 
@@ -113,10 +116,20 @@ wrapper.ntservice.interactive=false
 wrapper.license.type=DEV
 wrapper.license.id=201010160006
 wrapper.license.licensee=mulesoft.com
-wrapper.license.dev_application=Mule ESB Enterprise Edition
+wrapper.license.dev_application=Mule Enterprise Edition
 wrapper.license.features=64bit
     ...
 ----
+
+=== Setting JVM Parameters inside Anypoint Studio
+
+You can set JVM parameters for Mule applications run from Anypoint Studio. *Run* > *Run Configurations* > *Arguments* tab, entering the arguments in the "VM arguments" pane.
+
+.Example
+----
+-Dorg.mule.xml.validate=false -Djava.mail.debug=true
+----
+
 
 ==== Set Mule Standalone Server Memory
 
@@ -134,11 +147,10 @@ To control the behavior of the Wrapper from the command line use the -W switch w
 
 For example, to set the logfile that the Wrapper's uses, you could add `wrapper.logfile=/my/log/file.log` to the Wrapper configuration file, or you could add `-Wwrapper.logfile=/my/log/file.log` to the Mule script at the command line.
 
+[[unix_daemon]]
 == Running Mule As a Unix Daemon
 
-To run Mule as a Unix daemon, you need to write a simple management script for the Mule startup script. Place your management script in your system's appropriate directory (such as `/etc/init.d`) and use your system's init script architecture tools to ensure that your management script is invoked in the runlevels you wish.
-
-On some systems, you can set up startup scripts for use with the `service` utility (System V). Consult your operating system's documentation for details.
+To run Mule as a Unix daemon, you need to write a simple wrapper script for the Mule startup script. Place your wrapper script in your system's appropriate directory (such as `/etc/init.d`) and use your system's init script architecture tools to ensure that your wrapper script is invoked in the runlevels you wish.
 
 Here is a sample `init.d` script for Red Hat Enterprise Linux:
 
@@ -190,7 +202,7 @@ case "$1" in
 esac
 ----
 
-Your management script needs to set the required environment for Mule; a more generic sample script is provided below below.
+Your wrapper script needs to set the required environment for Mule; a sample script is provided below below.
 
 [source,text,linenums]
 ----
@@ -212,11 +224,33 @@ export JAVA_HOME MULE_HOME MULE_LIB PATH
 $MULE_HOME/bin/mule $1 -config <path to mule-conf.xml>
 ----
 
+On some systems, you can set up startup scripts for use with the `service` utility (System V). Consult your operating system's documentation for details.
 
+=== For CentOS 7 and RHEL 7
+
+After the steps described in <<unix_daemon, Running Mule As a Unix Daemon>>, you might realize that every time you execute `service mule start`, a new process replaces the one that was currently running. To avoid that behavior, you can follow these instructions:
+
+* Create the file `/etc/systemd/system/<name of the wrapper script>.service` with the content:
+
+[source,text,linenums]
+----
+[Service]
+Type=forking
+ExecStart=/etc/init.d/<name of the wrapper script> start
+User=mule
+----
+
+* Run the command to reload the service configuration:
+
+----
+systemctl daemon-reload
+----
 
 == Running Mule As a Windows Service
 
-To install Mule as a Windows service, go to the `$MULE_HOME/bin/` directory, then issue the following commands:
+In Mule 3.8.0, the Tanuki wrapper was upgraded to a newer version, implying a change to the certificate by which the wrapper is signed. See xref:release-notes::mule-runtime/mule-3.8.0-release-notes.adoc#enterprise-edition-library-changes[Mule 3.8.0 release notes concerning Tanuki Wrapper upgrade] for details on resolving compatibility issues.
+
+To install Mule as a Windows service, go to the `$MULE_HOME/bin/` directory, then issue the following commands.
 
 ----
 mule install
@@ -253,14 +287,14 @@ The table below lists some parameters common to Mule, which are not documented i
 [%header,cols="2*a"]
 |===
 |Parameter |Description
-|`-D-Mmule.agent.enabled` |*(* _Boolean_ *_)_* Start Mule ESB with or without the Management Console agent, which is enabled by default.
+|`-D-Mmule.agent.enabled` |*(* _Boolean_ *_)_* Start Mule with or without the Management Console agent, which is enabled by default.
 |
 
 ----
 -D-Mmule.mmc.bind.port
 ----
 
-|Specify a port or port range for the Mule ESB agent listener that the Management Console binds to. To specify a port range, use `<port>-<port>`, for example `3000-3010`.
+|Specify a port or port range for the Mule agent listener that the Management Console binds to. To specify a port range, use `<port>-<port>`, for example `3000-3010`.
 |===
 
 The `$MULE_HOME/conf/wrapper.conf` configuration file includes many more parameters, some of which are by default commented out, but documented in the comments.
@@ -271,20 +305,24 @@ DOCS-1704 section follows:
 
 == Shutting Down Mule
 
-You can shut down Mule using the `mule stop` command that is run from the MULE_HOME/bin directory. When Mule stops,
-inbound endpoints are shut down, and in-flight Mule messages continue to process until the timeout setting elapses and final
-shutdown occurs.
+You can shut down Mule using the `mule stop` command that is run from the `MULE_HOME/bin` directory. When Mule stops,
+inbound endpoints are shut down, and in-flight Mule messages continue to process until the `shutdown.timeout` configured in `wrapper.conf` setting elapses and final shutdown occurs.
 
 You can set a timeout value to enable the current flow to complete. However, there is no built in method or utility
 to check what messages are in flight. You can connect a profiler and see the active threads (or just a thread dump), this should provide you an overview of what's happening at the JVM level.
 
+To ensure all inflight messages are processed you can shutdown mule in two steps:
+
+. Stop the flow(s) manually (this will prevent new messages from coming)
+. Stop Mule
+
 === Timeout From wrapper.conf
 
-You can set the timeout value in `wrapper.conf` using the `wrapper.shutdown.timeout` statement where the value is in
+You can set the timeout value (in milliseconds) in `wrapper.conf` using the `wrapper.shutdown.timeout` statement where the value is in
 seconds, for example:
 
 [listing]
-wrapper.shutdown.timeout="30"
+wrapper.shutdown.timeout="30000"
 
 More information is available in the
 http://wrapper.tanukisoftware.com/doc/english/prop-ping-timeout.html[Tanuki wrapper.shutdown.timeout] page.

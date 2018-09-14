@@ -6,10 +6,59 @@ endif::[]
 
 The Secure Shell (SSH) File Transfer Protocol (SFTP) transport allows files to be read and written to and from directories over SFTP. Unlike the Virtual File System (VFS) transport, it can handle large files because it streams message payloads. The SFTP transport can be used as an inbound or an outbound endpoint. Files can be retrieved from an SFTP server and processed as Mule messages, or Mule messages can be uploaded as files to an SFTP server.  Mule uses the http://www.jcraft.com/jsch/[JCraft library] for SFTP SSH.
 
-*Notes*:
+== SFTP Accepts SSH Known Hosts File
+
+In Mule 3.8 and newer, an SSH known_hosts file may be passed to SFTP. The format for the SSH `known_hosts` file is standard to your operating system. Refer to your OS documentation for details. The system property `mule.sftp.knownHostsFile` has been removed in Mule 3.8 and newer. Instead, the name of the file with the known hosts must now be referenced from  the `mule-config.xml` file, using the `knownHostsFile` attribute of the connector or the endpoints.​ The `mule-config.xml` file is in the `$MULE_HOME/apps/default` directory.
+
+The following example uses outbound SFTP to ensure that the hosts are known in connectors and endpoints:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"z
+      xsi:schemaLocation="
+          http://www.springframework.org/schema/beans
+	  http://www.springframework.org/schema/beans/spring-beans-current.xsd
+          http://www.mulesoft.org/schema/mule/core
+	  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/sftp
+	  http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd">
+
+  <spring:beans>
+        <spring:import resource="sftp-properties.xml"/>
+    </spring:beans>
+
+  <sftp:connector name="sftpConnector" />
+
+	<sftp:connector name="sftpConnectorWithKnownHosts"
+        knownHostsFile="src/test/resources/my_known_hosts" />
+
+    <flow name="knownHostsInConnector">
+        <sftp:outbound-endpoint
+            address="sftp://${USER1_NAME}@${SFTP_HOST}:${SFTP_PORT}/~/tempdir2-test-outbound"
+            connector-ref="sftpConnectorWithKnownHosts" name="outboundEndpoint1">
+        </sftp:outbound-endpoint>
+    </flow>
+
+    <flow name="knownHostsInEndpoint">
+        <sftp:outbound-endpoint
+            address="sftp://${USER1_NAME}@${SFTP_HOST}:${SFTP_PORT}/~/tempdir2-test-outbound"
+            connector-ref="sftpConnector" name="outboundEndpoint2"
+            knownHostsFile="src/test/resources/my_known_hosts">
+        </sftp:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+This example sets the USER1_NAME, SFTP_HOST, and SFTP_PORT values in the `sftp-properties.xml` file.
+
+== Overview
 
 * Mule 3.7 and newer supports SFTP retries.
-* In code examples in this guide, `spring-beans-current.xsd` is a placeholder. To locate the correct version, see  http://www.springframework.org/schema/beans/  -- Mule 3.7 and newer supports Spring 4.1.6.
+* In code examples in this guide, `spring-beans-current.xsd` is a placeholder. To locate the correct version, see  `+http://www.springframework.org/schema/beans/+`
 
 [%header%autowidth.spread]
 |===
@@ -23,8 +72,8 @@ The Secure Shell (SSH) File Transfer Protocol (SFTP) transport allows files to b
 |Retries |image:error.png[checkmark icon]
 |MEPs |`one-way`, `request-response`
 |Default MEP |`one-way`
-|Maven Artifact |org.mule.transports:mule-transport-sftp
-|SFTP |https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/sftp/package-summary.html[JavaDoc] http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_sftp/namespace-overview.html[SchemaDoc]
+|Maven Artifact |org.mule.transport:mule-transport-sftp
+|SFTP |https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/sftp/package-summary.html[JavaDoc] http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_sftp/namespace-overview.html[SchemaDoc]
 |===
 
 == Namespace and Syntax
@@ -33,16 +82,14 @@ This section lists namespace, schema, and connector syntax information.
 
 === XML Namespace
 
-[source,text,linenums]
 ----
 xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
 ----
 
 === XML Schema Location
 
-[source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/3.7/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/3.8/mule-sftp.xsd
 ----
 
 === Schema
@@ -81,7 +128,7 @@ You can define your endpoints two different ways:
 ----
 +
 . Non-prefixed URI:
-
++
 [source,xml,linenums]
 ----
 <inbound-endpoint address="sftp://mule:test123@myhost.com/tmp/sftp"/>
@@ -93,8 +140,7 @@ You can define your endpoints two different ways:
 
 You can use the SFTP transport to download from or upload to a secured resource accessible via SFTP. This transport does not currently support transactions policies. Some uses for the SFTP transport are downloading data into a database and picking up files and uploading them via SFTP. You can use this transport to implement the file transfer Enterprise Integration Pattern. As explained in the http://www.eaipatterns.com[EIP book], the file transfer pattern allows you to loosely couple two applications together, with delays in processing time. If your integration is time-sensitive, you may want to look at implementing the messaging pattern with the xref:jms-transport-reference.adoc[JMS transport] which can give you closer to real-time processing.
 
-[NOTE]
-You need to have the proper permissions for the folder and files that the connector points to. If not, an exception is raised and no more files are processed after the first failed attempt.
+*Note:* You need to have the proper permissions for the folder and files that the connector points to. If not, an exception is raised and no more files are processed after the first failed attempt.
 
 Using the SFTP transport allows you to optionally use streaming support for larger files and asynchronous and synchronously chain other endpoints with an SFTP endpoint. It also allows you to use Mule's robust error handling in your Mule application.
 
@@ -105,6 +151,7 @@ The examples on this page show how to define SFTP inbound and outbound endpoints
 * Streaming support of resources
 * For inbound endpoints, poll the resource at a specified interval
 * For outbound endpoints, choices on how to handle duplicate files: throw and exception, overwrite, append a sequence number to the file name
+* In Mule 3.8 and later, the knownHostsFile parameter was added, which if provided, the client validates the server's key against the one in the referenced file. If the server key doesn't match the one in the file, the connection is aborted.
 
 == Usage
 
@@ -134,8 +181,8 @@ To include the SFTP transport in your configuration:
 +
 . Define an inbound and/or outbound endpoint:
 +
-* Use an inbound endpoint if you want new files found on the SFTP site to trigger a Mule flow
-* Use an outbound endpoint if you want to upload files to an SFTP site. These files typically start as Mule messages and are converted to files.
+** Use an inbound endpoint if you want new files found on the SFTP site to trigger a Mule flow.
+** Use an outbound endpoint if you want to upload files to an SFTP site. These files typically start as Mule messages and are converted to files.
 +
 [source,xml,linenums]
 ----
@@ -157,15 +204,15 @@ One-way and request-response exchange patterns are supported. If an exchange pat
 
 This is a polling transport. The inbound endpoint for SFTP uses polling to look for new files. The default is to check every second, but it can be changed via the 'pollingFrequency' attribute on the inbound endpoint.
 
-Streaming is supported by the SFTP transport and is enabled by default. Transactions are not currently supported.
+Streaming is supported by the SFTP transport and is enabled by default.
 
 == Example Configurations
 
 The following example saves any files found on a remote SFTP server to a local directory. This demonstrates using an SFTP inbound endpoint and a file outbound endpoint.
 
-*Important*: Before running this example, create an SFTP properties file:
+*Important:* Before running this example, create an SFTP properties file:
 
-. Create the **sftp.properties** properties file in your Classpath or set your PATH variable to the file's location. For information on specifying SFTP server access information for a username, password, host, and port, using Anypoint Studio, see xref:sftp-connector.adoc[SFTP Connector].
+. Create the *sftp.properties* properties file in your Classpath or set your PATH variable to the file's location. For information on specifying SFTP server access information for a username, password, host, and port, using Anypoint Studio, see xref:sftp-connector.adoc[SFTP Connector].
 . Provide these parameters:
 +
 [source,text,linenums]
@@ -200,36 +247,40 @@ sftp.password=icannottellyou
       xmlns:spring="http://www.springframework.org/schema/beans"
       xsi:schemaLocation="
           http://www.springframework.org/schema/beans
-          http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	  http://www.springframework.org/schema/beans/spring-beans-current.xsd
           http://www.mulesoft.org/schema/mule/sftp
-          http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+	  http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
           http://www.mulesoft.org/schema/mule/file
-          http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+	  http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
           http://www.mulesoft.org/schema/mule/core
-          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	  http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
 
     <!-- This placeholder bean lets you import the properties from the sftp.properties file. -->
     <spring:bean id="property-placeholder"
       class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
-        <spring:property name="location" value="classpath:sftp.properties"/> ❶
+        <spring:property name="location" value="classpath:sftp.properties"/> //<1>
     </spring:bean>
 
     <flow name="sftp2file">
-        <sftp:inbound-endpoint host="${sftp.host}" port="${sftp.port}"
-        path="/home/test/sftp-files" user="${sftp.user}" password="${sftp.password}"> ❷
-                    <file:filename-wildcard-filter pattern="*.txt,*.xml"/> ❸
+        <sftp:inbound-endpoint host="${sftp.host}" port="${sftp.port}" path="/home/test/sftp-files"
+	user="${sftp.user}" password="${sftp.password}"> //<2>
+                    <file:filename-wildcard-filter pattern="*.txt,*.xml"/> //<3>
                 </sftp:inbound-endpoint>
         <file:outbound-endpoint path="/tmp/incoming"
-        outputPattern="#[message.inboundProperties.originalFilename]"/> ❹
+	  outputPattern="#[message.inboundProperties.originalFilename]"/> //<4>
     </flow>
 </mule>
 ----
+<1> A properties file which holds the SFTP server login credentials.
+<2> An SFTP inbound endpoint is declared that checks the `/home/test/sftp-files` directory for new files every one second by default.
+<3> Defines a file filter which only sends files ending with `.txt` or `.xml` to the outbound endpoint.
+<4> Any conforming files found on the inbound endpoint are then written to the `/tmp/incoming` local directory with the same file name it had on the SFTP server.
 
-A properties file which holds the SFTP server login credentials is defined on ❶. Next a SFTP inbound endpoint is declared on ❷ which checks the `/home/test/sftp-files` directory for new files every one second by default. ❸ defines a file filter which only sends files ending with `.txt` or `.xml` to the outbound endpoint. Any conforming files found on the inbound endpoint are then written to the `/tmp/incoming` local directory with the same file name it had on the sftp server ❹.
+==== Using a File Inbound Endpoint and an SFTP Outbound Endpoint
 
-The following example uploads files found in a local directory to an SFTP server. This demonstrates using a file inbound endpoint and an SFTP outbound endpoint.
+The following example uploads files found in a local directory to an SFTP server.
 
-*Uploading files via SFTP using a Flow*
+*Uploading Files Via SFTP Using a Flow*
 
 [source,xml,linenums]
 ----
@@ -240,31 +291,33 @@ The following example uploads files found in a local directory to an SFTP server
       xmlns:spring="http://www.springframework.org/schema/beans"
       xsi:schemaLocation="
           http://www.springframework.org/schema/beans
-          http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	  http://www.springframework.org/schema/beans/spring-beans-current.xsd
           http://www.mulesoft.org/schema/mule/sftp
-          http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+	  http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
           http://www.mulesoft.org/schema/mule/file
-          http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+	  http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
           http://www.mulesoft.org/schema/mule/core
-          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	  http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
 
     <!-- This placeholder bean lets you import the properties from the sftp.properties file. -->
     <spring:bean id="property-placeholder"
       class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
-        <spring:property name="location" value="classpath:sftp.properties"/> ❶
+        <spring:property name="location" value="classpath:sftp.properties"/> //<1>
     </spring:bean>
 
     <flow name="file2sftp">
-        <file:inbound-endpoint path="/tmp/outgoing"> ❷
-            <file:filename-wildcard-filter pattern="*.txt,*.xml"/> ❸
+        <file:inbound-endpoint path="/tmp/outgoing"> //<2>
+            <file:filename-wildcard-filter pattern="*.txt,*.xml"/> //<3>
         </file:inbound-endpoint>
-        <sftp:outbound-endpoint host="${sftp.host}" port="${sftp.port}"
-        path="/home/test/sftp-files" user="${sftp.user}" password="${sftp.password}"/> ❹
+        <sftp:outbound-endpoint host="${sftp.host}" port="${sftp.port}" path="/home/test/sftp-files"
+	user="${sftp.user}" password="${sftp.password}"/> //<4>
     </flow>
 </mule>
 ----
-
-A properties file which holds the SFTP server login credentials is defined on ❶. Next a file inbound endpoint is declared on ❷ which checks the `/tmp/outgoing` directory for new files every one second by default. ❸ defines a file filter which only sends files ending with `.txt` or `.xml` to the outbound endpoint. Any conforming files found on the inbound endpoint are then written to the `/home/test/sftp-files` remote SFTP directory with the same file name it had on the local filesystem ❹.
+<1> A properties file which holds the SFTP server login credentials.
+<2> A file inbound endpoint is declared on which checks the `/tmp/outgoing` directory for new files every one second by default.
+<3> Defines a file filter which only sends files ending with `.txt` or `.xml` to the outbound endpoint.
+<4> Any conforming files found on the inbound endpoint are then written to the `/home/test/sftp-files` remote SFTP directory with the same file name it had on the local filesystem.
 
 == Exchange Patterns and Features of the Transport
 
@@ -272,39 +325,133 @@ See xref:transports-reference.adoc[transport matrix].
 
 == Configuration Reference
 
+All the nodes of the cluster try to consume files from a source by first applying a distributed lock on each file.
+You can change this behavior so that only one node polls from the source, making a distributed lock unnecessary.
+Changing this causes a message to have to be processed by only one node unless a distributed queue
+(such as a VM queue) is used.
+
+To enable this behavior:
+
+. Define the following system property:
++
+----
+mule.transport.sftp.singlepollinstance=true
+----
++
+. Add a statement in the wrapper.conf file, for example:
++
+----
+wrapper.java.additional.<n>=-Dmule.transport.sftp.singlepollinstance=true
+----
++
+Replace `+<n>+` with the instance number.
+
 == Connector
 
 SFTP connectivity.
 
-=== Attributes of the connector Element
+=== Attributes of the Connector Element
 
 [%header,cols="30a,70a"]
 |===
 |Name |Description
-|`preferredAuthenticationMethods` |Type: string. Required: no. Comma-separated list of authentication methods used by the SFTP client. Valid values are: gssapi-with-mic, publickey, keyboard-interactive and password.
-|`maxConnectionPoolSize` |Type: integer. Required: no. Default: disabled. If the number of active connections is specified, then a connection pool is used with active connections up to this number. Use a negative value for no limit. If the value is zero no connection pool is used.
-|`pollingFrequency` |Type: long. Required: no. Default: 1000 ms. The frequency in milliseconds that the read directory should be checked. Note that the read directory is specified by the endpoint of the listening component.
-|`autoDelete` |Type: boolean. Required: no. Default: true. Whether to delete the file after successfully reading it.
-|`fileAge` |Type: long. Required: no. Default: disabled. minimum age (in ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed. WARNING: The `fileAge` attribute only works properly if the servers where Mule and the sftp-server runs have synchronized time. *Note*: See attribute `sizeCheckWaitTime` for an alternate method of determining if a incoming file is ready for processing.
-|`sizeCheckWaitTime` |Type: long. Required: no. Default: disabled. Wait time (in ms) between size-checks to determine if a file is ready to be processed. Disabled if not set or set to a negative value. This feature can be useful to avoid processing not yet completely written files (such as, consuming large files). It tells Mule to do two size checks waiting the specified time between the two size calls. If the two size calls return the same value Mule consider the file ready for processing. *Note*: See attribute fileAge for an alternate method of determining if a incoming file is ready for processing.
-|`archiveDir` |Type: string. Required: no. Default: disabled. Archives a copy of the file in the specified directory on the file system where mule is running. The archive folder must have been created before Mule is started and the user Mule runs under must have privileges to read and write to the folder.
-|`archiveTempReceivingDir` |Type: string. Required: no. Default: disabled. If specified then the file to be archived is received in this folder and then moved to the archiveTempSendingDir while sent further on to the outbound endpoint. This folder is created as a subfolder to the archiveDir. *Note*: Must be specified together with the archiveTempSendingDir and archiveDir attributes.
-|`archiveTempSendingDir` |Type: string. Required: no. Default: disabled. If specified then the file to be archived is sent to the outbound endpoint from this folder. This folder is created as a subfolder to the archiveDir. After the file is consumed by the outbound endpoint or the component itself (that is, when the underlying InputStream is closed) it is moved to the archive folder. *Note*: Must be specified together with the archiveTempReceivingDir and archiveDir attributes.
-|`outputPattern` |Type: string. Required: no. Default: the message ID, for example, `ee241e68-c619-11de-986b-adeb3d6db038`.
-The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector. By default the
+|preferredAuthenticationMethods |Comma-separated list of authentication methods used by the SFTP client. Valid values are: gssapi-with-mic, publickey, keyboard-interactive and password.
+
+Type: String +
+Default: disabled +
+Required: no
+|maxConnectionPoolSize |If the number of active connections is specified, then a connection pool is used with active connections up to this number. Use a negative value for no limit. If the value is zero no connection pool is used.
+
+Type: Integer +
+Default: disabled +
+Required: no
+|pollingFrequency |The frequency in milliseconds that the read directory should be checked. Note that the read directory is specified by the endpoint of the listening component.
+
+Type: Long +
+Default: 1000 ms +
+Required: no
+|autoDelete |Whether to delete the file after successfully reading it.
+
+Type: Boolean +
+Default: true +
+Required: no
+|fileAge |Minimum age in milliseconds for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed. *Warning:* The fileAge attribute only works properly if the servers where Mule and the sftp-server runs have synchronized time. *Note*: See attribute sizeCheckWaitTime for an alternate method of determining if a incoming file is ready for processing.
+
+Type: Long +
+Default: disabled +
+Required: no
+|`sizeCheckWaitTime` |Type: long. Required: no. Default: disabled. Wait time (in ms) between size-checks to determine if a file is ready to be processed. Disabled if not set or set to a negative value. This feature can be useful to avoid processing not yet completely written files (such as, consuming large files). It tells Mule to do two size checks waiting the specified time between the two size calls. If the two size calls return the same value, Mule considers the file ready for processing. *Note*: See attribute fileAge for an alternate method of determining if a incoming file is ready for processing.
+
+Type: Long +
+Default: disabled +
+Required: no
+|archiveDir |Archives a copy of the file in the specified directory on the file system where mule is running. The archive folder must have been created before Mule is started and the user Mule runs under must have privileges to read and write to the folder.
+
+Type: String +
+Default: disabled +
+Required: no
+|archiveTempReceivingDir |If specified, the file to be archived is received in this folder and then moved to the archiveTempSendingDir while sent further on to the outbound endpoint. This folder is created as a subfolder to the archiveDir. *Note*: Must be specified together with the archiveTempSendingDir and archiveDir attributes.
+
+Type: String +
+Default: disabled +
+Required: no
+|archiveTempSendingDir |If specified, the file to be archived is sent to the outbound endpoint from this folder. This folder is created as a subfolder to the archiveDir. After the file is consumed by the outbound endpoint or the component itself (that is, when the underlying InputStream is closed) it is moved to the archive folder. *Note*: Must be specified together with the archiveTempReceivingDir and archiveDir attributes.
+
+Type: String +
+Default: disabled +
+Required: no
+|outputPattern |The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector. By default the
 xref:file-transport-reference.adoc[File Transport Reference]
 is used. See this same document section for information on how to override the default parser.
-|`keepFileOnError` |Type: boolean. Required: no. Default: true. If true, the file on the inbound-endpoint is not deleted if an error occurs when writing to the outbound-endpoint. *Note*: This assumes that both the inbound and outbound endpoints are using the SFTP-Transport.
-|`duplicateHandling` |Type: duplicateHandlingType. Required: no. Default: throwException. Determines what to do if a file already exist on the outbound endpoint with the specified name.
-`throwException`: Throws an exception if a file already exists.
-`overwrite`: Overwrites an existing file.
-`addSeqNo`:  Adds a sequence number to the target filename making the filename unique, starting with 1 and incrementing the number until a unique filename is found The default behavior is to throw an exception.
-|`identityFile` |Type: string. Required: no. Default: disabled. An identityFile location for a PKI private key.
-|`passphrase` |Type: string. Required: no. Default: disabled. The passphrase (password) for the identityFile if required.
-|`tempDirInbound` |Type: string. Required: no. Default: disabled. If specified then Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the SFTP server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the ftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer.
-|`tempDirOutbound` |Type: string. Required: no. Default: disabled. If specified, then Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule configured to use to access the SFTP server has privileges to create a temp folder if required.
+
+Type: String +
+Default: The message ID, for example, `ee241e68-c619-11de-986b-adeb3d6db038`. +
+Required: no
+|keepFileOnError |If true, the file on the inbound-endpoint is not deleted if an error occurs when writing to the outbound-endpoint. *Note*: This assumes that both the inbound and outbound endpoints are using the SFTP-Transport.
+
+Type: Boolean +
+Default: true +
+Required: no
+|duplicateHandling |Determines what to do if a file already exist on the outbound endpoint with the specified name.
+
+* throwException: Throws an exception if a file already exists.
+* overwrite: Overwrites an existing file.
+* addSeqNo:  Adds a sequence number to the target filename making the filename unique, starting with 1 and incrementing the number until a unique filename is found The default behavior is to throw an exception.
+
+Type: duplicateHandlingType +
+Default: throwException +
+Required: no
+|identityFile |An identityFile location for a PKI private key.
+
+Type: String +
+Default: disabled +
+Required: no
+|passphrase |The passphrase (password) for the identityFile if required.
+
+Type: String +
+Default: disabled +
+Required: no
+|tempDirInbound |If specified, Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the SFTP server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the ftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer.
+
+Type: String +
+Default: disabled +
+Required: no
+|tempDirOutbound |If specified, Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule configured to use to access the SFTP server has privileges to create a temp folder if required.
 For outbound endpoints: A temporary directory on the sftp-server to first upload the file to. When the file is fully uploaded the file is moved to its final destination. The tempDir is created as a sub directory to the endpoint. *Note*: A file in the tempDir of an outbound endpoint might not be correct (since the upload takes place to this folder) and can therefore NOT be used to restart a failing file transfer.
-|`useTempFileTimestampSuffix` |Type: boolean. Required: no. Default: disabled. Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+
+Type: String +
+Default: disabled +
+Required: no
+|useTempFileTimestampSuffix |Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+
+Type: boolean +
+Default: disabled +
+Required: no
+|knownHostsFile |If provided, the client validates the server's key against the one in the referenced file. If the server key doesn't match the one in the file, the connection is aborted. knownHostsFile specifies the path to a SSH known hosts file. This file contains public key fingerprints that ensure an SSH client is connecting to a known SSH server and not a malicious SSH server.
+
+Type: String +
+Default: none +
+Required: yes
 |===
 
 === Child Element of connector
@@ -319,21 +466,81 @@ Cardinality: 0..1
 [%header,cols="30a,70a"]
 |===
 |Name |Description
-|`path` |Type: string. Required: no. A file location.
-|`user` |Type: string. Required: no. A username.
-|`password` |Type: string. Required: no. A password.
-|`host` |Type: string. Required: no. An IP address (for example,`www.mulesoft.com`, localhost, 127.0.0.1).
-|`port` |Type: port number. Required: no. A port number.
-|`pollingFrequency` |Type: long. Required: no. Default: 1000 ms. The frequency in milliseconds that the read directory should be checked. Note that the read directory is specified by the endpoint of the listening component.
-|`fileAge` |Type: long. Required: no. Default: disabled. Age (in ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed. WARNING: The fileAge attribute only works properly if the servers where Mule and the sftp-server runs have synchronized time. *Note*: See attribute sizeCheckWaitTime for an alternate method of determining if a incoming file is ready for processing.
-|`sizeCheckWaitTime` |Type: long. Required: no. Default: disabled. Wait time (in ms) between size-checks to determine if a file is ready to be processed. Disabled if not set or set to a negative value. This feature can be useful to avoid processing not yet completely written files (such as when consuming large files). It tells Mule to do two size checks waiting the specified time between the two size calls. If the two size calls return the same value Mule consider the file ready for processing. *Note*: See attribute fileAge for an alternate method of determining if a incoming file is ready for processing.
-|`archiveDir` |Type: string. Required: no. Default: disabled. Archives a copy of the file in the specified directory on the file system where mule is running. The archive folder must have been created before Mule is started and the user Mule runs under must have privileges to read and write to the folder.
-|`archiveTempReceivingDir` |Type: string. Required: no. Default: disabled. If specified then the file to be archived is received in this folder and then moved to the archiveTempSendingDir while sent further on to the outbound endpoint. This folder is created as a subfolder to the archiveDir. *NOte*: Must be specified together with the archiveTempSendingDir and archiveDir attributes.
-|`archiveTempSendingDir` |Type: string. Required: no. Default: disabled. If specified then the file to be archived is sent to the outbound endpoint from this folder. This folder is created as a subfolder to the archiveDir. After the file is consumed by the outbound endpoint or the component itself (that is, when the underlying InputStream is closed) it is moved to the archive folder. *Note*: Must be specified together with the archiveTempReceivingDir and archiveDir attributes.
-|`identityFile` |Type: string. Required: no. Default: disabled. An identityFile location for a PKI private key.
-|`passphrase` |Type: string. Required: no. Default: disabled. The passphrase (password) for the identityFile if required.
-|`tempDir` |Type: string. Required: no. Default: disabled. If specified then Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the sftp server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the sftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer. For outbound endpoints: A temporary directory on the sftp-server to first upload the file to. When the file is fully uploaded the file is moved to its final destination. The tempDir is created as a sub directory to the endpoint. *Note*: A file in the tempDir of an outbound endpoint might not be correct (since the upload takes place to this folder) and can therefore NOT be used to restart a failing file transfer.
-|`useTempFileTimestampSuffix` |Type: boolean. Required: no. Default: disabled. Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+|path |A file location.
+
+Type: String +
+Default: disabled +
+Required: no
+|user |A username.
+
+Type: String +
+Default: disabled +
+Required: no
+|password |A password.
+
+Type: String +
+Default: disabled +
+Required: no
+|host |An IP address (for example, 0.0.0.0).
+
+Type: String +
+Default: disabled +
+Required: no
+|port |A port number.
+
+Type: Port Number +
+Default: disabled +
+Required: no
+|pollingFrequency |The frequency in milliseconds that the read directory should be checked. Note that the read directory is specified by the endpoint of the listening component.
+
+Type: Long +
+Default: 1000 ms +
+Required: no
+|fileAge |Age (in ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed. *Warning:* The fileAge attribute only works properly if the servers where Mule and the sftp-server runs have synchronized time. *Note:* See attribute sizeCheckWaitTime for an alternate method of determining if a incoming file is ready for processing.
+
+Type: Long +
+Default: disabled +
+Required: no
+|sizeCheckWaitTime |Wait time (in ms) between size-checks to determine if a file is ready to be processed. Disabled if not set or set to a negative value. This feature can be useful to avoid processing not yet completely written files (such as when consuming large files). It tells Mule to do two size checks waiting the specified time between the two size calls. If the two size calls return the same value Mule consider the file ready for processing. *Note*: See attribute fileAge for an alternate method of determining if a incoming file is ready for processing.
+
+Type: Long +
+Default: disabled +
+Required: no
+|archiveDir |Archives a copy of the file in the specified directory on the file system where mule is running. The archive folder must have been created before Mule is started and the user Mule runs under must have privileges to read and write to the folder.
+
+Type: String +
+Default: disabled +
+Required: no
+|archiveTempReceivingDir |If specified then the file to be archived is received in this folder and then moved to the archiveTempSendingDir while sent further on to the outbound endpoint. This folder is created as a subfolder to the archiveDir. *NOte*: Must be specified together with the archiveTempSendingDir and archiveDir attributes.
+
+Type: String +
+Default: disabled +
+Required: no
+|archiveTempSendingDir |If specified then the file to be archived is sent to the outbound endpoint from this folder. This folder is created as a subfolder to the archiveDir. After the file is consumed by the outbound endpoint or the component itself (that is, when the underlying InputStream is closed) it is moved to the archive folder. *Note*: Must be specified together with the archiveTempReceivingDir and archiveDir attributes.
+
+Type: String +
+Default: disabled +
+Required: no
+|identityFile |An identityFile location for a PKI private key.
+
+Type: String +
+Default: disabled +
+Required: no
+|passphrase |The passphrase (password) for the identityFile if required.
+
+Type: String +
+Default: disabled +
+Required: no
+|tempDir |If specified then Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the sftp server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the sftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer. For outbound endpoints: A temporary directory on the sftp-server to first upload the file to. When the file is fully uploaded the file is moved to its final destination. The tempDir is created as a sub directory to the endpoint. *Note*: A file in the tempDir of an outbound endpoint might not be correct (since the upload takes place to this folder) and can therefore NOT be used to restart a failing file transfer.
+
+Type: String +
+Default: disabled +
+Required: no
+|useTempFileTimestampSuffix |Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+
+Type: Boolean +
+Default: disabled +
+Required: no
 |===
 
 No child elements for `inbound-endpoint`.
@@ -345,28 +552,82 @@ No child elements for `inbound-endpoint`.
 [%header,cols="30a,70a"]
 |===
 |Name |Description
-|`path` |Type: string. Required: no. A file location.
-|`user` |Type: string. Required: no. A username.
-|`password` |Type: string. Required: no. A password.
-|`host` |Type: string. Required: no. An IP address (for example, www.mulesoft.com, localhost, 127.0.0.1).
+|path |A file location.
+
+Type: String +
+Default: disabled +
+Required: no
+|user |A username.
+
+Type: String +
+Default: disabled +
+Required: no
+|password |A password.
+
+Type: String +
+Default: disabled +
+Required: no
+|host |An IP address (for example, 0.0.0.0).
+
+Type: String +
+Default: disabled +
+Required: no
 |`port` |Type: port number. Required: no. A port number.
-|`outputPattern` |Type: string. Required: no. Default: the message ID, for example, ee241e68-c619-11de-986b-adeb3d6db038 The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector. By default the
+
+Type
+|outputPattern |The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector. By default the
 xref:file-transport-reference.adoc[File Transport Reference]
 is used. See this same document section for information on how to override the default parser.
-|`keepFileOnError` |Type: boolean. Required: no. Default: true. If true the file on the inbound-endpoint is not deleted if an error occurs when writing to the outbound-endpoint. *Note*: This assumes that both the inbound and outbound endpoints are using the SFTP-Transport.
-|`duplicateHandling` |Type: duplicateHandlingType. Required: no. Default: `throwException`. Determines what to do if a file already exist on the outbound endpoint with the specified name.  `throwException`: Throws an exception if a file already exists. `overwrite`: Overwrites an existing file.
-`addSeqNo`: Adds a sequence number to the target filename making the filename unique, starting with 1 and incrementing the number until a unique filename is found The default behavior is to throw an exception.
-|`identityFile` |Type: string. Required: no. Default: disabled. An `identityFile` location for a PKI private key.
-|`passphrase` |Type: string. Required: no. Default: disabled. The passphrase (password) for the identityFile if required.
-|`tempDir` |Type: string. Required: no. Default: disabled. If specified then Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the SFTP server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the ftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer. For outbound endpoints: A temporary directory on the sftp-server to first upload the file to. When the file is fully uploaded the file is moved to its final destination. The tempDir is created as a sub directory to the endpoint. *Note*: A file in the tempDir of an outbound endpoint might not be correct (since the upload takes place to this folder) and can therefore NOT be used to restart a failing file transfer.
-|`useTempFileTimestampSuffix` |Type: boolean. Required: No. Default: disabled. Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+
+Type: String +
+Default: The message ID, for example, ee241e68-c619-11de-986b-adeb3d6db038 +
+Required: no
+|keepFileOnError |If true, the file on the inbound-endpoint is not deleted if an error occurs when writing to the outbound-endpoint. *Note*: This assumes that both the inbound and outbound endpoints are using the SFTP-Transport.
+
+Type: Boolean +
+Default: true +
+Required: no
+|duplicateHandling |Determines what to do if a file already exist on the outbound endpoint with the specified name.
+
+* throwException: Throws an exception if a file already exists.
+* overwrite: Overwrites an existing file.
+* addSeqNo: Adds a sequence number to the target filename making the filename unique, starting with 1 and incrementing the number until a unique filename is found The default behavior is to throw an exception.
+
+Type: duplicateHandlingType +
+Default: throwException +
+Required: no
+|identityFile |Type: string. Required: no. Default: disabled. An `identityFile` location for a PKI private key.
+
+Type: String +
+Default: disabled +
+Required: no
+|passphrase |The passphrase (password) for the identityFile if required.
+
+Type: String +
+Default: disabled +
+Required: no
+|tempDir |If specified, Mule tries to create the temp-directory in the endpoint folder if it doesn't already exist. Ensure that the user Mule is configured to use to access the SFTP server has privileges to create a temp folder if required! For inbound endpoints: A temporary directory on the ftp-server from where the download takes place. The file is moved (locally on the sftp-server) to the tempDir, to mark that a download is taking place, before the download starts. *Note*: A file in the tempDir of an inbound endpoint is always correct (has only been moved locally on the sftp-server) and can therefore be used to restart a failing file transfer. For outbound endpoints: A temporary directory on the sftp-server to first upload the file to. When the file is fully uploaded the file is moved to its final destination. The tempDir is created as a sub directory to the endpoint. *Note*: A file in the tempDir of an outbound endpoint might not be correct (since the upload takes place to this folder) and can therefore NOT be used to restart a failing file transfer.
+
+Type: String +
+Default: disabled +
+Required: no
+|useTempFileTimestampSuffix |Used together with the tempDir - attribute to give the files in the tempDir a guaranteed unique name based on the local time when the file was moved to the tempDir.
+
+Type: Boolean +
+Default: disabled +
+Required: no
+|knownHostsFile |If provided, the client validates the server's key against the one in the referenced file. If the server key doesn't match the one in the file, the connection is aborted. knownHostsFile specifies the path to a SSH known hosts file. This file contains public key fingerprints that ensure an SSH client is connecting to a known SSH server and not a malicious SSH server.
+
+Type: String +
+Default: none +
+Required: yes
 |===
 
 No child elements for `outbound-endpoint`.
 
 == Javadoc API Reference
 
-https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/sftp/package-summary.html[Javadoc for SFTP Transport]
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/sftp/package-summary.html[Javadoc for SFTP Transport]
 
 == Maven
 
@@ -382,4 +643,4 @@ This transport is part of the following Maven module:
 
 == Best Practices
 
-Place your SFTP login credentials in a file and reference the file in the Mule configuration.
+Place your SFTP login credentials in a file and reference them in the Mule configuration.

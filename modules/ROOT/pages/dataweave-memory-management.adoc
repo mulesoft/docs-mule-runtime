@@ -1,0 +1,108 @@
+= DataWeave Memory Management
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, streaming, weaveoutputhandler
+
+When dealing with processing large files through DataWeave in Mule, there are a few things you can set up to finetune how much memory will be used up and when.
+
+== Memory vs Disk Usage
+
+DataWeave uses the system's memory as a buffer while processing a transformation unless a certain threshold is exceeded, in that case it resorts to using the system's hard disk as a buffer. By default, this threshold is set at *1572864 bytes*, but this value may be changed. The value refers to memory usage of each individual Transform Message component, not to an aggregate of all the ones in the project.
+
+To change the threshold value at which memory is no longer used as a buffer, you must add a system property `com.mulesoft.dw.buffersize` and assign it the number (in bytes) of your new threshold.  System properties may be defined in several ways, for example by editing the `mule-app.properties` file located in your project's `src/main/app` folder, see xref:configuring-properties.adoc#system-properties[system properties] for more details and more ways you can set these.
+
+The value you assign to this property affects your entire Mule application, affecting each instance of the Transform Message component individually.
+
+[NOTE]
+For version 3.8.3 of Mule Runtime and older, payloads of 2 GB or more cannot be processed. Also, the text length for a single field can not be larger than 1 MB (this applies for CSV, JSON and XML). These limits don't exist on version 3.8.4 and newer.
+
+
+== Immediate vs Deferred Execution
+
+By default, DataWeave processes the transformation of a message as soon as the component is called out in the flow, you can change this behavior so that the DataWeave transformation returns a `WeaveOutputHandler` which is only processed when read by another component. This handler is capable of deferring writing the Mule Message's payload until there is a stream available to write it to. This allows for the DataWeave output to remain outside of the heap as processing continues on other components in the flow.
+
+To set this up, in the XML of your `<dw:transform-message>` component, add a `mode` attribute. This attribute accepts the values *immediate* or *deferred*.
+
+* With *immediate* the output is an *inputStream*  (default mode)
+* With *deferred* the output is a `WeaveOutputHandler`
+
+Below is an example that sets this attribute to "deferred":
+
+[source,xml,linenums]
+----
+<dw:transform-message doc:name="Transform Message" mode="deferred">
+    <dw:set-payload>
+      <![CDATA[
+        %dw 1.0
+        %output application/xml
+        ---
+        payload
+      ]]>
+    </dw:set-payload>
+</dw:transform-message>
+----
+
+
+=== Using The WeaveOutputHandler
+
+Keep in mind that when using deferred execution, the returned message will contain a `WeaveOutputHandler` object rather than a String representation. For example, consider a logger you wish to log your payload with:
+
+image::dataweave-memory-management-541a1.png[]
+
+The output of this logger will appear as the following:
+
+[source,text,linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/mulesoft/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+com.mulesoft.weave.mule.WeaveMessageProcessor$WeaveOutputHandler@3528770d
+Initialising: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/mulesoft/output/inputCSV.csv
+----
+
+If you wish to log the payload as a String representation, you'll need to request the payload in a String representation. This can be achieved by using the expression `#[message.payloadAs(java.lang.String)]`.
+
+image::dataweave-memory-management-dc180.png[]
+
+[WARNING]
+This expression is the equivalent of consuming the DataWeave output and transforming it into a String. Even when this expression is used in the context of a logger. The payload will reach the next processor as a String. It's also important to note that once consumed as such, the entire payload will exist in memory.
+
+The output of this logger will appear as the following.
+
+[source,text,linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/josh/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+{
+  "people": [
+    {
+      "id": 1,
+      "firstName": "Max",
+      "lastName": "Mule"
+    },
+    {
+      "id": 2,
+      "firstName": "Sally",
+      "lastName": "Mule"
+    }
+  ]
+}
+org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/josh/output/inputCSV.csv
+----
+
+
+== See Also
+
+* xref:dataweave-quickstart.adoc[DataWeave quickstart guide]
+* xref:6@studio::transform-message-component-concept-studio.adoc[About Transform Message Component]
+* xref:dataweave-language-introduction.adoc[DataWeave Language Introduction]
+* xref:dataweave-operators.adoc[DataWeave Operators]
+* xref:dataweave-types.adoc[DataWeave Types]
+* xref:dataweave-formats.adoc[DataWeave Formats]
+* xref:dataweave-selectors.adoc[DataWeave Selectors]
+* xref:dataweave-examples.adoc[DataWeave Examples]
+* xref:mel-dataweave-functions.adoc[MEL DataWeave Functions]

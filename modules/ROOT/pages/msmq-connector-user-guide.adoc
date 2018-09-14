@@ -6,7 +6,7 @@ endif::[]
 
 *Select*
 
-*Latest version: 1.7.0*
+*Latest version: 1.9.0*
 
 The Microsoft Message Queuing (MSMQ) connector uses a typical client-server architecture with two tiers, the connector or client running in the Mule ESB, and the Windows Gateway running on the server side. The latter exposes an HTTP Web API for sending or receiving messages from MSMQ.
 
@@ -44,6 +44,8 @@ This setting appears in the XML as:
 ----
 <flow name="myMSMQFlow" doc:name="myMSMQFlow" processingStrategy="synchronous">
 ----
+
+More related info at <<Message delivery>> section ahead.
 
 == Primary Use Cases
 
@@ -130,13 +132,21 @@ THIS IS A MESSAGE
 
 The HTTP headers used for sending and receiving messages to and from the Gateway service are discussed more in detail later in this document.
 
-== Two-Phase Commit
+==  Message delivery
 
-The MSMQ connector uses a two-phase protocol to ensure zero-message-loss communication with the gateway.
+The MSMQ connector can use a two-phase protocol to ensure zero-message-loss communication with the gateway, or it can be set to use a no-acknowledgement protocol when you want to achieve high throughput and do not need to ensure receiving each message at least once.
 
-In a traditional scenario, after a message is read in the gateway, it is deleted from the queue. If there is a connection failure or another issue in the ESB that prevents the message from being read, that message is lost.
+Message delivery can be chosen from two different options. The *Message delivery* configuration setting establishes the message delivering working mode. Details on each available option are described below.
 
-In a scenario with a two-phase commit protocol, the messages read from the main queue are kept in a sub-queue as backup. After the connector receives a copy of the message, it sends an additional request to the gateway to remove the message from the sub-queue. When this commit action is not completed, the message remains in the sub-queue. After a period of time, messages in the subqueue, considered as orphans, are moved back to their parent queue where they are retried. To be clear, this mechanism should not be affected by external exceptions happening in the flow unless the flow is interrupted before the commit phase is completed.
+=== No Acknowledgement
+
+In a traditional scenario, after a message is read in the gateway, it is deleted from the queue. If there is a connection failure or another issue in the ESB that prevents the message from being read, that message is lost (this message delivery mode can be set by choosing the `NoAcknowledgement` value at the corresponding configuration setting). Nevertheless, this delivery mode is the fastest one and you should select it if you don't need each message to be delivered at least once.
+
+=== At Least Once (default)
+
+In a scenario with a two-phase commit protocol, the messages read from the main queue are kept in a sub-queue as backup. After the connector receives a copy of the message, it sends an additional request to the gateway to remove the message from the sub-queue. When this commit action is not completed, the message remains in the sub-queue. After a period of time, messages in the subqueue, considered as orphans, are moved back to their parent queue where they are retried. To be clear, this mechanism should not be affected by external exceptions happening in the flow unless the flow is interrupted before the commit phase is completed (this message delivery mode can be set by choosing the `AtLeastOnce` value at the corresponding configuration setting).
+
+As said, message delivery mode depends on the *Message delivery* configuration setting, which should be set to `AtLeastOnce` (default) if you want to ensure two phase commit protocol to be used. If you set this parameter to `NoAcknoledgement` then each message will be delivered to mule with no acknowledgement of reception from it.
 
 == Message Timeouts
 
@@ -261,6 +271,7 @@ This following table shows the properties in this element:
 |*userName* |The name of the user that is used to impersonate the call when accessing MSMQ from the Gateway. Overrides the user name set in the Global element. Optional.
 |*password* |The password of the user that will be used to impersonate the call when accessing MSMQ from the Gateway. Overrides the password set in the Global element. Optional.
 |*messageFormatter* |The message formatter to be used in MSMQ for serializing and deserializing the message. Optional.
+|*messageDelivery* |The message delivery working mode. Overrides the message delivery set in the Global element. Optional. For detailed info on how this works refer to <<Message delivery>> section above.
 |===
 
 === Configuration of the msmq:send Element
@@ -302,6 +313,49 @@ The following is the general format used to reference a public queue and its ass
 The connector also supports private queues hosted in a failover cluster or also known as an MSMQ cluster. The queues are private to the cluster and referenced with the following format:
 
 `ClusterName\private$\QueueName`
+
+The MSMQ API used by the connector requires you to specify the target address using the `Format Names` style mostly when working with remote queues, as well as queues having custom configuration options, and `Direct Format Names`.
+
+Direct format names are used to reference public or private queues without accessing the directory service. Direct format names are used when performing the following operations:
+
+. Sending messages directly to a computer.
+. Sending messages to computers over the Internet.
+. Sending messages across forest boundaries.
+. Sending messages to any queue while operating in domain, workgroup, or offline mode.
+. Reading messages while operating in domain, workgroup, or offline mode.
+
+Direct format names should be used to send messages whenever routing, authentication, and encryption by Message Queuing are not needed.
+
+When Message Queuing detects a direct format name for a remote public queue or for a local or remote private queue, it does not contact the directory service. Message Queuing uses the information provided by the format name to send messages directly to their destination.
+
+The format required to specify the address this way at the *queueName* connector's setting follows this pattern:
+`FormatName:Direct=[address_specification]\{private$\}[queue_name]`
+
+The address specification of the computer can be specified in three forms:
+
+. As the network protocol followed by the network address of the target computer. Message Queuing supports TCP and, only on Windows NT® 4.0 and Windows 2000, SPX.
+. As any string that is supported natively by the underlying operating system to identify the target computer (OS is used as the protocol to indicate that the computer's native protocol should be used to interpret computer names).
+. As the Internet transport protocol (HTTP or HTTPS) followed by the IP address or full DNS name of the host computer (or the computer name within an enterprise) and then by the virtual directory name separated by slashes (introduced in MSMQ 3.0). The default virtual directory name is msmq, but Message Queuing can be configured by IIS to use a different virtual directory.
+
+[%autowidth.spread]
+|===
+|*Protocol*|*Description*|*Network Address*
+|TCP|Connection-oriented TCP over IP.|Internet address notation (IP address).
+|SPX|Connection-oriented SPX over IPX.|Network number and host number (separated by the ":" character).
+|OS|Connection using the native computer-naming convention.|Any computer name supported by the underlying operating system. For Microsoft® Windows NT® version 4.0, it is either the UNC or DNS name (see the examples for public and private queues).
+|HTTP|HTTP transport.|IP address or full DNS name (computer name within an enterprise) followed by the virtual directory name separated by a slash.
+|HTTPS|Secure HTTP transport through a Secure Sockets Layer (SSL) connection.|IP address or full DNS name (computer name within an enterprise) followed by the virtual directory name separated by a slash.
+|===
+
+Some examples on how you should specify this at the connector's target queue are:
+
+* FormatName:DIRECT=IPX: 00000012:00a0234f7500\PRIVATE$\MyQueue
+* FormatName:DIRECT=TCP:157.18.3.1\PRIVATE$\MyQueue
+* FormatName:DIRECT=OS:Mike01.msn.com\PRIVATE$\MyQueue
+* FormatName:DIRECT=OS:Mike02\PRIVATE$\MyQueue
+* FormatName:DIRECT=OS:.\PRIVATE$\MyQueue
+
+For detailed information on how to address MSMQ please refer to the following https://msdn.microsoft.com/en-us/library/ms700996(v=vs.85).aspx[documentation].
 
 == Supported Message Properties
 
@@ -511,7 +565,7 @@ This sample receives incoming requests via HTTP connector, and sends the request
 [source,xml,linenums]
 ----
 <mule xmlns:msmq="http://www.mulesoft.org/schema/mule/msmq" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-    xmlns:spring="http://www.springframework.org/schema/beans" version="CE-3.6.1"
+    xmlns:spring="http://www.springframework.org/schema/beans"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
@@ -547,7 +601,7 @@ image::msmqglobalelprops.png[MSMQGlobalElProps]
 +
 image::msmqchsuccess.png[MSMQCHsuccess]
 
-. Point your browser to `http://your_subdomain.cloudhub.io/this_is_a_test`. The browser remains blank.
+. Point your browser to `+http://your_subdomain.cloudhub.io/this_is_a_test+`. The browser remains blank.
 . Log into the https://anypoint.mulesoft.com[Anypoint Platform] to enter your application, and select Logs from the dashboard.
 . The resulting messages are logged:
 +
@@ -555,7 +609,10 @@ image::msmqinfo.png[MSMQinfo]
 
 === Support for load balancer scenarios
 
-Multiple instances of the gateway can be configured under an HTTP load balancer to scale up horizontally.Since the MSMQ connector uses HTTP to communicate with the gateway, no additional configuration is required from a networking perspective. However, this slightly changes the behavior of a background process in the gateway for supporting the two-phase commit protocol.
+Multiple instances of the gateway can be configured under an HTTP load balancer to scale up horizontally. Since the MSMQ connector uses HTTP to communicate with the gateway, no additional configuration is required from a networking perspective. However, this slightly changes the behavior of a background process in the gateway for supporting the two-phase commit protocol.
+
 This process is responsible for making sure a batch a messages stored in a subqueue has been confirmed so it can be deleted or moved back to the parent queue. When multiple instances of a gateway are hitting the same queue in a load balancer, there are chances of having this process scanning and updating the queue at the same time, which could affect the MSMQ service performance considerably. To avoid this concurrency issue, a new setting "cleanup-offset" was added in the gateway configuration.
+
 The idea of this setting is to introduce a delay in minutes for the kick off of the background process. The default value for this setting is "0", which means no delay.
+
 Every gateway instance in a load balancer should be set with a different offset value to avoid hitting the same queues concurrently by this background process. As a rule of thumb, the unit for incrementing this value in each gateway should be the result of diving 10 by the number of gateway instances, e.g. : 2 for a farm of 5 gateways or 3 for a farm of 3 gateways.

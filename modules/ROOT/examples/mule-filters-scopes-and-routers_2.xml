@@ -1,0 +1,35 @@
+<mule
+  ...
+<http:request-config name="request-config" host="localhost"
+port="8084" path="/"/>
+<flow doc:name="inhouseOrder" name="inhouseOrder">
+        <jms:inbound-endpoint connector-ref="Active_MQ" doc:name="inhouseOrder" queue="inhouseOrder">
+            <xa-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <set-variable doc:name="Initialize Price" value="0" variableName="price"/>
+        <enricher doc:name="Enrich with price" target="#[price]">
+            <ee:cache cachingStrategy-ref="Caching_Strategy" doc:name="Cache the Price">
+                <http:request config-ref="request-config" disableTransportTransformer="true" doc:name="Invoke Price Service" exchange-pattern="request-response" method="GET" path="api/prices/#[payload.productId]" port="9999"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </ee:cache>
+        </enricher>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Save Order Item" transactionalAction="ALWAYS_JOIN">
+            <db:parameterized-query><![CDATA[insert into orders (product_id, name, manufacturer, quantity, price) values (#[payload.productId], #[payload.name], #[payload.manufacturer], #[payload.quantity], #[price])]]></db:parameterized-query>
+        </db:insert>
+        <set-variable doc:name="totalPrice = price * payload.quantity" value="#[price * payload.quantity]" variableName="totalPrice"/>
+        <set-session-variable doc:name="totalValue += totalPrice" value="#[totalValue + totalPrice]" variableName="totalValue"/>
+        <scripting:transformer doc:name="Groovy">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[receipt = new com.mulesoft.se.orders.PurchaseReceipt(); receipt.setStatus(com.mulesoft.se.orders.Status.ACCEPTED); receipt.setTotalPrice(Float.valueOf(message.getInvocationProperty('totalPrice')));
+return receipt;]]></scripting:text>
+            </scripting:script>
+        </scripting:transformer>
+        <rollback-exception-strategy doc:name="Rollback Exception Strategy" maxRedeliveryAttempts="3">
+            <logger doc:name="Logger" level="INFO" message="#[payload]"/>
+            <on-redelivery-attempts-exceeded doc:name="Redelivery exhausted">
+                <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+            </on-redelivery-attempts-exceeded>
+        </rollback-exception-strategy>
+    </flow>
+  ...
+</mule>

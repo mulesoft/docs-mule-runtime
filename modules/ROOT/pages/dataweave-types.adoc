@@ -1,0 +1,984 @@
+= DataWeave Value Types
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+The xref:dataweave.adoc[DataWeave] language functions essentially as a template engine that describes an output structure through the use of elements that may be of various different types.
+
+This document covers the different types of objects you can use to construct your output.
+
+
+
+
+
+== Array
+*Type* => ':array'
+
+Arrays are represented as a sequences of *value* expressions.
+
+[source,dataweave]
+----
+[ 1, 2 + 2, 3 * 3, $x ]
+----
+
+*Array Literal*
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+[ "My", "three", "words" ]
+----
+
+=== Conditional Elements
+
+Arrays can define conditional *values* based on a condition.
+Wrap the value expression between parentheses and use the *when* keyword with the condition.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+[(1) when true, (2) when false]
+----
+
+.Output
+[source,json,linenums]
+----
+[1]
+----
+
+== Object
+
+*Type* => ':object'
+
+Objects are represented as a collection of *key*: *value* pairs.
+
+. Object: { 'Key' : Value }
+. Key : 'Qualified Name' 'Attributes'
+. Qualified Name: 'namespace prefix#name' where the 'namespace prefix#' part is optional
+. Name: String that represents the name.
+. Attributes: @('Qualified Name'= *value*,...)
+
+[TIP]
+Strings must be double quoted to be recognized as strings.
+
+=== Single Value Objects
+
+If an Object has only one key:value pair, the enclosing curly brackets { } are not required:
+
+.Example
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+name: "Annie"
+----
+
+=== Conditional Elements
+
+Objects can define conditional *key*: *value* pairs based on a conditional expression.
+Wrap the key:value expression between parentheses and use the *when* keyword with the condition.
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+file: {
+  name: "transform",
+  (extension: "zip") when payload.fileSystem?
+}
+----
+
+This example outputs an additional field called "extension" only when the fileSystem property is present in payload (this field may contain any value, not just "true").
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+  <extension>zip</extension>
+</file>
+----
+
+If absent:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+</file>
+----
+
+=== Dynamic Elements
+
+Dynamic elements allow you to add the result of an expression as key:value pairs of an object.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: "a",
+  (["b","c","d"] map {'$': $})
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "a",
+  "b": "b",
+  "c": "c",
+  "d": "d"
+}
+----
+=== Dynamic keys
+
+In order to specify a key via an expression, the expression should be wrapped in parentheses.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{name: 'Data Weave'} mapObject {(upper $$ as :string) : $}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "NAME": "Data Weave"
+}
+----
+
+=== Conditional Attributes
+
+Attributes can be conditional based on a given condition.
+Wrap the key:value expression in parentheses and use the *when* keyword with the condition.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+name @((company: "Acme") when false, (transform: "Anything") when true): "DataWeave"
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<name transform="Anything">DataWeave</name>
+----
+
+=== Dynamic Attributes
+
+Dynamic attributes allow you to add the result of an expression as key:value pairs of the attributes set.
+
+.Input
+[source,json,linenums]
+----
+{
+  "company": "Mule",
+  "product": "DataWeave"
+}
+----
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+transformation @((payload)): "Transform from anything to anything"
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<transformation company="Mule" product="DataWeave">Transform from anything to anything</transformation>
+----
+
+
+== String
+
+*Type* => ':string'
+
+A string can be defined by the use of double quotes or single quotes.
+
+[source,dataweave,linenums]
+----
+{
+  doubleQuoted: "Hello",
+  singleQuoted: 'Hello',
+}
+----
+
+=== String interpolation
+
+String interpolation allows you to embed variables or expressions directly in a string.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%var name = "Shoki"
+---
+{
+    Greeting: "Hi, my name is $name",
+    Sum: "1 + 1 = $(1 + 1)"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "Greeting": "Hi, my name is Shoki",
+  "Sum": "1 + 1 = 2"
+}
+----
+
+== Number
+
+*Type* => ':number'
+
+There is only one number type that supports both floating point and integer numbers.
+There is no loss of precision in any operation, the engine always stores the data in the most performant way that doesn't compromise precision.
+
+== Boolean
+
+*Type* => ':boolean'
+
+A boolean is defined by the keywords 'true' and 'false'.
+
+
+== Dates
+
+Dates in DataWeave follow the https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[ISO-8601 standard] and are defined between '|' characters.
+
+The date system supports:
+
+* DateTime
+* Local DateTime
+* Time
+* Local Time
+* Period
+* TimeZone (ISO-8601 timezone standard only, not the region or daylight timezone)
+* Date
+
+
+=== Date
+
+*Type* => ':date'
+
+Represented as 'Year'-'Month'-'Date'
+
+The type *Date* has no time component at all (not even midnight).
+
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+c: |2003-10-01|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "c": "2003-10-01"
+}
+----
+
+
+=== Time
+
+*Type* => ':time'
+
+Represented as 'Hour':'Minutes':'Seconds'.'Milliseconds'
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+c: |23:59:56|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "c": "23:59:56"
+}
+----
+
+=== TimeZone
+
+*Type* => ':timeZone'
+
+Timezones must include a + or a - to be defined as such. |03:00| is a time, |+03:00| is a timezone.
+
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+c: |-08:00|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "c": "-08:00"
+}
+----
+
+=== DateTime
+
+*Type* => ':datetime'
+
+Date time is the conjunction of 'Date' + 'Time' + 'TimeZone'.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59-03:00|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "2003-10-01T23:57:59-03:00"
+}
+----
+
+=== Local Date Time
+
+*Type* => ':localdatetime'
+
+Local date time is the conjunction of 'Date' + 'Time'.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "2003-10-01T23:57:59"
+}
+----
+
+=== Period
+
+*Type* => ':period'
+
+Specifies a period of time. Examples |PT9M| => 9 minutes , |P1Y| => 1 Year
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |23:59:56| + |PT9M|
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "00:08:56"
+}
+----
+
+
+=== Date decomposition
+
+In order to access the different parts of the date, special selectors must be used.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  day: |2003-10-01T23:57:59Z|.day,
+  month: |2003-10-01T23:57:59Z|.month,
+  year: |2003-10-01T23:57:59Z|.year,
+  hour: |2003-10-01T23:57:59Z|.hour,
+  minutes: |2003-10-01T23:57:59Z|.minutes,
+  seconds: |2003-10-01T23:57:59Z|.seconds,
+  offsetSeconds: |2003-10-01T23:57:59-03:00|.offsetSeconds,
+  nanoseconds: |23:57:59.700|.nanoseconds,
+  milliseconds: |23:57:59.700|.milliseconds,
+  dayOfWeek: |2003-10-01T23:57:59Z|.dayOfWeek,
+  dayOfYear: |2003-10-01T23:57:59Z|.dayOfYear
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "day": 1,
+  "month": 10,
+  "year": 2003,
+  "hour": 23,
+  "minutes": 57,
+  "seconds": 59,
+  "offsetSeconds": -10800,
+  "nanoseconds": 700000000,
+  "milliseconds": 700,
+  "dayOfWeek": 3,
+  "dayOfYear": 274
+}
+----
+
+=== Changing the Format of a Date
+
+You can specify a date to be in any format you prefer through using *as* in the following way:
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+formatedDate: |2003-10-01T23:57:59| as :string {format: "YYYY-MM-dd"}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "formatedDate": "2003-10-01"
+}
+----
+
+If you are doing multiple similar conversions in your transform, you might want to define a custom type as a directive in the header and set each date as being of that type.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%type mydate = :string { format: "YYYY/MM/dd" }
+---
+{
+  formatedDate1: |2003-10-01T23:57:59| as :mydate,
+  formatedDate2: |2015-07-06T08:53:15| as :mydate
+}
+----
+
+
+.Output
+[source,json,linenums]
+----
+{
+  "formatedDate1": "2003/10/01",
+  "formatedDate2": "2015/07/06"
+}
+----
+
+== Regular Expression
+
+*Type* => ':regex'
+
+Regular Expressions are defined between /. For example /(\d+)/ for represents multiple numerical digits from 0-9.
+These may be used as arguments in certain operations that act upon strings, like Matches or Replace, or on operations that act upon objects and arrays, such as filters.
+
+== Iterators
+
+*Type* => ':iterator'
+
+This type is based in the https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html[iterator Java class]. The iterator contains a collection, and includes methods to iterate through and filter it.
+
+[NOTE]
+Just like the Java class, the iterator is designed to be consumed only once. For example, if you then pass this value to a xref:logger-component-reference.adoc[logger] would result in consuming it and it would no longer be readable to further elements in the flow.
+
+
+
+== Custom Types
+
+You can define your own custom types in the header of your transform, then in the body you can define an element as being of that type.
+
+To do so, the directive must be structured as following: `%type name = java definition`
+
+For example:
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+----
+
+[TIP]
+====
+Usually it's a good idea to extend an existing type rather than creating one from scratch.
+
+For example, above `:string` defines `currency` as extending the string type.
+====
+
+To then assign an element as being of the custom type you defined, use the operation `as :type` after defining a field:
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+---
+customer:payload.user as :user
+----
+
+
+=== Defining Types For Type Coercion
+
+
+==== Format
+
+The metadata 'format' key is used for formatting numbers and dates.
+
+.Input
+[source,xml,linenums]
+----
+<items>
+    <item>
+        <price>22.30</price>
+    </item>
+    <item>
+        <price>20.31</price>
+    </item>
+</items>
+----
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%type currency = :number { format: "##"}
+---
+books: payload.items.*item map
+    book:
+        price: $.price as :currency
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "books": [
+    {
+      "book": {
+        "price": 22.30
+      }
+    },
+    {
+      "book": {
+        "price": 20.31
+      }
+    }
+  ]
+}
+----
+
+In Anypoint Studio, you can define several more values, like separators, quote characters and escape characters. See xref:6@studio::input-output-structure-transformation-studio-task.adoc[To Define Input and Output Structure of a Transformation].
+
+
+
+== Functions and Lambdas
+
+*type* -> :function
+
+In DataWeave, function and lambdas (anonymous functions) are first-class citizen and they can be used inside operators such as a map, mapObject, etc, and can even be assigned to a variable.
+When using lambdas within the body of a DataWeave file in conjunction with an operator such as xref:dataweave-operators.adoc#map[map operator], its attributes can either be explicitly named or left anonymous, in which case they can be referenced as $, $$, etc.
+
+
+
+=== Assign to a var
+
+You can define a function as a variable with a xref:dataweave-language-introduction.adoc#define-constant-directive[constant directive] through '%var'
+
+.Transport
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%var toUser = (user) -> {firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+=== Named attributes with an Operator
+
+This example uses a lambda with an attribute that's explicitly named as 'name'.
+
+.Input
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map ((name) ->  upper name)
+----
+
+.Transform
+[source,json,linenums]
+----
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+----
+
+=== Anonymous attributes with an Operator
+
+This example uses a lambda with an attribute that's not explicitly named, and so is referred to by default as '$'.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map  upper $
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+----
+
+
+=== Declare using function directive
+
+You can declare functions in the Header and these can be invoked at any point in the Body, you can also declare functions anywhere in the body. You refer to them using the form *function-name()* passing an expression in between the parentheses for each necessary argument. Each expression between the parentheses is evaluated and the result is passed as an argument used in the execution of the function body.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%function toUser(user){firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+
+
+
+== Operators Sorted by Type
+
+Below is an index that includes all of the different operators in DataWeave, sorted by the types of the parameters it accepts.
+Each operator displays what type is accepted on each of its arguments, not all arguments are required.
+
+[TIP]
+When you provide an operator with properties that don't match the expected types, DataWeave automatically <<Type Coercion Table, attempts to coerce>> the provided property to the required type.
+
+=== Operations Performed on any Type
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#typ-Of[typeOf] |(':any')
+| xref:dataweave-operators.adoc#as-(type-coercion)[as] |(':any', ':type')
+| xref:dataweave-operators.adoc#push[+] |(':any', ':array')
+|===
+
+
+=== Operations Performed on ':number'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#sum[+] |(':number', ':number')
+| xref:dataweave-operators.adoc#minus[-] |(':number', ':number')
+| xref:dataweave-operators.adoc#multiply[*] |(':number', ':number')
+| xref:dataweave-operators.adoc#division[/] |(':number', ':number')
+| xref:dataweave-operators.adoc#round[round] |(':number')
+| xref:dataweave-operators.adoc#sqrt[sqrt] |(':number')
+| xref:dataweave-operators.adoc#pow[pow] |(':number', ':number')
+| xref:dataweave-operators.adoc#ceil[ceil] |(':number')
+| xref:dataweave-operators.adoc#floor[floor] |(':number')
+| xref:dataweave-operators.adoc#abs[abs] |(':number')
+| xref:dataweave-operators.adoc#mod[mod] |(':number', ':number')
+| xref:dataweave-operators.adoc#ordinalize[ordinalize] |(':number')
+|===
+
+
+=== Operations Performed on ':array'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#min[min] |(':array')
+| xref:dataweave-operators.adoc#max[max] |(':array')
+| xref:dataweave-operators.adoc#size-of[sizeOf] |(':array')
+| xref:dataweave-operators.adoc#sum[sum] |(':array')
+| xref:dataweave-operators.adoc#flatten[flatten] |(':array')
+| xref:dataweave-operators.adoc#order-by[orderBy] |(':array', ':function')
+| xref:dataweave-operators.adoc#reduce[reduce] |(':array', ':function')
+| xref:dataweave-operators.adoc#array-push[+] |(':array', ':any')
+| xref:dataweave-operators.adoc#array-remove[-] |(':array', ':any')
+| xref:dataweave-operators.adoc#array-remove-all[--] |(':array', ':array')
+| xref:dataweave-operators.adoc#map[map] |(':array', ':function')
+| xref:dataweave-operators.adoc#array-average[avg] |(':array')
+| xref:dataweave-operators.adoc#filter[filter] |(':array', ':function')
+| xref:dataweave-operators.adoc#contains[contains] |(':array', ':any')
+| xref:dataweave-operators.adoc#distinct-by[distinctBy] |(':array', ':function')
+| xref:dataweave-operators.adoc#join-by[joinBy] |(':array', ':string')
+| xref:dataweave-operators.adoc#using-oncat-on-an-array[++] |(':array', ':array')
+| xref:dataweave-operators.adoc#group-by[groupBy] |(':array', ':function')
+| xref:dataweave-operators.adoc#zip-arrays[zip] |(':array', ':array')
+| xref:dataweave-operators.adoc#unzip-array[unzip] |(':array')
+|===
+
+=== Operations Performed on ':string'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#trim[trim] |(':string')
+| xref:dataweave-operators.adoc#using-concat-on-a-string[++] |(':string', ':string')
+| xref:dataweave-operators.adoc#size-of[sizeOf] |(':string')
+| xref:dataweave-operators.adoc#capitalize[capitalize] |(':string')
+| xref:dataweave-operators.adoc#lower[lower] |(':string')
+| xref:dataweave-operators.adoc#upper[upper] |(':string')
+| xref:dataweave-operators.adoc#camelize[camelize] |(':string')
+| xref:dataweave-operators.adoc#dasherize[dasherize] |(':string')
+| xref:dataweave-operators.adoc#underscore[underscore] |(':string')
+| xref:dataweave-operators.adoc#singularize[singularize] |(':string')
+| xref:dataweave-operators.adoc#pluralize[pluralize] |(':string')
+| xref:dataweave-operators.adoc#split-by[splitBy ] |(':string', ':string')
+| xref:dataweave-operators.adoc#split-by[splitBy] |(':string', ':regex')
+| xref:dataweave-operators.adoc#find[find] |(':string', ':regex')
+| xref:dataweave-operators.adoc#find[find] |(':string', ':string')
+| xref:dataweave-operators.adoc#replace[replace] |(':string', ':regex', ':function')
+| xref:dataweave-operators.adoc#starts-with[startsWith] |(':string', ':string')
+| xref:dataweave-operators.adoc#ends-with[endsWith] |(':string', ':string')
+| xref:dataweave-operators.adoc#match[match] |(':string', ':regex')
+| xref:dataweave-operators.adoc#matches[matches] |(':string', ':regex')
+| xref:dataweave-operators.adoc#scan[scan] |(':string', ':regex')
+| xref:dataweave-operators.adoc#contains[contains] |(':string', ':string')
+| xref:dataweave-operators.adoc#contains[contains] |(':string', ':regex')
+|===
+
+=== Operations Performed on ':object'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#size-of[sizeOf] |(':object')
+| xref:dataweave-operators.adoc#order-by[orderBy] |(':object', ':function')
+| xref:dataweave-operators.adoc#using-map-on-an-object[map] |(':object', ':function')
+| xref:dataweave-operators.adoc#map-object[mapObject] |(':object', ':function')
+| xref:dataweave-operators.adoc#using-oncat-on-an-object[++] |(':object', ':object')
+| xref:dataweave-operators.adoc#using-remove-on-an-object[-] |(':object', ':name')
+| xref:dataweave-operators.adoc#remove-by-matching-key-and-value[--] |(':object', ':object')
+| xref:dataweave-operators.adoc#pluck[pluck] |(':object', ':function')
+|===
+
+
+
+=== Operations Performed on ':datetime'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#shift-time-zone[>>] |(':datetime', ':timezone')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[+] |(':datetime', ':period')
+| xref:dataweave-operators.adoc#subtracting-a-period-of-time[-] |(':datetime', ':period')
+| xref:dataweave-operators.adoc#subtracting-two-dates[-] |(':datetime', ':datetime')
+|===
+
+=== Operations Performed on ':date'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#subtracting-two-dates[-] |(':date', ':date')
+| xref:dataweave-operators.adoc#append-time[++] |(':date', ':localtime')
+| xref:dataweave-operators.adoc#append-time[++] |(':date', ':time')
+| xref:dataweave-operators.adoc#append-time-zone[++] |(':date', ':timezone')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[+] |(':date', ':period')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[-] |(':date', ':period')
+|===
+
+=== Operations Performed on ':time'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#subtracting-two-dates[-] | ('#:time', ':time')
+| xref:dataweave-operators.adoc#append-time[++] | ('#:time', ':date')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[+] | (':time', ':period')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[-] | (':time', ':period')
+|===
+
+
+=== Operations Performed on ':localtime'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#subtracting-two-dates[-] |(':localtime', ':localtime')
+| xref:dataweave-operators.adoc#append-time[++] |(':localtime', ':date')
+| xref:dataweave-operators.adoc#append-time-zone[++] |(':localtime', ':timezone')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[+] |(':localtime', ':period')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[-] |(':localtime', ':period')
+|===
+
+=== Operations Performed on ':localdatetime'
+
+[%header,cols="2*"]
+|===
+| Operator| Accepted types for each argument
+| xref:dataweave-operators.adoc#subtracting-two-dates[-] |(':localdatetime', ':localdatetime')
+| xref:dataweave-operators.adoc#append-time-zone[++] |(':localdatetime', ':timezone')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[+] |(':localdatetime', ':period')
+| xref:dataweave-operators.adoc#adding-a-period-of-time[-] |(':localdatetime', ':period')
+|===
+
+
+== Type Coercion Table
+
+In DataWeave, types can be coerced from one type to other using the xref:dataweave-operators.adoc#as[AS Operator].
+This table shows the possible combinations and the properties from the schema that are used in the transformation.
+
+[TIP]
+When you <<DataWeave Operators Sorted by Type, provide an operator>> with properties that don't match the expected types, DataWeave automatically attempts to coerce the provided property to the required type.
+
+|===
+|Source                          |Target                  | Property
+|:object                         |:array                  |   (1)
+|:range                          |:array                  |
+|:number                         |:binary                 |
+|:string                         |:binary                 |
+|:string                         |:boolean                |
+|:number                         |:datetime               | unit
+|:localdatetime                  |:datetime               |
+|:string                         |:datetime               | format / locale ^(3)^
+|:datetime                       |:localdate              |
+|:localdatetime                  |:localdate              |
+|:string                         |:localdate              | format / locale ^(3)^
+|:datetime                       |:localdatetime          |
+|:string                         |:localdatetime          | format / locale ^(3)^
+|:datetime                       |:localtime              |
+|:localdatetime                  |:localtime              |
+|:time                           |:localtime              |
+|:string                         |:localtime              | format / locale ^(3)^
+|:datetime                       |:number                 | unit
+|:string                         |:number                 | format / locale ^(3)^
+|:array                          |:object                 |
+|:string                         |:period                 |
+|:string                         |:regex                  |
+|:datetime                       |:string                 | format / locale ^(3)^
+|:localdatetime                  |:string                 | format / locale ^(3)^
+|:localtime                      |:string                 | format / locale ^(3)^
+|:localdate                      |:string                 | format / locale ^(3)^
+|:timetype                       |:string                 | format / locale ^(3)^
+|:period                         |:string                 |
+|:timezone                       |:string                 |
+|:number                         |:string                 | format / locale ^(3)^
+|:boolean                        |:string                 |
+|:range                          |:string                 | (2)
+|:type                           |:string                 |
+|:trait                          |:string                 |
+|:datetime                       |:time                   |
+|:localdatetime                  |:time                   |
+|:localtime                      |:time                   |
+|:string                         |:time                   | format
+|:datetime                       |:timezone               |
+|:time                           |:timezone               |
+|:string                         |:timezone               |
+|===
+
+
+(1) Returns and array with all the values of the object.
+(2) Returns a string with all the values of the range using "," as the separator
+(3) To make the locale value explicit, you can use language, country or both, as detailed in https://docs.oracle.com/javase/8/docs/api/java/util/Locale.html#forLanguageTag-java.lang.String-[Locale.forLanguageTag(String)].
+
+== Next Steps
+
+* For a high level overview about the language, see xref:dataweave-language-introduction.adoc[DataWeave Language Introduction]
+* For a reference about all of the operators that are available for using, see xref:dataweave-operators.adoc[DataWeave Operators]
+* View complete example projects that use DataWeave in the https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange]
+
+
+== See Also
+
+* xref:dataweave-quickstart.adoc[DataWeave quickstart guide]
+* xref:6@studio::transform-message-component-concept-studio.adoc[About Transform Message Component]
+* xref:dataweave-language-introduction.adoc[DataWeave Language Introduction]
+* xref:dataweave-operators.adoc[DataWeave Operators]
+* xref:dataweave-formats.adoc[DataWeave Formats]
+* xref:dataweave-memory-management.adoc[DataWeave Memory Management]
+* xref:dataweave-selectors.adoc[DataWeave Selectors]
+* xref:dataweave-examples.adoc[DataWeave Examples]
+* xref:mel-dataweave-functions.adoc[MEL DataWeave Functions]

@@ -35,7 +35,7 @@ a|
 ----
 |===
 
-Traditionally, endpoints in Mule ESB have been specified as a xref:mule-endpoint-uris.adoc[URI] such as the examples above. This form is still supported, and indeed may prove to be more practical depending on your application. However, the recommended way to specify endpoints is via transport-specific namespaces, as shown in the following examples.
+Traditionally, endpoints in Mule are specified as a xref:mule-endpoint-uris.adoc[URI] such as the examples above. This form is still supported, and may prove to be more practical depending on your application. However, the recommended way to specify endpoints is via transport-specific namespaces, as shown in the following examples.
 
 [%header%autowidth.spread]
 |===
@@ -84,7 +84,7 @@ The only part of an endpoint URI that cannot be dynamic is the scheme. Don't do 
 |===
 |*Illegal Dynamic Endpoint*
 
-a|[source,xml,linenums]
+a|[source,xml]
 ----
 <outbound-endpoint address="#[message.inboundProperties['endpointType']]//localhost:8080/service"/>
 ----
@@ -107,7 +107,7 @@ a|[source,xml,linenums]
 
 == Properties
 
-Properties on endpoints can be used to customize behavior. Any properties set on the endpoint can be used to override default properties on the associated transport's connector. For example, an SMTP outbound endpoint might set the `fromAddress` property to `workflow1` to override a default connector value of `sysadmin`. Any standard properties for an endpoint will be available as attributes in the XML schema if transport-specific endpoints are used. It is also possible to specify a non-standard property. For example:
+Properties on endpoints can be used to customize behavior. Any properties set on the endpoint can be used to override default properties on the associated transport's connector. For example, an SMTP outbound endpoint might set the `fromAddress` property to `workflow1` to override a default connector value of `sysadmin`. Any standard properties for an endpoint are available as attributes in the XML schema if transport-specific endpoints are used. It is also possible to specify a non-standard property. For example:
 
 [%header%autowidth.spread]
 |===
@@ -174,11 +174,9 @@ a|[source,xml]
 
 A redelivery policy can be defined on an inbound endpoint. It is similar to the maximum redelivery counts that can be set on JMS brokers, and solves a similar problem: if an exception causes the read of a message to be rolled back over and over, how to avoid an infinite loop? Here's an example:
 
-[%header%autowidth.spread]
-|===
-|*MimeType Example*
 
-a|[source,xml,linenums]
+.MimeType Example
+[source,xml,linenums]
 ----
 <flow name ="syncFlow" processing-strategy="synchronous">
     <file:inbound-endpoint path="/tmp/file2ftp/ftp-home/dirk">
@@ -190,9 +188,22 @@ a|[source,xml,linenums]
     </file:inbound-endpoint>
     ...
 ----
-|===
 
-If something later in the flow throws an exception, the file won't be consumed, and is reprocessed. The idempotent-redelivery-policy ensures that it won't be reprocessed more then 3 times; after that, it's sent to `vm:error-queue`, where it can be handled as an error case.
+
+If something later in the flow throws an exception, the file won't be consumed, and is reprocessed. The xref:idempotent-filter.adoc#idempotent-redelivery-policy[idempotent-redelivery-policy] ensures that it won't be reprocessed more then 3 times; after that, it's sent to `vm:error-queue`, where it can be handled as an error case.
+
+The redelivery policy uses an ObjectStore to keep track of a counter for the amount of attempts that have been done. Mule uses an internal ObjectStore by default, but you can set it up so that you use a custom one if you prefer. To change this ObjectStore, add an `object-store-ref` property:
+
+.MimeType Example
+[source,xml,linenums]
+----
+<idempotent-redelivery-policy maxRedeliveryCount="3" object-store-ref="src/main/app/myObjStore">
+  <dead-letter-queue>
+    <vm:outbound-endpoint path="error-queue" />
+  </dead-letter-queue>
+</idempotent-redelivery-policy>
+----
+
 
 == Embedding Message Processors Inside an Endpoint
 
@@ -320,63 +331,75 @@ The following code example configures a custom message source for a flow:
 
 The following reference tables list the attributes that can be configured for the xref:generic-connector.adoc[generic endpoint] in Mule.
 
-== Inbound endpoint
+== Inbound Endpoint
 
 An inbound endpoint receives messages via the associated transport. As with global endpoints, each transport implements its own inbound endpoint element.
 
 === Attributes of inbound-endpoint
 
-[%header%autowidth.spread]
+[%header%cols="25s,75a"]
 |===
 |Name |Description
-|`name` |Identifies the endpoint in the registry. There is no need to set the 'name' attribute on inbound or outbound endpoints, only on global endpoints. +
+|`name` |Identifies the endpoint in the registry. There is no need to set the 'name' attribute on inbound or outbound endpoints, only on global endpoints.
+
 *Type*: `name (no spaces)` +
 *Required*: no +
 *Default*: none
-|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way). +
+|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way).
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes. +
+|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`responseTimeout` |The timeout for a response if making a synchronous endpoint call +
+|`responseTimeout` |The timeout for a response if making a synchronous endpoint call.
+
 *Type*: `integer` +
 *Required*: no +
 *Default*: none
-|`encoding` |String encoding used for messages. +
+|`encoding` |String encoding used for messages.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport. +
+|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`transformer-refs` |A list of the transformers that is applied (in order) to the message before it is delivered to the component. +
+|`transformer-refs` |A list of the transformers that is applied (in order) to the message before it is delivered to the component.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`responseTransformer-refs` |A list of the transformers that are applied (in order) to the synchronous response before it is returned via the transport. +
+|`responseTransformer-refs` |A list of the transformers that are applied (in order) to the synchronous response before it is returned via the transport.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any. +
+|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any.
+
 *Type*: `boolean` +
 *Required*: no +
 *Default*: none
-|`mimeType` |The MIME type, for example, `text/plain` or `application/json` +
+|`mimeType` |The MIME type, for example, `text/plain` or `application/json`.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`exchange-pattern` |*Type*: `enumeration` +
+|`exchange-pattern` |Exchange pattern.
+
+*Type*: `enumeration` +
 *Required*: no +
 *Default*: none
 |===
 
 === Child Elements of inbound-endpoint
 
-[%header%autowidth.spread]
+[%header,cols="35s,15a,50a"]
 |===
 |Name |Cardinality |Description
 |`abstract-reconnection-strategy` |0..1 |A placeholder for a reconnection strategy element. Reconnection strategies define how Mule should attempt to handle a connection failure.
@@ -388,7 +411,7 @@ An inbound endpoint receives messages via the associated transport. As with glob
 |`abstract-filter` |0..1 |A placeholder for filter elements, which control which messages are handled.
 |`abstract-security-filter` |0..1 |A placeholder for security filter elements, which control access to the system.
 |`abstract-intercepting-message-processor` |0..1 |A placeholder for intercepting router elements.
-|`abstract-observer-message-processor` |0..1 |A placeholder for message processors that observe the message but do not mutate it used for exmaple for logging.
+|`abstract-observer-message-processor` |0..1 |A placeholder for message processors that observe the message but do not mutate it used for example for logging.
 |`processor` |0..1 |A reference to a message processor defined elsewhere.
 |`custom-processor` |0..1 |
 |`abstract-mixed-content-message-processor` |0..1 |A placeholder for message processor elements.
@@ -402,57 +425,69 @@ An outbound endpoint sends messages via the associated transport. As with global
 
 === Attributes of outbound-endpoint
 
-[%header%autowidth.spread]
+[%header%cols="25s,75a"]
 |===
 |Name |Description
-|`name` |Identifies the endpoint in the registry. There is not need to set the 'name' attribute on inbound or outbound endpoints, only on global endpoints. +
+|`name` |Identifies the endpoint in the registry. There is no need to set the 'name' attribute on inbound or outbound endpoints, only on global endpoints.
+
 *Type*: `name (no spaces)` +
 *Required*: no +
 *Default*: none
-|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way). +
+|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way).
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes. +
+|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`responseTimeout` |The timeout for a response if making a synchronous endpoint call +
+|`responseTimeout` |The timeout for a response if making a synchronous endpoint call.
+
 *Type*: `integer` +
 *Required*: no +
 *Default*: none
-|`encoding` |String encoding used for messages. +
+|`encoding` |String encoding used for messages.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport. +
+|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`transformer-refs` |A list of the transformers to apply (in order) to the message before it is delivered to the component. +
+|`transformer-refs` |A list of the transformers to apply (in order) to the message before it is delivered to the component.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`responseTransformer-refs` |A list of the transformers to apply (in order) to the synchronous response before it is returned via the transport. +
+|`responseTransformer-refs` |A list of the transformers to apply (in order) to the synchronous response before it is returned via the transport.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any. +
+|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any.
+
 *Type*: `boolean` +
 *Required*: no +
 *Default*: none
-|`mimeType` |The MIME type, for example, `text/plain` or `application/json` +
+|`mimeType` |The MIME type, for example, `text/plain` or `application/json`.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`exchange-pattern` |*Type*: `enumeration` +
+|`exchange-pattern` |Exchange pattern.
+
+*Type*: `enumeration` +
 *Required*: no +
 *Default*: none
 |===
 
 === Child Elements of outbound-endpoint
 
-[%header%autowidth.spread]
+[%header,cols="35s,15a,50a"]
 |===
 |Name |Cardinality |Description
 |`abstract-reconnection-strategy` |0..1 |A placeholder for a reconnection strategy element. Reconnection strategies define how Mule should attempt to handle a connection failure.
@@ -464,7 +499,7 @@ An outbound endpoint sends messages via the associated transport. As with global
 |`abstract-filter` |0..1 |A placeholder for filter elements, which control which messages are handled.
 |`abstract-security-filter` |0..1 |A placeholder for security filter elements, which control access to the system.
 |`abstract-intercepting-message-processor` |0..1 |A placeholder for intercepting router elements.
-|`abstract-observer-message-processor` |0..1 |A placeholder for message processors that observe the message but do not mutate it used for exmaple for logging.
+|`abstract-observer-message-processor` |0..1 |A placeholder for message processors that observe the message but do not mutate it used for example for logging.
 |`processor` |0..1 |A reference to a message processor defined elsewhere.
 |`custom-processor` |0..1 |
 |`abstract-mixed-content-message-processor` |0..1 |A placeholder for message processor elements.
@@ -476,48 +511,58 @@ An outbound endpoint sends messages via the associated transport. As with global
 
 A global endpoint, which acts as a template that can be used to construct an inbound or outbound endpoint elsewhere in the configuration by referencing the global endpoint name. Each transport implements its own endpoint element, with a more friendly syntax, but this generic element can be used with any transport by supplying the correct address URI. For example, "vm://foo" describes a VM transport endpoint.
 
-=== Attributes of endpoint
+=== Attributes of Endpoint
 
-[%header%autowidth.spread]
+[%header%cols="25s,75a"]
 |===
 |Name |Description
-|`name` |Identifies the endpoint so that other elements can reference it. This name can also be referenced in the MuleClient. +
+|`name` |Identifies the endpoint so that other elements can reference it. This name can also be referenced in the MuleClient.
+
 *Type*: `name (no spaces)` +
 *Required*: yes +
 *Default*: none
-|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way). +
+|`ref` |A reference to a global endpoint, which is used as a template to construct this endpoint. A template fixes the address (protocol, path, host, etc.), and may specify initial values for various properties, but further properties can be defined locally (as long as they do not change the address in any way).
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes. +
+|`address` |The generic address for this endpoint. If this attribute is used, the protocol must be specified as part of the URI. Alternatively, most transports provide their own attributes for specifying the address (path, host, etc.). Note that the address attribute cannot be combined with 'ref' or with the transport-provided alternative attributes.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`responseTimeout` |The timeout for a response if making a synchronous endpoint call +
+|`responseTimeout` |The timeout for a response if making a synchronous endpoint call.
+
 *Type*: `integer` +
 *Required*: no +
 *Default*: none
-|`encoding` |String encoding used for messages. +
+|`encoding` |String encoding used for messages.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport. +
+|`connector-ref` |The name of the connector associated with this endpoint. This must be specified if more than one connector is defined for this transport.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
-|`transformer-refs` |A list of the transformers to apply (in order) to the message before it is delivered to the component. +
+|`transformer-refs` |A list of the transformers to apply (in order) to the message before it is delivered to the component.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`responseTransformer-refs` |A list of the transformers to apply (in order) to the synchronous response before it is returned via the transport. +
+|`responseTransformer-refs` |A list of the transformers to apply (in order) to the synchronous response before it is returned via the transport.
+
 *Type*: `list of names` +
 *Required*: no +
 *Default*: none
-|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any. +
+|`disableTransportTransformer` |Don't use the default inbound/outbound/response transformer which corresponds to this endpoint's transport, if any.
+
 *Type*: `boolean` +
 *Required*: no +
 *Default*: none
-|`mimeType` |The MIME type, for example, `text/plain` or `application/json` +
+|`mimeType` |The MIME type, for example, `text/plain` or `application/json`.
+
 *Type*: `string` +
 *Required*: no +
 *Default*: none
@@ -527,8 +572,9 @@ A global endpoint, which acts as a template that can be used to construct an inb
 *Default*: none
 |===
 
-=== Child Elements of endpoint
-[%header%autowidth.spread]
+=== Child Elements of Endpoint
+
+[%header,cols="35s,15a,50a"]
 |===
 |Name |Cardinality |Description
 |`abstract-reconnection-strategy` |0..1 |A placeholder for a reconnection strategy element. Reconnection strategies define how Mule should attempt to handle a connection failure.

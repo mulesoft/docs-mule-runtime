@@ -2,9 +2,9 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: anypoint studio, studio, mule esb, mtom, wsdl
+:keywords: anypoint studio, studio, mtom, wsdl
 
-This page describes the basics of how to use MTOM inside your service. For more information, go to the https://cwiki.apache.org/confluence/display/CXF20DOC/MTOM[MTOM documentation] for CXF. Portions of the examples on this page are from that guide.
+This page describes the basics of how to use W3C Message Transmission Optimization Mechanism (MTOM) inside your service. For more information, go to the https://cwiki.apache.org/confluence/display/CXF20DOC/MTOM[MTOM documentation] for CXF. Portions of the examples on this page are from that guide.
 
 For a WSDL-first service, the general process is as follows:
 
@@ -12,7 +12,7 @@ For a WSDL-first service, the general process is as follows:
 . Generate your server stubs
 . Configure the CXF endpoint in Mule
 
-== Writing an MTOM-enabled WSDL
+== Writing an MTOM-Enabled WSDL
 
 To get started, write a WSDL like you would normally. Use `xsd:base64Binary` schema types to represent any binary data that you want to send.
 
@@ -47,7 +47,7 @@ $ ./apache-cxf-2.1.2-incubator/bin/wsdl2java -d outputDirectory path/to/your.wsd
 
 == Configuring the CXF Inbound Endpoint
 
-The above command generates a server stub interface. This is the interface that your service must implement. Each method will correspond to an operation in your WSDL. If the base64Binary type is an argument to one of your operations, CXF will generate a method like this:
+The above command generates a server stub interface. This is the interface that your service must implement. Each method  corresponds to an operation in your WSDL. If the base64Binary type is an argument to one of your operations, CXF  generates a method like this:
 
 [source,java,linenums]
 ----
@@ -56,9 +56,9 @@ public void yourOperation(DataHandler handler) {
 }
 ----
 
-You can use this DataHandler method to access the attachment data by calling "handler.getInputStream();".
+You can use a DataHandler method to access the attachment data by calling `handler.getInputStream();`.
 
-When you configure the CXF service, set the `mtomEnabled` attribute to true to enable MTOM:
+When you configure the CXF service, set the `mtomEnabled` attribute to `true` to enable MTOM:
 
 == Configuring the CXF client
 
@@ -72,4 +72,93 @@ The configuration of an MTOM client is exactly like the configuration of a norma
     wsdlPort="EmployeeDirectoryPort"
     wsdlLocation="classpath:employeeDirectory.wsdl"
     mtomEnabled="true"/>
+----
+
+== Configuring the Web Service Consumer
+
+To configure an MTOM client with the Web Service Consumer, you must specify the `mtomEnabled` attribute.  The message payload should include a sub-section that holds attachments (such as text, images, or applications) that travel with the message.  For more information on attachments, see xref:attachment-transformer-reference.adoc[Attachment Transformer Reference].
+
+== Examples
+
+The following examples use Dataweave transforms to construct code blocks for MTOM access.
+
+* <<Download a File>>
+* <<Upload a File>>
+
+=== Download a File
+
+The following example downloads a file from the test site example.com.
+
+[source,xml,linenums]
+----
+<ws:consumer-config name="Web_Service_Consumer" service="ExampleServerImplService" port="ExampleServerImplPort" serviceAddress="http://127.0.0.1:9999/ws/servicename" wsdlLocation="http://127.0.0.1:9999/ws/servicename?wsdl" doc:name="Web Service Consumer"/>
+<flow name="download-file">
+  ....
+
+  <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%namespace ex http://example.com/
+%output application/xml
+---
+ex#downloadFile: { arg0: 'filename.txt' }
+
+]]></dw:set-payload>
+  </dw:transform-message>
+
+  <ws:consumer config-ref="Web_Service_Consumer" operation="downloadFile" mtomEnabled="true" doc:name="Web Service Consumer"/>
+
+  <logger message="This is what we got back #[message]" level="INFO" doc:name="Logger"/>
+
+  <logger message="Attachments are: #[flowVars.cxf_attachments]" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+The output of the Dataweave transform is:
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<ex:downloadFile xmlns:ex="http://example.com/">
+  <arg0>filename.txt</arg0>
+</ex:downloadFile>
+----
+
+=== Upload a File
+
+The following example uses MTOM to upload a file from the test site example.com.
+
+[source,xml,linenums]
+----
+<file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+<flow name="upload-file">
+  <file:inbound-endpoint path="/some/path" connector-ref="File" responseTimeout="10000" doc:name="File"/>
+
+  <set-attachment attachmentName="#[message.inboundProperties.originalFilename]" value="#[payload]" contentType="image/jpg" doc:name="Attachment1"/>
+
+  <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%namespace ex http://example.com/
+%namespace inc http://www.w3.org/2004/08/xop/include
+%output application/xml
+---
+ex#uploadFile: { arg0: { inc#Include  @(href: 'cid:' ++ flowVars.originalFilename): '' } }
+
+]]></dw:set-payload>
+  </dw:transform-message>
+
+  <ws:consumer config-ref="Web_Service_Consumer" operation="uploadFile" mtomEnabled="true" doc:name="Web Service Consumer"/>
+
+</flow>
+----
+
+The output of the Dataweave transform is:
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<ex:uploadFile xmlns:ex="http://example.com/">
+  <arg0>
+    <inc:Include xmlns:inc="http://www.w3.org/2004/08/xop/include" href="cid:myfile.txt"></inc:Include>
+  </arg0>
+</ex:uploadFile>
 ----

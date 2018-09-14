@@ -2,13 +2,11 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: anypoint studio, studio, mule, mule client
+:keywords: anypoint studio, studio, mule client
 
-In most Mule ESB applications, messages are triggered by an external occurrence such as a message being received on a queue or a file being copied to a directory. However, if you want to send and receive messages programmatically, you can create a Mule client.
+In most Mule Runtime applications, messages are triggered by an external occurrence such as a message being received on a queue or a file being copied to a directory. However, if you want to send and receive messages programmatically, you can create a Mule client.
 
-https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/client/MuleClient.html[MuleClient] is a simple interface for Java clients to send and receive messages from a Mule server and other applications.
-
-You can use the Mule client for:
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/module/client/MuleClient.html[MuleClient] is a simple interface for Java clients to send and receive messages from a Mule server and other applications. You can use the Mule client for:
 
 * Sending and receiving messages to and from a local or remote Mule server
 * Communicating with other applications using any Mule transport
@@ -22,7 +20,7 @@ The following sections describe how to use the MuleClient in various scenarios.
 
 == Using Send and Dispatch
 
-The Mule client allows the user to send and receive messages programmatically. For example, to send a JMS message to any application or Mule component listening on `my.queue`, you can use the `dispatch()` method. The `dispatch()` method provides the ability to "fire and forget" messages over an endpoint.
+The Mule client allows the user to send and receive messages programmatically. For example, to send a JMS message to any application or Mule component listening on `my.queue`, you can use the `dispatch()` method. The `dispatch()` method provides the ability to send messages _asynchronously_ to an endpoint (also known as "fire and forget").
 
 [source,text,linenums]
 ----
@@ -40,20 +38,20 @@ MuleMessage result = client.send("tcp://localhost:3456", "Message Payload", null
 
 The client `send()` and `dispatch()` methods expect the following arguments:
 
-. The Mule URL endpoint: any valid xref:mule-endpoint-uris.adoc[Mule Endpoint] used to determine the transport, endpoint, and other information about delivery of the message. This can also be an endpoint name stored in configuration.
-. The message payload: any object carried by the message.
-. Properties: any properties or meta-data to associate with the message being sent
+. The Mule URL endpoint: Any valid xref:mule-endpoint-uris.adoc[Mule Endpoint] used to determine the transport, endpoint, and other information about delivery of the message. This can also be an endpoint name stored in configuration.
+. The message payload: Any object carried by the message.
+. Properties: Any properties or meta-data to associate with the message being sent.
 
 [TIP]
 ====
-*Don't use physical endpoints in your code* +
+*Don't use physical endpoints in your code*
 
 For clarity, the examples on this page use a physical endpoint URI, such as `jms://myQueue`. However, it is much better practice to define all your endpoints inside a Mule configuration file using the `<endpoint>` element and then reference those endpoint names in your code.
 ====
 
 == Configuring the Mule Client
 
-If you are using the Mule client in the same classloader (for example, a Web App or Mule stand-alone), the client has access to the server configuration. For example, if you had some endpoints defined in your server configuration file:
+If you are using the Mule client in the same classloader (for example, a Web App or Mule stand-alone), the client will have access to the server configuration. For example, if you had some endpoints defined in your server configuration file:
 
 [source,xml]
 ----
@@ -68,7 +66,7 @@ MuleClient client = new MuleClient(muleContext);
 client.dispatch("serviceEndpoint", dataObject, null);
 ----
 
-Essentially, the Mule client has the same configuration information as the Mule server, since they both have access to the same registry.
+Essentially, the Mule client hase the same configuration information as the Mule server, since they both have access to the same registry.
 
 If you are running the Mule client in stand-alone mode, you can still configure it using its own Mule XML configuration file(s). You pass in these files when the client is created:
 
@@ -139,7 +137,7 @@ MuleClient client = new MuleClient(muleContext);
 MuleMessage result = client.request("pop3://ross:blah@mail.my.org", 5000);
 ----
 
-This code attempts to receive a message from a mailbox called `ross` on `mail.my.org` and returns after five seconds if no message was received. Calling `request()` works for all Mule supported transports, but it is more usual to make event request calls where there is a store to be queried such as a queue, file directory, or some other repository.
+This code receives a message from a mailbox called `ross` on `mail.my.org` and  returns after five seconds if no message was received. Calling `request()` works for all Mule supported transports, but it is more usual to make event request calls where there is a store to be queried such as a queue, file directory, or some other repository.
 
 == Associating Properties with the Message
 
@@ -153,7 +151,7 @@ MuleClient client = new MuleClient(muleContext);
 //create properties to associate with the message
 Map props = new HashMap();
 
-//Set the JMSReplyTo property, which is where the response message are sent
+//Set the JMSReplyTo property, which is where the response message will be sent
 props.put("JMSReplyTo", "replyTo.queue");
 
 //dispatch the message asynchronously
@@ -170,34 +168,23 @@ System.out.println(message.getPayload());
 
 It's generally not good practice to make calls using the Mule client from your flow objects or within extensions to Mule such as routers or transformers.
 
-When you need to dispatch or request events in Mule, you should use the current https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/MuleEventContext.html[org.mule.api.MuleEventContext] and call the send/dispatch/request methods on the context instead.
+When you need to dispatch or request events in Mule, you should use the current
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleEventContext.html[org.mule.api.MuleEventContext]
+and call the send/dispatch/request methods on the context instead.
 
-[source,java,linenums]
-----
-import org.mule.api.MuleEventContext;
-import org.mule.api.lifecycle.Callable;
-
-public class MyComponent implements Callable {
-
-  @Override
-  public Object onCall(MuleEventContext eventContext) throws Exception {
-
-    // Instead of using MuleClient, use the MuleEventContext
-    // to get the client of 3.7.0 context
-    eventContext.getMuleContext().getClient().dispatch("vm://queue1", null);
-  }
-}
-----
-
-To gain access to the `MuleEventContext` inside your flows, you can implement the https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable] interface.
+To gain access to the `MuleEventContext` inside your flows, you can implement the
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]
+interface.
 
 If you need to make an event request from a transformer, filter, or interceptor, you should reconsider your design strategy for that event flow.
 
 == Handling Message Collections
 
-To handle situations where multiple results occur, Mule has introduced the  https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection] message type.
+To handle situations where multiple results occur, Mule has introduced a new message type
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]
 
-This type of message contains all message results in the order they were received. Note that https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection] extends https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessage], so the interface is similar. If there are multiple results, the `MuleMessage.getPayload()` method returns a `java.util.List` containing the payloads of each of the returned messages.
+* This type of message contains all message results in the order they were received. Note that
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection] extends https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessage], so the interface is similar. If there are multiple results, the `MuleMessage.getPayload()` method returns a `java.util.List` containing the payloads of each of the returned messages.
 
 When using the Mule client, you can cast the message return type to get access to all `MuleMessage` objects.
 
@@ -216,7 +203,9 @@ if (result instanceof MuleMessageCollection)
 
 == Future Results
 
-The Mule client allows you to make synchronous calls without blocking by using the `sendAsync()`method, which returns a https://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/FutureMessageResult.html[FutureMessageResult] that can be queried later.
+The Mule client allows you to make synchronous calls without blocking by using the `sendAsync()` method, which returns a
+https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/FutureMessageResult.html[FutureMessageResult]
+that can be queried later.
 
 [source,java,linenums]
 ----
@@ -228,11 +217,11 @@ FutureMessageResult result = client.sendAsync("http://localhost:8881",
 Object payload = result.getMessage().getPayload();
 ----
 
-The FutureMessageResult returned is a placeholder for the real result message when the call returns. By using a future result, you can continue with other tasks while the remote call executes. Calling `getMessage()` blocks until the call returns. Optionally, you can specify a timeout of how long to wait. You can also check if the call has returned using `result.isReady()`.
+The FutureMessageResult returned is a placeholder for the real result message when the call returns. By using a future result, you can continue with other tasks while the remote call executes. Calling `getMessage()`  blocks until the call returns. Optionally, you can specify a timeout of how long to wait. You can also check if the call has returned using `result.isReady()`.
 
 == Using the Remote Dispatcher
 
-The Mule Client can connect to, send, and receive messages from a remote Mule server through a firewall using a remote dispatcher. This should only be used when the remote service being invoked does not expose an endpoint accessible by the Mule Client. Note that there is performance overhead when using the remote dispatcher, because all requests and responses are serialized, sent to the server, and deserialized before the real invocation is made from within the firewall.
+The Mule client can connect to, send, and receive messages from a remote Mule server through a firewall using a remote dispatcher. This should only be used when the remote service being invoked does not expose an endpoint accessible by the Mule client. Note that there is performance overhead when using the remote dispatcher, because all requests and responses are serialized, sent to the server, and deserialized before the real invocation is made from within the firewall.
 
 To use the remote dispatcher, you enable it on the server instance by configuring the remote dispatcher agent. You can ensure that the server can handle both asynchronous and synchronous calls by setting the `synchronous` attribute to true. You can also set the `responseTimeout` setting, although often it is better to control it at the MuleClient call level, as each call might have a different timeout requirement.
 
@@ -243,11 +232,14 @@ To use the remote dispatcher, you enable it on the server instance by configurin
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns:client="http://www.mulesoft.org/schema/mule/client"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/client http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
-          http://www.mulesoft.org/schema/mule/core/3.7 http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+          http://www.mulesoft.org/schema/mule/client
+          http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core/current
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
   ...
   <client:remote-dispatcher-agent>
-    <client:remote-endpoint address="http://localhost:81" exchange-pattern="request-response" responseTimeout="10000"/>
+    <client:remote-endpoint address="http://localhost:81"
+      exchange-pattern="request-response" responseTimeout="10000"/>
   </client:remote-dispatcher-agent>
   ...
 </mule>
@@ -261,8 +253,7 @@ On the client side, you can now communicate with the remote server via the remot
 MuleClient client = new MuleClient(true);
 RemoteDispatcher dispatcher = client.getRemoteDispatcher("http://localhost:81");
 
-MuleMessage result = dispatcher.sendToRemoteComponent("StockManager",
-"give me the price of XXX", null);
+MuleMessage result = dispatcher.sendToRemoteComponent("StockManager", "give me the price of XXX", null);
 
 StockQuote sq = (StockQuote) result.getPayload();
 ----
@@ -273,7 +264,7 @@ If you do not want to wait for the result to be returned from the remote server,
 
 [source,java,linenums]
 ----
-// start an empty context for client side
+// Start an empty context for client side
 MuleClient client = new MuleClient(true);
 RemoteDispatcher dispatcher = client.getRemoteDispatcher("tcp://localhost:60504");
 FutureMessageResult result = dispatcher.sendAsyncToRemoteComponent("StockManager", null, "give me the price of XXX", null);
@@ -295,7 +286,7 @@ You can specify the wire format to use for dispatching messages by configuring o
 ====
 *About Serialization*
 
-The Mule Client uses java Serialization. Make certain that all objects in the message implement serializable.
+The Mule Client uses Java Serialization. Make certain that all objects in the message implement serializable.
 ====
 
 If you do not set the wire format, the serialization format is used. For more information on transformers, see xref:using-transformers.adoc[Using Transformers].
@@ -307,13 +298,16 @@ For example:
 <?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xmlns:client="http://www.mulesoft.org/schema/mule/client/3.7"
+      xmlns:client="http://www.mulesoft.org/schema/mule/client/current"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/client http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
-          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+          http://www.mulesoft.org/schema/mule/client
+          http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
   ...
   <client:remote-dispatcher-agent>
-    <client:remote-endpoint address="http://localhost:81" exchange-pattern="request-response" responseTimeout="10000"/>
+    <client:remote-endpoint address="http://localhost:81"
+      exchange-pattern="request-response" responseTimeout="10000"/>
     <client:xml-wire-format/>
   </client:remote-dispatcher-agent>
   ...

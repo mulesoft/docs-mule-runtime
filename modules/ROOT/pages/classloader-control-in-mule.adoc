@@ -2,97 +2,92 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: deploy, esb, amc, cloudhub, on premises, on premise, class loading
+:keywords: deploy, amc, cloudhub, on premises, on premise, class loading
 
-This topic introduces you to classloading in Mule and shows you how to override classloading in your applications and plugins.
+This topic introduces you to class loading in Mule and shows you how to override class loading in your applications and plugins.
 
-NOTE: User third-party libraries are stored in the `lib/user` directory under the Mule version directory. For example, for the 3.7.3 Mule Enterprise distribution, put the library in the `mule-enterprise-3.7.3/lib/user` directory.
+NOTE: Store user third-party libraries in the `lib/user` directory under the Mule version directory. For example, for the 3.8.3 Mule Enterprise distribution, put the library in the `mule-enterprise-3.8.3/lib/user` directory.
 
-== Classloading in Mule
+== Class Loading in Mule
 
 Mule defines a hierarchy of classloaders to find and load classes for execution. This hierarchy uses a "parent first" model by default, this means that each classloader attempts to load a class using its parent classloader before attempting to do it itself.
 
-Although this classloading architecture meets most classloading needs, there are times when you might need to override the default classloading scheme. For example, suppose an application requires a third-party library that is bundled with it. This might conflict with a library version that the domain classloader would load (that is, a version of the library already bundled with Mule). How do you ensure that the required version of the library is used with the application? To address requirements such as these, Mule supports xref:fine-grain-classloader-control.adoc[fine-grained class loading control] that enables you to override default classloading.
+Although this class loading architecture meets most class loading needs, there are times when you might need to override the default class loading scheme. For example, suppose an application requires a third-party library that is bundled with it. This might conflict with a library version that any parent classloader would load (that is, a version of the library already bundled with Mule). How do you ensure that the required version of the library is used with the application? To address requirements such as these, Mule supports xref:fine-grain-classloader-control.adoc[fine-grained class loading control] that lets you override default class loading.
 
 The classloader hierarchy for the different artifacts consists of:
 
-. The *bootstrap*, extensions, and CLASSPATH class loaders created by the Java virtual machine. This classloader loads the core Java libraries.
-. The *Mule System classloader*. This classloader loads standard Mule libraries, that is, libraries in the `<MULE_HOME>/lib` subdirectories, where `<MULE_HOME>` is the directory where Mule ESB is installed. Subdirectories are loaded in a given order: `/boot, /user, /mule and /opt`. This means that classes located in a given folder have precedence over classes with the same name located in a folder that was loaded after.
-.  *Domain classloader*. Domains are used to share resources and libraries between the applications that belong to it. This classloader contains all the libraries located on `<MULE_HOME>/domains/<mydomain>`
+. The *bootstrap*, extensions, and CLASSPATH classloaders created by the Java virtual machine. This classloader loads the core Java libraries.
+. The *Mule System classloader*. This classloader loads standard Mule libraries; that is, libraries within the `<MULE_HOME>/lib` subdirectories, where `<MULE_HOME>` is the Mule installation directory. Classes are loaded from subdirectories in the following order: `/boot, /user, /mule and /opt`. When there exists in the classpath multiple instances of classes with the exact same name and fully-qualified package path (for example, two separate instances of org.apache.commons.lang.StringUtils), the instance of the class that gets resolved first in the classpath pecking order is the one that gets loaded.
+. *Domain classloader*. Domains are used to share resources and libraries between the applications that belong to it. This classloader contains all the libraries located within the `<MULE_HOME>/domains/<mydomain>` directory.
 +
-
 [NOTE]
 ====
-In Mule versions prior to 3.5.0 the concept of domain is a bit different. In those versions, a domain is defined by a folder located on <MULE_HOME>/lib/shared/<DOMAIN_NAME> and it was used to share only libraries files (each application had its own instance of the classes provided by those files) on the apps belonging to it. This feature is still supported, but the new domain concept is preferred.
+In Mule versions prior to 3.5.0, it is the <MULE_HOME>/lib/shared/<DOMAIN_NAME> directory which defines the domain concept: library files (each application had its own instance of the classes provided by those files) are shared amongst the apps belonging to the domain. This feature is still supported, but the new domain concept is preferred.
 ====
-
 +
-. If an application contains application plugins, then a *Plugins classloader* is added. This classloader contains all the plugins classes and libraries.
+. A *Plugins classloader* is added when an application contains application plugins. This classloader loads all of the plugins's classes and libraries.
 +
-
 [NOTE]
 ====
-Plugins classloader supports fine grain classloading and the configuration for this classloader is obtained  merging the fine grain classloading configuration for all the application plugins. This means that plugins are not isolated one from the other inside the application.
+The Plugins classloader supports fine-grained class loading, and the configuration for this classloader is obtained by merging together the fine-grained class loading configuration of all of the application plugins. This means that plugins are not isolated from one another inside the application.
 ====
-
-. One or more *Mule application class loaders* that load classes or libraries from a Mule application, that is, classes and libraries from `<MULE_HOME>/apps/<myapp>/classes` and `<MULE_HOME>/apps/<myapp>/lib` directories, where `<myapp>` is the name of the application. Besides the resources included in the Mule application, on each application classloader is loaded all the libraries located on `<MULE_HOME>\lib\mule\per-app directory`.
-
++
+. One or more *Mule application classloaders* that load classes or libraries from a Mule application; that is, classes and libraries from `<MULE_HOME>/apps/<myapp>/classes` and `<MULE_HOME>/apps/<myapp>/lib` directories, where `<myapp>` is the name of the application. Along with the resources included within a Mule application, each application classloader loads all of the libraries contained within the `<MULE_HOME>\lib\mule\per-app` directory.
 
 image::ce-classloading-3_7.png[CE-classloading-3.7]
 
 [%header,cols="2*a"]
 |===
-|Classloader |Folder location
+|Classloader |Directory location
 |JVM Bootstrap Classloader |JDK Classes
 |Mule System Classloader |
-${MULE_HOME}/lib/boot
-${MULE_HOME}/lib/user
-${MULE_HOME}/lib/mule
+${MULE_HOME}/lib/boot +
+${MULE_HOME}/lib/user +
+${MULE_HOME}/lib/mule +
 ${MULE_HOME}/lib/opt
 |Mule Share Domain Classloader for "Domain1" |${MULE_HOME}/domains/domain1/lib
 |Application Shared Plugin Libraries Classloader for "Application1" |${MULE_HOME}/apps/application1/plugins/lib
 |Application Plugins Classloader for "Application1" |
-${MULE_HOME}/apps/application1/plugins/plugin1/classes
-${MULE_HOME}/apps/application1/plugins/plugin1/lib
-${MULE_HOME}/apps/application1/plugins/pluginN/classes
+${MULE_HOME}/apps/application1/plugins/plugin1/classes +
+${MULE_HOME}/apps/application1/plugins/plugin1/lib +
+${MULE_HOME}/apps/application1/plugins/pluginN/classes +
 ${MULE_HOME}/apps/application1/plugins/pluginN/lib
 |Application Classloader for "Application1" |
-${MULE_HOME}/lib/mule/per-app
-${MULE_HOME}/apps/application1/classes
+${MULE_HOME}/lib/mule/per-app +
+${MULE_HOME}/apps/application1/classes +
 ${MULE_HOME}/apps/application1/lib
 |===
 
-== Extended Mule EE Classloading Model
+== Extended Mule EE Class Loading Model
 
-When a Mule EE server contains Mule Plugins, the classloading model is a bit different than the previously described hierarchy. The main difference is that applications can access resources exported by Mule Plugins.
+When a Mule EE server contains Mule Plugins, the class loading model is a bit different from the previously described hierarchy. The main difference is that applications can access resources exported by Mule Plugins.
 
-To support that scenario, each Mule plugin has a classloader supporting xref:fine-grain-classloader-control.adoc[fine grain classloading]. These classloaders are created using the Mule system classloader as the parent. Mule Plugins can contain many classes, libraries and resources, but only some of them should be accessed from the application. To avoid exporting unnecessary resources, from a Mule plugin, a class loader filter is used.
-Then the classloader used in the Mule Application is a Composite ClassLoader that contains a list of classloaders. The first classloader in that list is a Mule Application classloader as the one described before, and the following elements are the classloaders filters for each installed Mule Plugin.
+To support that scenario, each Mule plugin has a classloader supporting xref:fine-grain-classloader-control.adoc[fine- grained class loading]. These classloaders are created using the Mule system classloader as the parent. Mule Plugins can contain many classes, libraries and resources, but only some of them should be accessed from the application. To avoid exporting unnecessary resources from a Mule plugin, a classloader filter is configured for the plugin, and then as the Mule Application's classloader, a Composite ClassLoader is configured that contains a list of classloaders. The first classloader in that list of classloaders is a Mule Application classloader, such as the one described earlier, and the elements that follow it are the classloader filters for each installed Mule Plugin.
 
 image::ee-classloading-3_7.png[EE-Classloading-3.7]
 
 [%header,cols="2*a"]
 |===
-|Classloader |Folder location
+|Classloader |Directory location
 |JVM Bootstrap Classloader |JDK Classes
 |Mule System Classloader |
-${MULE_HOME}/lib/boot
-${MULE_HOME}/lib/user
-${MULE_HOME}/lib/mule
+${MULE_HOME}/lib/boot +
+${MULE_HOME}/lib/user +
+${MULE_HOME}/lib/mule +
 ${MULE_HOME}/lib/opt
 |Mule Share Domain Classloader for "Domain1" |${MULE_HOME}/domains/domain1/lib
 |Application Shared Plugin Libraries Classloader for "Application1" |${MULE_HOME}/apps/application1/plugins/lib
 |Application Plugins Classloader for "Application1" |
-${MULE_HOME}/apps/application1/plugins/plugin1/classes
-${MULE_HOME}/apps/application1/plugins/plugin1/lib
-${MULE_HOME}/apps/application1/plugins/pluginN/classes
+${MULE_HOME}/apps/application1/plugins/plugin1/classes +
+${MULE_HOME}/apps/application1/plugins/plugin1/lib +
+${MULE_HOME}/apps/application1/plugins/pluginN/classes +
 ${MULE_HOME}/apps/application1/plugins/pluginN/lib
 |Application Classloader for "Application1" |
-${MULE_HOME}/lib/mule/per-app
-${MULE_HOME}/apps/application1/classes
+${MULE_HOME}/lib/mule/per-app +
+${MULE_HOME}/apps/application1/classes +
 ${MULE_HOME}/apps/application1/lib
 |Mule Plugin for "Plugin 1" |
-${MULE_HOME}/plugins/plugin1/classes
+${MULE_HOME}/plugins/plugin1/classes +
 ${MULE_HOME}/plugins/plugin1/lib
 |===
 

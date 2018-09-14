@@ -4,7 +4,24 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: anypoint studio, xa, jms, vms, jdbc
 
-Use an *XA transaction* to group together a series of operations from multiple JMS, VM or JDBC resources into a single, very reliable, virtual transaction.
+You can use an *XA transaction* to group together a series of operations from multiple transactional resources, such as JMS, VM or JDBC resources, into a single, very reliable, global transaction.
+
+
+The https://en.wikipedia.org/wiki/X/Open_XA[*XA* (eXtended Architecture)] standard is an *X/Open group* standard which specifies the interface between a *global transaction manager* and *local transactional resource managers*. The XA protocol defines a 2-phase commit protocol which can be used to more reliably coordiate and sequence a series of "all or nothing" operations across multiple servers, even servers of different types. Each local XA resource manager supports the https://en.wikipedia.org/wiki/ACID[*A.C.I.D* properties] which help guarantee "all or nothing" completion of a sequence of operations in the resource managed by the XA resource manager. Examples of transactional systems which often include local XA resource managers include databases, application servers, messaging queues, and transactional caches.
+
+The global transaction manager is then responsible for coordinating the transactional semantics of the global transaction between all the local XA transaction managers participating in the global transaction. To do this, each prepare and commit phase in the 2-phase commit is coordinated globally (often over the network) with each local XA resource manager.
+
+The advantage of XA global transactions is that one global transaction manager can communicate and coordinate with multiple different transactional resources in a commmon and standard way. If any of the local resource managers report an error in the global transaction, the global transaction manager coordinates the rollback of any already prepared operations in each of the other local resource managers.
+For example, a global transaction might include several operations to one or more databases, as well as messages sent to a JMS server on one or more topics. If anything goes wrong in the transaction, the global transaction manager guarantees that every resource is reset to the state before the global transaction was started. This keeps developers from having to include complex rollback or recovery logic outside the application.
+
+The disadvantage of XA global transactions is that they can add tremendous latency to your transactions, especially if resources are distributed over slow or unreliable network connections, and it can be difficult to recover if there are physical failures of systems in the middle of a global distributed transaction.
+
+== XA Transactions and Performance
+A global XA transaction is often a more reliable way of coordinating multiple XA resources, but often increases latency, and also often requires additional resources such as an external transaction manager. Also, a global transaction is only as reliable as the global transaction manager itself. For greater reliability, you will need to use a transaction manager which also persists the state of each XA resource as the global transaction progresses through the prepare and commit phases. This ensures against the transaction manager itself failing, or loosing network connectivity to any of the local XA resource managers during the global transaction.
+
+== Implementing XA Transactions in a Mule Flow
+Mule flows can define the boundaries of a global transaction, which can include various connector types, which will then all participate in a global transaction.
+
 
 The following example illustrates a flow in which two connectors use XA transaction to function as a single transactional unit.
 
@@ -23,7 +40,7 @@ The following example illustrates a flow in which two connectors use XA transact
 Beyond the code displayed above, this configuration must use transports which support XA transactions. Specifically, this example uses a JMS connector which employs a JMS http://docs.oracle.com/javaee/1.4/api/javax/jms/XAConnectionFactory.html[XA Connection Factory], and a JDBC connector which uses an XA-enabled data source.
 
 [TIP]
-Our default and recommended XA Transaction Manager is *Bitronix*, read xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions] for details on how to implement it in Mule.
+Our default and recommended global XA Transaction Manager is *Bitronix*, read xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions] for details on how to implement it in Mule. The Bitronix transaction manager can be embedded into your Mule application, in which case you will not have to configure a connection to an external global XA transaction manager.
 
 As with a multiple resource transaction, if you configure an inbound connector with an XA transaction, you must also configure any other connectors as XA transactions and set the action to "ALWAYS_JOIN" to become part of the virtual transaction unit.  XA transactions employ the concept of suspend/resume. If you configure one flow to use an XA transaction set to ALWAYS_BEGIN, and then Mule forwards the message to another flow with an XA transaction set to ALWAYS_BEGIN, Mule suspends the first transaction until the second transaction completes.
 
@@ -43,11 +60,19 @@ When you configure an inbound JMS connector with XA transactions, the receiver p
 
 This property is only applicable if you are using the the default transport, `XaTransactedJmsMessageReceiver` , on JMS inbound connectors configured to use XA transactions. If you are using JBoss transactions, please read xref:jboss-transaction-manager-reference.adoc[JBoss Transaction Manager Reference] to learn how to configure the `timeout` value.
 
-== Mule Transaction Manager
+== One Mule Transaction Manager Per Mule Application
 
-Though you demarcate transactions based on connectors (i.e. resources) and scopes, Mule actually manages transactions using the *Mule Transaction Manager*. The Transaction Manager is a singleton manager which governs all the transactions in a Mule instance. It provides methods for binding and unbinding transactions and is responsible for retrieving the current transaction state.
+Though you demarcate transactions based on connectors (i.e. resources) and scopes, Mule actually manages transactions using the *Mule Transaction Manager*. It provides methods for binding and unbinding transactions and is responsible for retrieving the current transaction state.
 
-Mule uses `javax.transaction.TransactionManager` to manage XA transactions with multiple resources. If you intend to use the `SUSPEND` semantics for your transactions, you must use this transaction manager. However, depending on your application server vendor, you may have access to other transaction manager options. The table below summarizes the transactions managers available on common application servers.
+The Mule Transaction Manager is a singleton manager which governs all the transactions running in the Mule runtime. You can have at most one Mule Transaction Manager defined in a Mule application. You can also share one Mule Transaction Manager by defining a transaction manager in a domain project.
+
+== Embedding a Transaction Manager inside the Mule Application
+You can embed a global transaction manager inside your Mule application. Refer to xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions] to see how to implement our default and recommended XA Transaction Manager.
+
+== Specifying the Mule Transaction Manager
+If you do not use an embedded transaction manager inside your Mule application, such as the Bitronix transaction manager, you must configure the connection information to an external global XA transaction manager. Regardless of which global XA transaction manager vendor you use, XA transactions between every XA resource are managed inside Mule flows using the standard `javax.transaction.TransactionManager` interface.
+
+You can also use vendor specific transaction manager connectors to support XA transactions. However, one restriction of Mule application global transactions, is that if you intend to use the `SUSPEND` semantics for your transactions, you must use a Mule Transaction Manager to support your flow's XA transactions. However, depending on your application server vendor, you may have access to other transaction manager options. The table below summarizes the transactions managers available on common application servers.
 
 [%header,cols="5*"]
 |===
@@ -61,7 +86,6 @@ org.mule.transaction.lookup.JBossTransactionManagerLookupFactory
 |JRun |  |image:check.png[(tick)] |java:/TransactionManager a|
 
 ----
-
 org.mule.transaction.lookup.JRunTransactionManagerLookupFactory
 ----
 
@@ -92,8 +116,8 @@ org.mule.transaction.lookup.WebsphereTransactionManagerLookupFactory
 |===
 
 [WARNING]
-XA transactions for *Weblogic* are not supported in Mule Standalone. +
-Use Mule in embedded mode in order to use XA transactions for Weblogic.
+XA transactions for *WebLogic* are not supported in Mule Standalone. +
+Use Mule in embedded mode in order to use XA transactions for WeblLogic.
 
 To configure your Mule application to use a specific transaction manager, configure the `custom`-`transaction-manager `as per the example below.
 

@@ -2,45 +2,47 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: deploy, cloudhub, on premises, on premise
+:keywords: deploy, esb, amc, cloudhub, on premises, on premise
 
-== Start a Mule Runtime
+== Starting Mule
 
-Start Mule by running `<MULE_HOME>/bin/mule` or starting Mule as a service. By default, all applications in the `<MULE_HOME>/apps` directory deploy.
+Start mule by running `<MULE_HOME>/bin/mule` or starting Mule as a service. By default, applications in the `<MULE_HOME>/apps` directory are deployed. You can also designate specific applications to start (separated by a colon - **:**) and Mule 3 respects the order when starting the applications. In this scenario, only the applications specified are started.
 
-== Application Hot Deployment
-
-Mule applications, either zipped or exploded can be dropped into *$MULE_HOME/apps*. If the Mule runtime is already started, the application deploys dynamically.
-
-[NOTE]
-All applications in Mule are unpacked at runtime and the original zip is removed. This means, for example, that dropping a zip file into the 'apps' dir creates a new folder with the same name (without the 'zip' extension) and delete the zip.
-
-A successful app deployment is confirmed by:
-
-* Having an unpacked application folder in the apps dir. For example, for `stockTrader.zip`- `$MULE_HOME/apps/stockTrader`.
-
-* An anchor file created for a running app, for example, `$MULE_HOME/apps/stockTrader-anchor.txt`
-
-If you wish to store your applications in a different location, you can do this on Unix-based systems by creating a symlink to your application directory from `$MULE_HOME/apps`.
-
-== Start a Mule Runtime and Deploy Specific Applications
-
-You can also include the *-app* flag when you start a Mule runtime. This flag designates the applications to start (separated by the colon - *:*).
-
-For example:
+Start Mule by specifying an app to run:
 
 ----
 mule -app foo
 ----
 
-Where `foo` is a Mule application at `$MULE_HOME/apps/foo`.
-In this case the Mule runtime respects the specified order when starting the applications, and only the applications specified are started.
+Where `foo` is a Mule app at `$MULE_HOME/apps/foo`.
 
-----
-mule -app first:second
-----
+From this moment, Mule checks every three seconds for the `$MULE_HOME/apps/foo/mule-config.xml` updates. One can update the application jar contents and touch/modify this file to have Mule reload the config and class modifications.
 
-Where `first` and `second` are both Mule application folders in `$MULE_HOME/apps/`.
+*Note:* When using the `-app` option, hot deployment doesn't work. Only the applications that are in the apps directory when the hot deployment script is run are deployed, new applications aren't started until Mule restarts.
+
+== Deploying Applications
+
+Mule applications, either zipped or exploded can be dropped into `$MULE_HOME/apps`. If Mule is already running, the application is deployed dynamically.
+
+*Note:* All applications in Mule are unpacked at runtime and the original zip is removed. This means, for example, that dropping a zip file into 'apps' dir  creates a new folder with the same name (without the 'zip' extension) and deletes the zip.
+
+A successful app deployment is confirmed by:
+
+* Having an unpacked application folder in the apps dir. E.g. for `stockTrader.zip`- `$MULE_HOME/apps/stockTrader`.
+
+* An anchor file created for a running app, e.g. `$MULE_HOME/apps/stockTrader-anchor.txt`
+
+If you wish to store your applications in a different location, you can do this on Unix-based systems by creating a symlink to your application directory from `$MULE_HOME/apps`.
+
+== Deploying Applications in Parallel
+
+In Mule 3.8.2 and later, you can deploy applications in parallel. Deploying applications in parallel reduces the startup time when you deploy a large number. The maximum number of deployment threads is set to 20 and is not configurable. To prevent deployment failure, ensure that applications are not dependent on each other because a particular start order cannot be guaranteed.
+
+To enable parallel deployment, start Mule using the `-M-Dmule.deployment.parallel option`. For example:
+
+`mule -M-Dmule.deployment.parallel`
+
+All applications in the `/apps` directory start in parallel.
 
 == Undeploying Applications
 
@@ -55,31 +57,29 @@ For example, if the `stockTrader` app is running (app folder is there as well as
 
 *Note:* After undeploying a Mule Application, there is a timeout of 15 seconds until LoggerContext stops. Log files for an application only release after this timeout expires. This information is important in Windows, where you can’t remove files that are in use by other processes.
 
-== Application Hot Redeployment
+== Updating Applications at Runtime
 
-After a Mule application is deployed into a Mule runtime, the Mule runtime polls the `$MULE_HOME/apps` folder every three seconds for updates to `$MULE_HOME/apps/<appname>/mule-config.xml` (or any config.resources file specified in an application's mule-deploy.properties file). You can update or replace the application folder contents and touch/modify the application's configuration file to have Mule reload the config and automatically re-deploy the application.
-
-== Hot Deploying Application Updates at Runtime
-
-Updating a Mule application at runtime can be a complex change involving class modifications, endpoint modifications, changing ports, and reconfigured flows. As a result, application update cause a graceful app shutdown under the hood and reconfigures itself. In practice, this is  transparent to the user and happens within seconds.
+Updating a Mule application at runtime can be a complex change involving class modifications, endpoint modifications (for example, changing ports, etc), as well as reconfigured flows. As a result, any application update does a graceful app shutdown under the hood and reconfigures itself. In practice, this is pretty transparent to the user and happens within seconds.
 
 There are several ways an application can be updated:
 
 * By dropping the modifications over an existing exploded app folder and touching the 'master' configuration file (`mule-config.xml` in app root by default).
 
-* By dropping a new *zipped* version of the app into `$MULE_HOME/apps` dir (with the same name). Mule detects this as an existing app update and ensures a clean redeployment of the app. Note that any modifications to the old app folder are discarded - the new app folder is a clean exploded application from a zip.
+* By dropping a new *zipped* version of the app into `$MULE_HOME/apps` dir. Mule detects this as an existing app update and  ensures a clean redeployment of the app. Note that any modifications to the old app folder are discarded - the new app folder is a clean exploded application from a zip.
 
-As you see, both integrate with existing build tools, the preference for one over another really depends on established development practices only.
-
-NOTE: Hot redeployment can be dangerous in a production environment. It may be safer to undeploy the production application first, then replace the Mule application deployable archive. For some application changes, such as modified files in the application's classpath, you may also need to restart the Mule runtime before deploying the new application version.
+As you see, both integrate pretty well with existing build tools, the preference for one over another really depends on established development practices only.
 
 == Sharing Resources
 
-If you're deploying multiple applications to the same place and those applications share the same resources, you can create a common *domain* where you define common configurations that can be referenced by multiple projects. This allows you to, for example, expose different services in different projects through the same HTTP host and port and be able to deploy everything without any conflicts. See xref:shared-resources.adoc[Shared Resources].
+If you're deploying multiple applications to the same place and those applications could share the same resources, then you can create a common *domain* where you can define common configurations that can then be referenced by multiple projects. This allows you to, for example, expose different services in different projects through the same HTTP host and port and be able to deploy everything without any conflicts. See xref:shared-resources.adoc[Shared Resources].
+
+== What happens if communication between RunTimes and Management pane is disrupted?
+
+Mule runtimes run independently with the Management pane to execute integration logic and serve API requests. This architecture allows for the runtimes to be deployed strategically (on-prem and cloud) and ensures it is not a bottleneck for any communications. When/if an event occurs which causes the runtimes get disconnected from the Management pane, they continue to run as designed and execute integration and/or serve API without interruption. However, new or updated policies will not be pulled and updated until the connection is re-established.
 
 == Disabling the Mule Container Mode
 
-If you want to run Mule 3 the legacy 2.x way, edit `$MULE_HOME/conf/wrapper.conf` file and replace the following lines:
+If you want to run Mule 3 in the legacy 2.x way, edit `$MULE_HOME/conf/wrapper.conf` file and replace the following lines:
 
 [source,java,linenums]
 ----
@@ -99,8 +99,8 @@ When run in this legacy mode, none of the new application deployment features ap
 
 == Embedded Mule
 
-When Mule is embedded in an application server, Java application, unit test, IDE, etc, and started programmatically, the deployment functionality is disabled and Mule follows the legacy application model.
+When Mule is embedded in an application server, Java application, unit test, IDE, etc and started programmatically, the deployment functionality is disabled and Mule follows the legacy application model.
 
 == Troubleshooting
 
-If application fails to start, such as when a broken configuration file is provided, Mule does *not* monitor the app for changes (as there is no application running). To update such an app, simply redeploy the app by dropping an updated archive into the apps folder.
+If the application fails to start (for example, in a broken configuration file), Mule does not monitor the app for changes (as there technically is no application running). To update such an app, simply redeploy the app by dropping an updated archive into the apps folder.
