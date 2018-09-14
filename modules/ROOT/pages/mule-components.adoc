@@ -2,17 +2,17 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: studio, server, components, connectors, elements, palette
 
 image:component.png[]Components are message processors which execute http://en.wikipedia.org/wiki/Business_logic[business logic] on messages. They enable you to perform specific actions without writing any Mule-specific code. You can drop a component – a POJO, Spring bean, Java bean, or script – into a flow to perform almost any customized task within your Mule application. For example, you can use a component to verify that items on an invoice are in stock in a warehouse, or to update a database with a customer's order history.
 
-
 == Scripting Components
 
-Mule includes several *scripting components* that you can use in flows in order to execute custom business logic. These components enable you to drop a chunk of custom-written logic into your flow to act upon messages.
+Mule includes several *scripting components* that you can use in flows to execute custom business logic. These components enable you to drop a chunk of custom-written logic into your flow to act upon messages.
 
 image::scripting-components.png[scripting_components]
 
-The example below illustrates the use of a Groovy script component. The script uses the value of `state` to determine which of four sales regions to which to assign the lead.
+The example below illustrates the use of a Groovy script component. The script uses the value of `state` to determine which of four sales regions to assign a lead.
 
 == Web Service Components
 
@@ -23,15 +23,16 @@ image::rest-cxf.png[]
 [TIP]
 *APIkit* offers a new and improved way of building a REST API. Access the xref:apikit::index.adoc[APIkit Documentation] to learn how to build REST APIs in a few hours or days.
 
-== HTTP Components
+== HTTP Component
 
-Further, Mule provides two *HTTP components* to facilitate working with calls over HTTP. Use the *HTTP Response Builder* to convert a message into a format consistent with HTTP responses; use the *HTTP Static Resource Handler* to easily serve up static content when called.
+Further, Mule provides an HTTP component to facilitate working with calls over HTTP. Use the *HTTP Static Resource Handler* to easily serve up static content when called. +
 
 image::http-components.png[http_components]
 
+
 == Other Components
 
-Finally, Mule includes several other components designed to meet rather specific needs.
+Finally, Mule includes several other components designed to meet rather specific needs.  +
 
 image::misc-components.png[misc_components]
 
@@ -44,7 +45,7 @@ image::misc-components.png[misc_components]
 
 == Examples
 
-*Groovy Script Component Example*
+=== Groovy Script Component Example
 
 [source,xml,linenums]
 ----
@@ -97,9 +98,11 @@ return ["region":region]</scripting:script>
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd">
-
+<http:listener-config name="HTTP_Listener_Configuration"
+  host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
     <flow name="rest_exampleFlow1" doc:name="rest_exampleFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <http:listener config-ref="HTTP_Listener_Configuration"
+          path="/" doc:name="HTTP"/>
         <jersey:resources doc:name="REST">
             <component class="example.RestExampleResource"/>
         </jersey:resources>
@@ -138,34 +141,49 @@ public class RestExampleResource {
 [.ex]
 =====
 [discrete.view]
-=== HTTP Response Builder
+=== HTTP Listen and Choose
+
+image::36mulecompexflow.png[36MuleCompExFlow]
+
+In the following example, you can try different values from this URL:
+
+http://localhost:8081/?choice=<value>
+
+If you enter **choice=mules**, the flow succeeds and returns a status of 200 (okay); otherwise any other value returns a choice of null and a status code of 400 (bad request).
 
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 
-    <flow name="response-Builder2Flow1" doc:name="response-Builder2Flow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="builder" doc:name="HTTP"/>
-        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
-        <choice doc:name="Choice">
-            <when expression="#[payload == 'kittens']">
-                <echo-component doc:name="Echo"/>
-            </when>
-            <otherwise>
-                <http:response-builder status="400" contentType="text/plain" doc:name="HTTP Response Builder"/>
-            </otherwise>
-        </choice>
+    <flow name="ListenAndChoose">
+      <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+      <choice doc:name="Choice">
+          <when expression="#[message.inboundProperties.'http.query.params'.choice == 'mules']">
+              <set-variable variableName="status" value="200" doc:name="Variable"/>
+          </when>
+          <otherwise>
+              <set-variable variableName="status" value="400" doc:name="Variable"/>
+          </otherwise>
+       </choice>
+       <set-payload value="Debug: Choice = #[message.inboundProperties.'http.query.params'.choice], Status value is #[flowVars.status]" doc:name="Debug Message"/>
+       <echo-component doc:name="Echo"/>
+       <logger message="#[payload]" level="INFO" doc:name="Logger"/>
     </flow>
-
-</mule>
+ </mule>
 ----
 
 [discrete.view]
-=== XML Editor or Standalone
+=== HTTP Static Resource Handler
+
+image::36httpstatreshdlr.png[36HTTPStatResHdlr]
 
 [source,xml,linenums]
 ----
@@ -173,15 +191,13 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
 <mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
-
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
     <flow name="static-handlerFlow1" doc:name="statice-handlerFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="response" doc:name="HTTP"/>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
         <http:static-resource-handler resourceBase="src/main/resources/index.html" doc:name="HTTP Static Resource Handler"/>
     </flow>
-
 </mule>
 ----
-
 =====
 
 == See Also

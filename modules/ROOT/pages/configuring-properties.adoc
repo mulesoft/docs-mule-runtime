@@ -2,14 +2,15 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint, studio, on premises, on premise, properties, system properties, property placeholders
 
 This page describes configuring properties, such as property placeholders and system properties.
 
 == Property Placeholders
 
-You can use Ant-style property placeholders in your Mule ESB configuration. For example:
+You can use http://ant.apache.org/[Ant]-style property placeholders in your Mule ESB configuration. For example:
 
-[source,xml,linenums]
+[source,xml]
 ----
 <smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"/>
 ----
@@ -18,18 +19,29 @@ The values for these placeholders can be made available in a variety of ways, as
 
 == Global Properties
 
-You can use the `<global-property>` element to set a placeholder value from within your Mule configuration, such as from within another Mule configuration file:
+You can use the `<global-property>` element to set a placeholder value from within your Mule configuration, such as from within another Mule configuration file. Do not use the global property syntax to reference the values from a `.properties` file. To reference properties from a file, read the section on properties files.
 
 [source,xml,linenums]
 ----
-<global-property name="smtp.username" value="JSmith"/>
-<global-property name="smtp.password" value="ChangeMe"/>
+<global-property name="smtp.host" value="smtp.mail.com"/>
+<global-property name="smtp.subject" value="Subject of Email"/>
 ----
 
 == Properties Files
 
-To load properties from a file, you can use the standard Spring element
-<context:property-placeholder>:
+[WARNING]
+====
+If you deploy multiple applications through a xref:shared-resources.adoc[Shared Resources] structure, don't set anything in the properties files, as there might potentially be conflicts between the various apps that share a domain. Instead, set environment variables over the scope of the deployed app, its domain, and other apps under that domain.
+
+As explained in xref:shared-resources.adoc[Shared Resources], in Studio you can create these variables through the *Environment tab* of the *Run Configurations menu*, reachable via the drop-down menu next to the Play button.
+====
+
+In Anypoint Studio, you can create and edit a properties file in your project's folders.
+
+image::properties-file.png[properties+file]
+
+To load properties from a file, you can use the standard Spring element +
+ `<context:property-placeholder>`:
 
 [source,xml,linenums]
 ----
@@ -39,7 +51,7 @@ To load properties from a file, you can use the standard Spring element
       xmlns:context="http://www.springframework.org/schema/context"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+          http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.1.xsd">
 
 <context:property-placeholder location="smtp.properties"/>
 
@@ -48,19 +60,21 @@ To load properties from a file, you can use the standard Spring element
 </flow>
 ----
 
-where the contents of `smtp.properties` is:
+To load multiple properties files, separate each with commas:
 
-[source,text,linenums]
+[source,xml]
 ----
-smtp.username=JSmith
-smtp.password=ChangeMe
+<context:property-placeholder location="email.properties,http.properties,system.properties"/>
 ----
 
-To load multiple properties files, separate them with commas:
+Since properties from files, system properties and environment variables are referred to through the same syntax, you can add a `system-properties-mode` parameter to your property placeholder to ensure that overrides work in the way that you desire. The accepted values for this parameter are ENVIRONMENT, NEVER, FALLBACK, and OVERRIDE:
 
 [source,xml,linenums]
 ----
-<context:property-placeholder location="email.properties,http.properties,system.properties"/>
+<context:property-placeholder location="app.properties" system-properties-mode="ENVIRONMENT"/>
+<flow name="myProject_flow1">
+    <logger message="${propertyFromFile}" doc:name="System Property Set in Property File"/>
+</flow>
 ----
 
 == Message Properties
@@ -71,12 +85,13 @@ You can use placeholders to perform logic on message properties such as the head
 
 The placeholder value can come from a JDK system property. If you start Mule from the command line, you would specify the properties as follows:
 
-[source,text,linenums]
 ----
-mule -D-M-Dsmtp.username=JSmith -D-M-Dsmtp.password=ChangeMe
+mule -M-Dsmtp.username=JSmith -M-Dsmtp.password=ChangeMe
 ----
 
-or edit the system properties in `conf/wrapper.conf` if you are deploying Mule as a webapp. When running Mule in a container, as of Mule 2.2.2 you can also specify the server ID in the `web.xml` file as follows:
+You can also edit the system properties in `conf/wrapper.conf` if you are deploying Mule as a webapp. When running Mule in a container.
+
+You can also specify the server ID in the `web.xml` file as follows:
 
 [source,xml,linenums]
 ----
@@ -94,7 +109,7 @@ System.getProperties().put("smtp.username", "JSmith");
 System.getProperties().put("smtp.password", "ChangeMe");
 ----
 
-There are also several system properties that are immutable after startup. To set these, you customize the `MuleConfiguration` using the set method for the property (such as `setId` for the system ID), create a `MuleContextBuilder`, load the configuration to the builder, and then create the context from the builder.
+There are also several system properties that are immutable after startup. To set these, customize the `MuleConfiguration` using the set method for the property (such as `setId` for the system ID), create a `MuleContextBuilder`, load the configuration to the builder, and then create the context from the builder.
 
 For example:
 
@@ -112,10 +127,83 @@ muleContext.start();
 
 For information on the set methods you can use to set system properties, see:
 
-https://www.mulesoft.org/docs/site/current/apidocs/org/mule/config/DefaultMuleConfiguration.html[org.mule.config.DefaultMuleConfiguration]
+https://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/config/DefaultMuleConfiguration.html[org.mule.config.DefaultMuleConfiguration]
 
 For information on configuration builders, see xref:about-configuration-builders.adoc[About Configuration Builders].
 
-=== Environment Variables
+=== Setting System Properties in Anypoint Studio
 
-There are several ways to access environment variables, but there is no standard way.
+You can also add properties when you launch your project on Anypoint Studio, through the Run Configurations menu:
+
+. Right-click your project in Package Explorer.
+. Click *Run As* > *Run Configurations*.
+. Pick the *Arguments* tab.
+. Add your arguments to the *VM arguments* field, preceding property names with *-D*
++
+image::arguments-tab.png[Arguments+Tab]
++
+Your properties are now available each time you deploy your app through Studio. You can then reference them with the following syntax:
++
+[source,xml]
+----
+<logger message="${propertyFromJVMArg}" doc:name="System Property Set in Studio through JVM args"/>
+----
+
+== Environment Variables
+
+Environment variables can be defined in various different ways, there are also several ways to access these from your apps. Regardless of how an environment variable is defined, the recommended way to reference it is through the following syntax:
+
+----
+${variableName}
+----
+
+=== Environment Variables From the OS
+
+To reference a variable that is defined in the OS, you can simply use the following syntax:
+
+[source,xml]
+----
+<logger message="${USER}" doc:name="Environment Property Set in OS" />
+----
+
+=== Setting Environment Variables in Anypoint Studio
+
+You can set variables in Studio through the Run Configuration menu:
+
+. Right-click your project in Package Explorer.
+. Select *Run As* > *Run Configurations*.
+. Pick the Environment tab.
+. Click the *New* button and assign your variable a name and value.
++
+image::environment-tab.png[Environment+Tab]
+
+Your variable is now available each time you deploy through Studio. You can reference it with the following syntax:
+
+[source,xml]
+----
+<logger message="${TEST_ENV_VAR}" doc:name="Environment Property Set in Studio"/>
+----
+
+NOTE: The syntax makes no distinction between when you're referencing a variable in the OS and a variable defined here. In case names overlap, there's a radio button you can select when creating these variables that lets you define whether these variables overrides the original OS ones or not.
+
+image::environment-tab2.png[Environment+Tab2]
+
+== Setting Properties Values in CloudHub
+
+If you deploy your application to xref:runtime-manager::cloudhub.adoc[CloudHub], you can also set properties through the Runtime Manager console. These can be defined when xref:runtime-manager::deploying-to-cloudhub.adoc[Deploying to CloudHub], or on an xref:runtime-manager::managing-applications-on-cloudhub.adoc[already running application].
+
+NOTE: If you also have the same variables set in the `mule-app.properties` file inside your application, the environment variables you set here in the console always override the values in 'mule-app.properties' when your application deploys.
+
+To create an environment variable or application property:
+
+. Log in to your https://anypoint.mulesoft.com/#/signin[Anypoint Platform] account.
+. Click *CloudHub*.
+. Either click *Deploy Application* to deploy a new application, or select a running application and click *Manage Application*.
+. Select the *Properties* tab in the *Settings* section.
+
+See xref:runtime-manager::managing-applications-on-cloudhub.adoc[Managing Applications on CloudHub] and xref:runtime-manager::secure-application-properties.adoc[Secure Application Properties] for more details.
+
+== See Also
+
+* Read more about mule messages and their properties in our http://blogs.mulesoft.com/dev/anypoint-platform-dev/mule-school-the-mulemessage-property-scopes-and-variables/[Mule School: The MuleMessage, Property Scopes, and Variables].
+* xref:deploying-to-multiple-environments.adoc[Deploying to Multiple Environments]

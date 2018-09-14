@@ -2,6 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint studio, studio, mule esb, configuration
 
 == About XML Configuration
 
@@ -55,8 +56,8 @@ The configuration both defines the schema's namespace URI as an XML namespace an
 ----
 
 ❶ Shows the core Mule schema's namespace being defined as the default namespace for the configuration. This is the best default namespace, because so many of the configuration's elements are part of the core namespace. +
-❷ Shows the namespace for Mule's stdio transport, which allows communication using standard I/O, being given the "stdio" prefix. The convention for a Mule module or transport's schema is to use its name for the prefix. +
-The xsi:schemaLocation attribute associates schemas' namespaces with their locations. ❸ gives the location for the stdio schema and ❹ for the core schema.
+ ❷ Shows the namespace for Mule's stdio transport, which allows communication using standard I/O, being given the "stdio" prefix. The convention for a Mule module or transport's schema is to use its name for the prefix. +
+ The xsi:schemaLocation attribute associates schemas' namespaces with their locations. ❸ gives the location for the stdio schema and ❹ for the core schema.
 
 It is required that a Mule configuration contain these things, because they allow the schemas to be found so that the configuration can be validated against them.
 
@@ -294,7 +295,7 @@ The transformer at ❶ converts the current message to JSON, specifying special 
 
 Like endpoints, transformers can be configured as global elements and referred to where they are used, or configured at their point of use.
 
-For more about Mule transformers, see xref:3.6@using-transformers.adoc[Using Transformers].
+For more about Mule transformers, see xref:using-transformers.adoc[Using Transformers].
 
 ==== Filters
 
@@ -345,7 +346,7 @@ Filters once again can be configured as global elements and referred to where th
 
 ==== Expressions
 
-For a current reference to using expressions in Mule, see xref:3.7@mule-expression-language-mel.adoc[Mule Expression Language MEL].
+For a current reference to using expressions in Mule, see xref:mule-expression-language-mel.adoc[Mule Expression Language MEL].
 
 ==== Names and References
 
@@ -391,9 +392,10 @@ The flow is the basic unit of processing in Mule. A flow begins with an inbound 
 
 [source,xml,linenums]
 ----
-
+<http:listener-config name="listener-config" host="localhost" port="8081"
+   doc:name="HTTP Listener Configuration"/> ❶
 <flow name="acceptAndProcessOrder">
-  <http:inbound-endpoint host="localhost" port="8081" path="/" />❶
+<http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
   <byte-array-to-string-transformer/> ❷
   <jdbc:outbound-endpoint ref="getOrdersById" exchange-pattern="request-response"/> ❸
   <mxml:object-to-xml-transformer/> ❹
@@ -425,25 +427,25 @@ The flow is the basic unit of processing in Mule. A flow begins with an inbound 
 
 This flow accepts and processes orders. How the flow's configuration maps to its logic:
 
-❶ A message is read from an HTTP inbound endpoint. +
-❷ The message is transformed to a string. +
-❸ This string is used as a key to look up the list of orders in a database. +
-❹ The order is now converted to XML. +
-❺ If the order is not ready to be processed, it is skipped. +
-❻ The list is optionally logged, for debugging purposes. +
-❼ Each order in the list is split into a separate message +
-❽ A message enricher is used to add information to the message +
-❾ Authorize.net is called to authorize the order +
-❶❶ The email address in the order is saved for later use. +
-❶❷ A Java component is called to preprocess the order. +
-❶❸ Another flow, named `processOrder`, is called to process the order. +
-❶❹ The confirmation returned by `processOrder` is e-mailed to the address in the order.
+❶ A message is read from an HTTP listener. +
+ ❷ The message is transformed to a string. +
+ ❸ This string is used as a key to look up the list of orders in a database. +
+ ❹ The order is now converted to XML. +
+ ❺ If the order is not ready to be processed, it is skipped. +
+ ❻ The list is optionally logged, for debugging purposes. +
+ ❼ Each order in the list is split into a separate message +
+ ❽ A message enricher is used to add information to the message +
+ ❾ Authorize.net is called to authorize the order +
+ ❶❶ The email address in the order is saved for later use. +
+ ❶❷ A Java component is called to preprocess the order. +
+ ❶❸ Another flow, named `processOrder`, is called to process the order. +
+ ❶❹ The confirmation returned by `processOrder` is e-mailed to the address in the order.
 
 If processing the order caused an exception, the exception strategy at ❶❺ is called:
 
 ❶❻ All the message processers in this chain are called to handle the exception +
-❶❼ First, the message in converted to ma string. +
-❶❽ Last, this string is put on a queue of errors to be manually processed.
+ ❶❼ First, the message in converted to ma string. +
+ ❶❽ Last, this string is put on a queue of errors to be manually processed.
 
 Each step in this flow is described in more detail below, organized by construct.
 
@@ -471,19 +473,19 @@ Thus the message sent back to the caller will be the confirmation message, in ca
 As described above, transformers change the current message. There are a few examples here. Note that they are defined where used. They could also have been defined globally and referred to where used.
 
 ❷ The message, which is a byte array, is converted to a string, allowing it to be the key in a database look-up. +
-❹ The order read from the database is converted to an XML document. +
-❶❶ The email address is stored in a message property. Note that, unlike most transformers, the message-properties-transformer does not affect the message's payload, only its properties. +
-❶❼ The message that caused the exception is converted to a string. Note that since the same strategy is handling all exceptions, we don't know exactly what sort of object the message is at this point. It might be a byte array, a string, or an XML document. Converting all of these to strings allows its receiver to know what to expect.
+ ❹ The order read from the database is converted to an XML document. +
+ ❶❶ The email address is stored in a message property. Note that, unlike most transformers, the message-properties-transformer does not affect the message's payload, only its properties. +
+ ❶❼ The message that caused the exception is converted to a string. Note that since the same strategy is handling all exceptions, we don't know exactly what sort of object the message is at this point. It might be a byte array, a string, or an XML document. Converting all of these to strings allows its receiver to know what to expect.
 
 ==== Message Enrichment
 
-Message enrichment is done using the `enricher` element. Unlike message transformation, which alters the current message's payload, enrichment adds additional properties to the message. This allows the flow to build up a collection of information for later processing.  For more about enriching messages see xref:3.6@message-enricher.adoc[Message Enricher].
+Message enrichment is done using the `enricher` element. Unlike message transformation, which alters the current message's payload, enrichment adds additional properties to the message. This allows the flow to build up a collection of information for later processing.  For more about enriching messages see xref:message-enricher.adoc[Message Enricher].
 
 ❽ The enricher calls a connector to retrieve information that it stores as a message property. Because the connector is called within an enricher, its return value is processed by the enricher rather than becoming the message.
 
 ==== Logger
 
-The `logger` element allows debugging information to be written from the flow.  For more about the logger see xref:3.6@logger-component-reference.adoc[Logger Component Reference]
+The `logger` element allows debugging information to be written from the flow.  For more about the logger see xref:logger-component-reference.adoc[Logger Component Reference]
 
 ❻ Each order fetched from the database is output, but only if DEBUG mode is enabled. This means that the flow is silent, but debugging can easily be enabled when required.
 
@@ -495,7 +497,7 @@ Filters determine whether a message is processed or not.
 
 ==== Routers
 
-A router changes the flow of the message. Among other possibilities, it might choose among different message processors, split one message into many, join many messages into one.  For more about routers, see xref:3.6@routers.adoc[Routing Message Processors].
+A router changes the flow of the message. Among other possibilities, it might choose among different message processors, split one message into many, join many messages into one.  For more about routers, see xref:routers.adoc[Routing Message Processors].
 
 ❼ Split the document retrieved from the database into multiple orders, at the XML element `order`. The result is zero or more orders, each of which is processed by the rest of the flow. That is, for each HTTP message received, the flow is processed once up through the splitter. The rest of the flow might be processed zero, one, or more times, depending on how many orders the document contains.
 
@@ -532,13 +534,13 @@ A component is a message processor written in Java, groovy, or some other langua
 
 Entry point resolvers are for advanced use. Almost all of the time, Mule finds the right method to call without needing special guidance.
 
-❶❷ This is a Java component, specified by its class name, which is called with the current message. In this case, it preprocesses the message.  For more about entry point resolvers, see xref:3.7@entry-point-resolver-configuration-reference.adoc[Entry Point Resolver Configuration Reference].
+❶❷ This is a Java component, specified by its class name, which is called with the current message. In this case, it preprocesses the message.  For more about entry point resolvers, see xref:entry-point-resolver-configuration-reference.adoc[Entry Point Resolver Configuration Reference].
 
 ==== Anypoint Connectors
 
 An Anypoint connector calls a cloud service.
 
-❾ Calls authorize.net to authorize a credit card purchase, passing it information from the message.  For more about connectors, see xref:3.7@anypoint-connectors.adoc[Anypoint Connectors].
+❾ Calls authorize.net to authorize a credit card purchase, passing it information from the message.  For more about connectors, see xref:anypoint-connectors.adoc[Anypoint Connectors].
 
 ==== Processor Chain
 
@@ -556,7 +558,7 @@ A sub-flow is a flow that can be called from another flow. It represents a reusa
 
 An exception strategy is called whenever an exception occurs in its scope, much like an exception handler in Java. It can define what to do with any pending transactions and whether the exception is fatal for the flow, as well as logic for handling the exception.
 
-❶❺ Writes the message that caused the exception to a JMS queue, where it can be examined.  For more about exception strategies, see xref:3.7@error-handling.adoc[Error Handling].
+❶❺ Writes the message that caused the exception to a JMS queue, where it can be examined.  For more about exception strategies, see xref:error-handling.adoc[Error Handling].
 
 === Configuration Patterns
 
@@ -677,7 +679,6 @@ Example:
 
 This creates a proxy for the weather forecasting service located on server1.
 
-For more about configuration patterns, see xref:configuration-patterns.adoc[Using Mule Configuration Patterns].
 
 === Custom Elements
 
@@ -742,7 +743,7 @@ Mule uses JTA to manage XA transactions; thus, to use XA transactions, a JTA tra
 * *`jndi-transaction-manager` to look up a transaction manager in JNDI
 * *`custom-transaction-manager` for a custom lookup of the transaction manager
 
-The starred transaction managers allow you to configure a JNDI environment before performing the lookup.  For more about transaction managers, see xref:3.6@transaction-management.adoc[Transaction Management].
+The starred transaction managers allow you to configure a JNDI environment before performing the lookup.  For more about transaction managers, see xref:transaction-management.adoc[Transaction Management].
 
 ==== Security Manager
 
@@ -771,7 +772,7 @@ This strategy can then be referenced by other components in the system such as f
 </flow>
 ----
 
-For more about Mule security, see xref:3.7@configuring-security.adoc[Configuring Security].
+For more about Mule security, see xref:configuring-security.adoc[Configuring Security].
 
 ==== Notifications Manager
 
@@ -796,11 +797,11 @@ Mule can generate notifications whenever a message is sent, received, or process
 Assume that `ComponentMessageNotificationLogger` implements the `ComponentMessageNotificationListener` interface and `EndpointMessageNotificationLogger` implements `EndpointMessageNotificationListener`. +
  ❶ and ❷ create the listener beans. ❸ appears to register both beans for both component and endpoint notifications. But since `ComponentMessageNotificationLogger` only implements the interface for component notification, those are all it will receive (and likewise for `EndpointMessageNotificationLogger`.
 
-For more about notifications, see xref:3.6@notifications-configuration-reference.adoc[Notifications Configuration Reference].
+For more about notifications, see xref:notifications-configuration-reference.adoc[Notifications Configuration Reference].
 
 === Agents
 
-Mule allows you to define Agents to extend the functionality of Mule. Mule will manage the agents' lifecycle (initialize them and start them on startup, and stop them and dispose of them on sutdown). These agents can do virtually anything; the only requirement is that they implement `org.mule.api.agent.Agent`, which allows Mule to manage them.  For more about Mule agents, see xref:3.7@mule-agents.adoc[Mule Agents].
+Mule allows you to define Agents to extend the functionality of Mule. Mule will manage the agents' lifecycle (initialize them and start them on startup, and stop them and dispose of them on sutdown). These agents can do virtually anything; the only requirement is that they implement `org.mule.api.agent.Agent`, which allows Mule to manage them.  For more about Mule agents, see xref:mule-agents.adoc[Mule Agents].
 
 ==== Custom Agents
 

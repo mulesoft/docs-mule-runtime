@@ -1,0 +1,158 @@
+= JSON Schema Validator
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: mule, esb, studio, json, object notation
+
+The JSON Schema validator evaluates JSON payloads at runtime and verifies that they match a referenced JSON schema. You can match against schemas that exist in a local file or in an external URI. If the validation fails, an exception is raised with feedback about what went wrong and a reference to the original invalid payload. The JSON Schema Validator supports schema drafts of version 4 and older.
+
+This feature is specially handy when exposing a service that expects JSON inputs from users that must match a specific schema. You can use it to match the incoming external calls against the expected structure.
+
+[WARNING]
+If you're using an xref:http-connector.adoc[HTTP Connector] that makes use of a http://raml.org[RAML] file, it may include a JSON schema that describes the desired input structure. Note that the connector only evaluates this schema at design time, it does not use it to filter inbound requests at run time. The connector exposes this metadata in the schema to help you understand how elements in your flow map to each other while building you app, but incoming requests to your deployed service aren't evaluated by the connector – to do that, you need the *JSON Schema Validator*.
+
+== Basic Usage
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+Using the JSON Schema Validator is very simple: You only need to provide a reference to the schema file you want to validate against.
+
+image::web.png[]
+
+Note that the *Schema Location* field accepts both local and external resources. For example, all of the following values are valid:
+
+* +http://my.site/schemas/fstab.json+
+* fstab.json
+* resource://fstab.json
+
+Below are the additional attributes you can set up:
+
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|*Dereferencing* |Draft v4 defines two dereferencing modes: canonical (default) and inline. This attribute is ignored if validating a v3 draft.
+|*Schema Redirects* |URI redirection for the schema. See section below.
+|===
+
+[discrete.view]
+=== XML Editor
+
+Using the JSON Schema Validator is very simple: You only need to provide a reference to the schema file you want to validate against on `schemaLocation`. The Schema Validator accepts both local and external resources. For example, all of the following are valid:
+
+[source,xml,linenums]
+----
+<!--  This example gets the schema from the internet directly: -->
+<json:validate-schema schemaLocation="http://my.site/schemas/fstab.json" />
+
+<!--  These two examples get the schema from a local resource in the classpath: -->
+<json:validate-schema schemaLocation="fstab.json" />
+<json:validate-schema schemaLocation="resource://fstab.json" />
+----
+
+Below are the other attributes you can set up:
+
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|*dereferencing* | Draft v4 defines two dereferencing modes: `canonical` (default) and `inline`. When validating a v3 draft this attribute is ignored.
+|*schema-redirect* |URI redirection for the schema. See section below.
+|===
+
+=====
+
+== Accepted Payload Types
+
+The Schema Validator accepts input JSONs expressed in any of the following formats:
+
+*  `String`
+*  `java.io.Reader`
+*  `InputStream`
+*  `byte[]`
+*  `com.fasterxml.jackson.databind.JsonNode`
+*  `org.mule.module.json.JsonData`
+
+If the payload type is none of the above, then the validator attempts to transform the payload into a usable type, in the following order:
+
+*  `org.mule.module.json.JsonData`
+*  `com.fasterxml.jackson.databind.JsonNode`
+*  `String`
+
+If the payload can't be transformed to any of these types, then a `JsonSchemaValidationException` is thrown, including an explanation stating that the message payload could not be transformed to a compatible type. Also, since a JSON document could not be extracted, the `invalidJson` property is null on that exception.
+
+[NOTE]
+When validating the JSON requires consuming a streaming resource (InputStream, Reader, etc), the message payload is altered to the fully consumed JSON.
+
+== Handling Exceptions
+
+[source,xml,linenums]
+----
+<json:validate-schema schemaLocation="http://my.site/schemas/fstab.json" doc:name="Validate Json Schema"/>
+----
+
+The element in the example above will look for a JSON in the payload and will validate it against the given schema. If the validation is successful, then control is passed to the next processor in the chain. Otherwise a `JsonSchemaValidationException` is thrown containing validation feedback on the message. This exception contains a message with a detailed explanation of what went wrong, and a property called `invalidJson` in which the invalid payload is available on its String representation.
+
+== Schema Redirects
+
+Because the Schema Validator supports referencing URIs to external schemas, and because one schema might reference another, the validator also supports URI redirection, so that a reference to another schema doesn't necessarily lead out to something external.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+Create a new redirect by clicking the green plus sign, then provide values for the "from" and the "to" in the table below.
+
+image::redirect.png[]
+
+In this example, any links to the external address `http://my.site/schemas/fstab.json` will redirect to the internal address `resource:/org/mule/json/examples/fstab.json`.
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<json:validate-schema schemaLocation="http://my.site/schemas/fstab.json">
+    <json:schema-redirects>
+        <json:schema-redirect from="http://my.site/schemas/fstab.json#" to="resource:/org/mule/json/examples/fstab.json#" />
+    </json:schema-redirects>
+</json:validate-schema>
+----
+
+In this example, any links to the external address ` http://my.site/schemas/fstab.json ` will redirect to the internal address `resource:/org/mule/json/examples/fstab.json`.
+
+=====
+
+== Full Code Example
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration" />
+    <flow name="my_first_projectFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" doc:name="HTTP" path="*"/>
+        <json:validate-schema schemaLocation="http://my.site/schemas/fstab.json" doc:name="Validate Json Schema">
+            <logging-interceptor/>
+            <timer-interceptor/>
+            <json:schema-redirects>
+                <json:schema-redirect from="http://my.site/schemas/fstab.json#" to="resource:/org/mule/json/examples/fstab.json#"/>
+            </json:schema-redirects>
+        </json:validate-schema>
+    </flow>
+</mule>
+----
+
+== See Also
+
+* xref:web-service-consumer.adoc[Web Service Consumer]
+* xref:json-module-reference.adoc[JSON Module Reference]
+* xref:3.7@connector-devkit::index.adoc[Anypoint Connector DevKit]

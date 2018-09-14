@@ -2,19 +2,25 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint, studio, connectors, rest, raml, api
 
-When you need to be able to consume a REST API from within a Mule application, you can do so by configuring an HTTP Outbound Endpoint. This document describes how to prepare a request, then call a REST API, and how to work with its response.
+When you need to be able to consume a REST API from within a Mule application, you can do so by configuring an HTTP Request Connector. This document describes how to prepare a request, then call a REST API, and how to work with its response.
 
 [NOTE]
-
+====
 Note that if your use case involves connecting to the same REST API many times, or if you are working with an API with complex authentication protocols, you may find that developing your own Anypoint Connector is a more effective, reusable solution. See xref:3.7@connector-devkit::index.adoc[Anypoint Connector DevKit] for more details about building connectors.
+
+Consider that perhaps a connector has already been developed for the API you wish to connect to. If so, look for it in the Anypoint Exchange and download it into Studio.
+====
 
 == Basic Anatomy
 
 In its simplest incarnation, a Mule application set up to consume a REST API contains:
 
 * One or more message processors configured to build your request
-* An HTTP Outbound Endpoint configured to call the REST API
+
+* An HTTP request connector configured to call the REST API
+
 * One or more message processors configured to accept and process the response
 
 image::consume-rest-basic-anatomy.png[Consume+REST+basic+anatomy]
@@ -23,7 +29,7 @@ The portions of your application that build the request and process the response
 
 == Minimum Configuration
 
-When consuming a REST API you first need to know some minimum information, which you can generally acquire by visiting the API's documentation.
+If the REST API you're consuming doesn't have a http://raml.org[RAML] file that describes it, you first need to know some minimum information, which you can generally acquire by visiting the API's documentation.
 
 * *Does the API require authentication?* +
 If the API requires basic authentication, then configuring an HTTP endpoint to consume the API is possible. If the API uses complex authentication such as OAuth, consider building a custom connector with Anypoint Connector DevKit.
@@ -45,6 +51,9 @@ If it does,  be sure to enable redirects in your HTTP outbound endpoint.
 Note that GET requests may not need special headers, but POST, PUT, and DELETE requests almost always require headers.
 * *What error codes can you expect?* +
 You might want to write the error codes into the subsequent steps of your application to deal with all possible responses from the API.
+
+[TIP]
+If you reference a RAML file that describes your API, then the HTTP connector will proactively present you with smart suggestions and options that are limited to only those supported by the API, so that you don't need to investigate these things in advance.
 
 === Simple Example
 
@@ -70,46 +79,52 @@ image::rest-api-address-format.png[REST-api-address-format]
 |`http://` |`api.openweathermap.org/data/2.5/` |`/weather` |`?q=London,uk`
 |===
 
-To implement this call in your Mule application, configure your HTTP Outbound Endpoint as described below. (Note that this example shows _only_ the configuration of this HTTP Connector. In order to make this example work, you would need to, at minimum, to configure an HTTP Connector to trigger a message in the flow and at least one message processor to accept the response. See the xref:3.6@rest-api-examples.adoc[full examples] for more information.)
+To implement this call in your Mule application, configure your HTTP request connector as described below. (Note that this example shows _only_ the configuration of this HTTP Connector. In order to make this example work, you would need to, at minimum, to configure an HTTP Listener to trigger a message in the flow and at least one message processor to accept the response. See the xref:rest-api-examples.adoc[full examples] for more information.)
 
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
-. Open the Properties Editor of the *HTTP outbound endpoint.*
-. Ensure the exchange pattern is set to *request-response.*
-. Delete the contents of the *Host* field.
-. Select the *Method* you want to use from the drop-down list. This example uses *GET.*
+. Open the Properties Editor of the *HTTP Connector*.
 
+. Click on the green plus sign icon next to Connector Configuration to create a new xref:global-elements.adoc[global element] that will encapsulate several configuration parameters for the connector.
+. Set the Host to *api.openweathermap.org* and the Port to *80*
 +
 image::ge.png[]
-+
 
-. Open the Advanced tab. Enter your API call into the Address field
+. Click Ok to close this window. Back in the connector's properties editor, set the *Path* to `/data/2.5/weather?q=London,uk`. Notice how putting the host you set in the global element together with the path you just set up makes up the full URL you wanted to reach.
 
-
+. Select the *Method* you want to use from the drop-down list. This example uses *GET*.
 +
 image::http2.png[]
-+
 
-. Click any blank area of the canvas to *Save* your configuration changes.
+. Click any blank area of the canvas to *Save* your configuration changes. +
 +
 [TIP]
-Note that if the API you are calling requires HTTPS or basic authentication, involves redirects, or requires a specific Content-Type header be specified, the HTTP connector supports additional configuration to manage these details.
+====
+Note that if the API you are calling requires <<Working with Security Requirements>>, involves redirects, or requires a specific <<Handling HTTP Content-Type and Encoding>> header be specified, the HTTP connector supports additional configuration to manage these details.
+====
 
 [discrete.view]
-=== XML Editor or Standalone
+=== XML Editor
 
 [source,xml,linenums]
 ----
-<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://api.openweathermap.org/data/2.5/weather?q=London,uk" doc:name="HTTP"/>
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration"/>
+
+<flow name="basic_tutorialFlow1">
+
+    <...>
+
+    <http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather?q=London,uk" method="GET" doc:name="HTTP"/>
+</flow>
 ----
 =====
 
-The response, in this example, is in JSON.
+The response, in this example, is a JSON with the following structure:
 
-[source,text,linenums]
+[source,json,linenums]
 ----
 {
   "coord": {
@@ -155,6 +170,9 @@ The response, in this example, is in JSON.
 
 Depending on the needs of your application, you can use DataMapper or a JSON-to-Object transformer to transform this response into another format from which you can extract information, route messages, etc.
 
+[TIP]
+If this API had and associated RAML file, you could reference it in the configuration element of the connector. With that in place, after you select what verb and what asset to call, Studio knows what the output is and expose the corresponding metadata, which can make integration to other elements in a flow a lot easier.
+
 == Configuring Dynamic Requests with MEL Expressions
 
 In the example above, the request was hardcoded in the URL:
@@ -168,8 +186,44 @@ Most use cases require that the call to the API change dynamically based on some
 
 [source,text,linenums]
 ----
-http://api.openweathermap.org/data/2.5/weather?q=#[payload]
+http://api.openweathermap.org/data/2.5/weather?q=#[payload.city]
 ----
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. In the HTTP connector's properties editor, shorten the Path field to ony `/data/2.5/weather`
+
+. Click the *Add Parameter* button, this will create a few new fields that correspond to a new query-param. For the query parameter's name, type `q` and for its value type `London,uk`. This emulates the part of the string you removed `q=London,uk`
++
+image::query-params-dissappearing.png[query+params+dissappearing]
+
+. To take it a step further, replace the hard coded string you put in the field *Value* for a reference to a variable incoming element of the Mule message, for example `#[payload.city]`, assuming there is an element named city in the message payload.
++
+image::http3.png[]
++
+[TIP]
+====
+If you're referencing a RAML file in your Connector Configuration, once you select the path and method, the required query-params for the type of request you want to make are automatically displayed.
+====
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration"/>
+<flow name="basic_tutorialFlow1">
+    <http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+        <http:request-builder>
+            <http:query-param paramName="q" value="#[payload.city]"/>
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+=====
 
 In more complex cases, you might want to query a different resource depending on data in your message properties or in variables that you set earlier in your flow.  For example:
 
@@ -183,9 +237,9 @@ Or, you might wish to dynamically configure the call's method (GET, POST, etc.) 
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
-Insert a `set-property` element in your flow before your HTTP outbound endpoint and configure it to set the http.method property. If set, Mule uses this property to override the method attribute set on the HTTP outbound endpoint.
+Insert a *Property transformer* in your flow _before_ your HTTP connector and configure it to set the `http.method` property. If set, Mule uses this property to override the method attribute set on the HTTP connector.
 
 image::set-property.png[set+property]
 
@@ -194,7 +248,7 @@ This sample configuration assumes that you have configured a flow variable earli
 [discrete.view]
 === XML Editor or Standalone
 
-Insert a `set-property` element in your flow before your HTTP outbound endpoint and configure it to set the http.method property. If set, Mule uses this property to override the method attribute set on the HTTP outbound endpoint.
+Insert a `set-property` element in your flow before your HTTP connector and configure it to set the `http.method` property. If set, Mule uses this property to override the method attribute set on the HTTP connector.
 
 [source,xml,linenums]
 ----
@@ -232,57 +286,69 @@ When receiving HTTP responses, the payload of the Mule message is typically the 
 
 == Working with Custom Headers
 
-Many APIs require that you pass custom headers along with your requests, such as your developer key. You can set these headers on your messages by adding them as xref:configuring-properties.adoc[properties] before your message reaches the HTTP outbound endpoint.
-
-For example, if the API you are consuming requires that you register for a developer key, then pass that key as a header on your requests using the header name `accessKey`, you can add a property to set this header, as shown below.
+Many APIs require that you pass custom headers along with your requests, such as your developer key. Just like with the query parameters, you can also add headers to your request on the HTTP connector. For example, if the API you are consuming requires that you register for a developer key, then pass that key as a header on your requests using the header name `accessKey`, you can add a property to set this header, as shown below.
 
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
 . In the HTTP connector's properties editor click the *Add Parameter* button, this will create a few new fields that correspond to a new parameter. By default this will create a query-param, but you can pick other types of parameters from the dropdown menu, for this example pick *header*. For the header's name, type `accessKey` and for its value, provide your key.
 +
 image::header1.png[]
+
+. To take it a step further, replace the hard coded string you put in the field *Value* for a reference to a variable incoming element of the Mule message, for example `#[payload.key]`, assuming there is an element named key in the message payload.
 +
-Note that you can also configure the value of the custom header using a MEL expression if you want to define the value dynamically (see image below).
+image::header2.png[]
+
+. You can also use a xref:configuring-properties.adoc[property placeholder], then define the value in your *mule-app.properties* file
 +
-image::rest-prop2.png[]
+image::header3.png[]
 +
-You can also use a xref:3.7@configuring-properties.adoc[property placeholder], then define the value in your **mule-app.properties** file.
-+
-image::rest-prop3.png[]
+[TIP]
+====
+If you're referencing a RAML file in your Connector Configuration, once you select the path and method, the required headers for the type of request you want to make are automatically displayed
+====
 
 [discrete.view]
-=== XML Editor or Standalone
+=== XML Editor
 
 [source,xml,linenums]
 ----
-<set-property propertyName="accessKey" value="897s44783kdg94545" doc:name="Property"/>
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="accessKey" value="12341234"/>
+            </http:request-builder>
+        </http:request>
 ----
 
 Note that you can also configure the value of the custom header using a MEL expression if you want to define the value dynamically (see image below).
 
 [source,xml,linenums]
 ----
-<set-property propertyName="accessKey" value="#[sessionVars.accesskey]" doc:name="Property"/>
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="accessKey" value="#[payload.key]"/>
+            </http:request-builder>
+        </http:request>
 ----
 
-You can also use a xref:configuring-properties.adoc[property placeholder], then define the value in your mule-app.properties file.
+You can also use a xref:configuring-properties.adoc[property placeholder], then define the value in your **mule-app.properties** file.
 
 [source,xml,linenums]
 ----
-<set-property propertyName="accessKey" value="${access.key}" doc:name="Property"/>
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="accessKey" value="${access.key}"/>
+            </http:request-builder>
+        </http:request>
 ----
 =====
 
 == Working with Security Requirements
 
 [NOTE]
-
 Note that if your use case involves working with an API with complex authentication protocols such as OAuth, you can build your own Anypoint Connector to consume the API. See xref:3.7@connector-devkit::index.adoc[Anypoint Connector DevKit] for more details about building connectors.
-
-
 
 === HTTPS
 
@@ -298,6 +364,7 @@ keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
 You are prompted to create two passwords; *remember the passwords!* The command creates a `jks` file in the local directory called `keystore.jks`.
 
 * If you are using Mule Studio, drag this file into the `yourappname/src/main/resources `directory in Mule Studio's Package Explorer.
+
 * If you are using Standalone, place this in the `MULE_HOME/conf` directory if to be used across multiple applications, or in the `yourappname/src/main/resources` directory if you are using this just within this application.
 
 Now, you can reference this keystore in a global HTTPS connector, which, in turn, is referenced by the HTTP outbound endpoint within your flow.
@@ -305,80 +372,79 @@ Now, you can reference this keystore in a global HTTPS connector, which, in turn
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
-. Open the *Properties Editor* of the *HTTP endpoint* in your flow to ensure that *Enable HTTPS* is checked.
+. Open the *Properties Editor* of the *HTTP connector*, click the edit icon next to the connector configuration field, then select the *TLS/SSL* tab.
+
+. Select the radio button labeled *Define an inline TLS Context*.
+
+. Enter the *Path*, *Key Password*, and *Store Password* (the passwords your remembered when creating your keystore file) as per the example below, then click *OK*.
 +
-image::rest-http-3.png[]
-
-. Click the green plus sign next to the *Connector Configuration* field to create a global connector.
-+
-image::rest-http-4.png[]
-
-. Select *HTTP-HTTPS*, then click *OK.*
-+
-image::http-choose-global.png[]
-
-. Click the *Security* tab.
-+
-image::http-clicksecurity.png[HTTP-clicksecurity]
-
-. Enter the *Path, Key Password*, and *Store Password* (the passwords your remembered when creating your keystore file), then click *OK.*
-
+image::keystore.png[]
 
 [discrete.view]
 === XML Editor or Standalone
 
 [source,xml,linenums]
 ----
-<https:connector name="httpsConnector">
-     <https:tls-key-store path="keystore.jks" keyPassword="YOURPASSWORD" storePassword="YOURPASSWORD"/>
-</https:connector>
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <tls:context>
+        <tls:key-store path="keystore.jks" password="yourpassword" keyPassword="yourkeypassword"/>
+    </tls:context>
+</http:request-config>
 ----
 
-Note that if you placed your keystore in the yourappname/src/main/resources directory then you can just specify the name of the keystore as the value of the path. Otherwise, if the keystore is located in the MULE_HOME/conf directory, specify `"/keystore.jks"` as the path.
+*Note* that if you placed your keystore in the `yourappname/src/main/resources` directory then you can just specify the name of the keystore as the value of the path. Otherwise, if the keystore is located in the MULE_HOME/conf directory, specify `"/keystore.jks"` as the path.
 =====
 
-== Basic Authentication
+=== Basic Authentication
 
 If the REST API that you are consuming requires that you pass basic authentication credentials, you can supply them within the outbound HTTP endpoint configuration.
 
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
-. Click the *HTTP Settings* tab in the *Properties Editor* of your HTTP outbound endpoint, then enter your API access credentials – *User* and *Password* –as shown. Your application passes these credentials with the API call at runtime.
+. Click the edit icon next to the connector configuration field, then select the *Security* tab.
+
+. Under *Protocol*, pick *Basic*.
+
+. Now the necessary fields for providing your username and password appear, your application passes these credentials with the API call at runtime.
 +
-image::http-userpass.png[]
+image::basic-auth-1.png[basic+auth-1]
 
-Note that you can also replace these with xref:configuring-properties.adoc[property placeholders] and define the properties in your mule-app.properties file.
-
-. Enter placeholder values in the Basic Authentication fields, as shown below.
+. Note that you can also replace these with xref:configuring-properties.adoc[property placeholders] and define the properties in your `mule-app.properties` file.
 +
-image::http-userpass-props.png[]
+image::basic-auth-placeholders.png[basic+auth+placeholders]
 
-. Navigate to your mule-app.properties file under src/main/app in the Package Explorer.
+. Navigate to your `mule-app.properties` file under `src/main/app` in the Package Explorer.
 +
 image::src-main-app-propertiesfile.png[]
 
 . Define the placeholders here, as shown below.
++
+image::define-props.png[]
 
 [discrete.view]
 === XML Editor or Standalone
 
-Add the user and password attributes to your http:outbound-endpoint configuration, as shown below.
+Add the user and password attributes to your `http:outbound-endpoint` configuration, as shown below.
 
 [source,xml,linenums]
 ----
-<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://www.targetAPI.com/path" doc:name="HTTP"  user="myusername" password="mypassword"/>
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <http:basic-authentication username="myUsername" password="myPassword"/>
+</http:request-config>
 ----
 
-Rather than hardcode the values of your credentials, you can define them as xref:configuring-properties.adoc[property placeholders.]
+Rather than hardcode the values of your credentials, you can define them as xref:configuring-properties.adoc[property placeholders].
 
 [source,xml,linenums]
 ----
-<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://www.targetAPI.com/path" doc:name="HTTP"  user="${service.username}" password="${service.password}"/>
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <http:basic-authentication username="${service.username}" password="${service.password}"/>
+</http:request-config>
 ----
 
 Open (or create, if you don't have one) the `mule-app.properties` file in your application's `src/main/app` folder, then define the properties in the file:
@@ -393,9 +459,7 @@ service.password=mypassword
 == Polling a REST API
 
 [NOTE]
-
-Although the HTTP connector has built-in polling capabilities (described below), you can, instead, configure a xref:poll-reference.adoc[Poll] scope, then place your HTTP endpoint within it. Using a Poll scope allows you to take advantage of more robust polling functionality such as watermarking and scheduling with cron expressions.
-
+Although the HTTP connector has built-in polling capabilities (described below), you can, instead, configure a *xref:poll-reference.adoc[Poll]* scope, then place your HTTP endpoint within it. Using a Poll scope allows you to take advantage of more robust polling functionality such as watermarking and scheduling with cron expressions.
 
 The HTTP connector supports polling an HTTP URL to invoke a REST API and generate messages from the result. This is useful for pull-only web services and situations where you want an API GET request to kick off processing in your flow.
 
@@ -404,31 +468,26 @@ To configure your application to poll a REST API, configure an inbound HTTP endp
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
-. Open the *Properties Editor* of the *HTTP endpoint.* Click the green plus sign next to *Connector Configuration.*
+. Open the *Properties Editor* of the *HTTP endpoint*. Click the green plus sign next to *Connector* *Configuration*.
 +
-
 image::rest-http-4.png[]
 
-. In the Choose Global Type window, select *HTTP Polling.*
+. In the Choose Global Type window, select *HTTP Polling*.
 +
-
 image::http-polling.png[]
 
 . You can configure a polling connector with all the same optional attributes as a regular HTTP-HTTPS connector, with the addition of *Polling Frequency* (located in the *Polling* tab), and flags for processing the *ETag header* and *Discarding Empty Content* (both false by default).
 +
-
 image::global-polling.png[global_polling]
 
-
-
-The ETag, or entity tag, is HTTP's cache control mechanism. APIs that support it will provide an HTTP header with an ETag value that represents a unique version of the resource located by the request URL. After successful processing when polling a resource, you might not want to process the same resource again if there are no changes. Activating the ETag checkbox instructs Mule not to send two requests with the same ETag.
+The *ETag*, or entity tag, is HTTP's cache control mechanism. APIs that support it will provide an HTTP header with an ETag value that represents a unique version of the resource located by the request URL. After successful processing when polling a resource, you might not want to process the same resource again if there are no changes. Activating the ETag checkbox instructs Mule not to send two requests with the same ETag.
 
 [discrete.view]
 === XML Editor or Standalone
 
-The following example illustrates how to configure a global http:polling-connector.
+The following example illustrates how to configure a global `http:polling-connector`.
 
 [source,xml,linenums]
 ----
@@ -443,22 +502,20 @@ Note that the checkEtag attribute (false by default) can be set to true if you w
 
 == Tips
 
-* **Follow redirects: **If you make a request to an API using GET, and the API responds with a `redirectLocation` header, configure your HTTP connector to follow redirects so as to push the request to the redirect URL. This only works for GET requests, as you cannot automatically follow redirects for a POST request.  +
+* **Follow redirects: **If you make a request to an API using GET, and the API responds with a `redirectLocation` header, configure your HTTP connector to follow redirects so as to push the request to the redirect URL. This only works for GET requests, as you cannot automatically follow redirects for a POST request.
 ** In Studio, click the *Follow Redirects* checkbox on the *Advanced* tab of the HTTP connector's Properties Editor.
 ** In XML, add the attribute `followRedirects=``"true"`.
-
 +
 image::follow-redirects.png[follow+redirects]
-+
 
-* *POST requests and the API schema:* If you are calling a REST API with a POST request, you need to obtain the API schema for the POST and match that format in the payload of the Mule message that you send to the API with your request. A good way to do this is to insert a *DataMapper transformer* before the HTTP outbound endpoint in your flow, then use the API's schema in to define the output format. +
-
+* *POST requests and the API schema:* If you are calling a REST API with a POST request, you need to obtain the API schema for the POST and match that format in the payload of the Mule message that you send to the API with your request. A good way to do this is to insert a *DataMapper transformer* before the HTTP outbound endpoint in your flow, then use the API's schema in to define the output format.
 +
 image::consume-rest-datamapper.png[]
 
-
 == See Also
 
-* See some xref:3.6@rest-api-examples.adoc[example applications] that consume REST APIs.
+* See some xref:rest-api-examples.adoc[example applications] that consume REST APIs.
+
 * Refer to the reference documentation for the HTTP connector.
+
 * If the HTTP connector doesn't meet your needs, consider building a connector with the xref:3.7@connector-devkit::index.adoc[Anypoint Connector DevKit].

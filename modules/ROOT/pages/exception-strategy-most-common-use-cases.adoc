@@ -2,6 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: error handling, exceptions, exception catching, exceptions
 
 This page illustrates six ways to approach error handling within Mule ESB applications.
 
@@ -109,26 +110,43 @@ Mule can execute different actions depending on the type of exception that a mes
 
 == Returning an Error Message
 
-Mule can catch an exception, then create an error message to return to the caller in a synchronous request-response scenario.
+Mule can catch an exception, then create an error message to return to the caller in a synchronous request-response scenario. The HTTP listener has built in support for this, through the `error-response-builder` child element.
 
 [source,xml,linenums]
 ----
+<http:listener-config name="HttpListenerConfiguration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="CatchAndReturnError">
-        <http:inbound-endpoint host="localhost" port="8080" path="getSomething" exchange-pattern="request-response"/>
-
+        <http:listener config-ref="HttpListenerConfiguration" path="getSomething" allowedMethods="GET" doc:name="Retrieve person">
+           <http:error-response-builder statusCode="#[errorStatusCode]" reasonPhrase="#[errorReasonPhrase]"/>
+       </http:listener
         <test:component throwException="true"/>
-
         <catch-exception-strategy>
-                <set-payload value="The request cannot be processed, the error is #[exception.getSummaryMessage()]"/> <!-- [1] -->
-                <set-property propertyName="http.status" value="500"/> <!-- [2] -->
+                <set-variable variableName="errorStatusCode" value="404" doc:name="Set status code"/>
+               <set-variable variableName="errorReasonPhrase" value="Not Found" doc:name="Set reason phrase"/>
         </catch-exception-strategy>
 
 </flow>
 ----
 
-. The catch exception strategy replaces the message payload with new content. Mule uses the xref:mule-expression-language-mel.adoc[Mule Expression Language MEL] exception variable to include an error number in the message payload. The error number helps the caller understand the exception.
+. The catch exception strategy sets the variables `errorStatusCode` and `errorReasonPhrase` in the HTTP Listener's child element.
 
-. The catch exception strategy sets the HTTP status code of the response to 500 to indicate a server error. Mule sends the new message payload to the caller.
+. The HTTP Listener provides these two values as a response to the request made to it
+
+Alternatively, you could achieve the same results by configuring your exception strategy like below:
+
+[source,xml,linenums]
+----
+<catch-exception-strategy>
+            <set-payload value="The request cannot be processed, the error is #[exception.getSummaryMessage()]"/>
+            <set-property propertyName="http.status" value="500"/>
+        </catch-exception-strategy>
+----
+
+. The catch exception strategy replaces the message payload with new content. Mule uses the xref:mule-expression-language-mel.adoc[Mule Expression Language MEL] `exception` variable to include an error number in the message payload.
+
+. The catch exception strategy sets the HTTP status code of the response to `500` to indicate a server error.
+
+. Mule sends the new message payload to the caller.
 
 == Rollback the Transaction and Send a Notification
 
@@ -167,9 +185,11 @@ Mule can prevent a flow from accepting any more messages after certain types of 
 
 [source,xml,linenums]
 ----
+<http:request-config name="request-config" host="localhost"
+port="808"/>
 <flow name="StopFlowBasedOnExceptionType">
         <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
-        <http:outbound-endpoint host="localhost" port="808" responseTimeout="5"/>
+        <http:request config-ref="request-config" path="/" method="GET" doc:name="HTTP Connector" responseTimeout="5"/>
         <choice-exception-strategy>
             <rollback-exception-strategy when="exception.causedBy(java.net.ConnectException)">  <!-- [1] -->
                 <script:component>

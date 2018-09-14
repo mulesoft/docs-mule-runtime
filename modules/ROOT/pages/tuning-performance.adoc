@@ -2,6 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: thread, pool, dispatcher, receiver, profile
 
 A Mule application is a collaboration of a set of flows. Conceptually, messages are processed by flows in three stages:
 
@@ -49,11 +50,11 @@ image::thread-pooling.png[thread_pooling]
 
 A _thread pool_ is a collection of available threads. There is a separate thread pool for each receiver, flow (shared by all the message processors in that flow), and dispatcher.
 
-The _threading profile_ specifies how the thread pools behave in Mule. You can specify a separate threading profile for each receiver thread pool, flow thread pool, and dispatcher thread pool. The most important setting of each is `maxThreadsActive`, which specifies how many threads are in the thread pool. The <<Calculating Threads>> section below describes methodologies for determining what this setting should be, whereas the <<Threading Profile Configuration Reference>> section describes the options you can set for each threading profile.
+The _threading profile_ specifies how the thread pools behave in Mule. You can specify a separate threading profile for each receiver thread pool, flow thread pool, and dispatcher thread pool. The most important setting of each is maxThreadsActive, which specifies how many threads are in the thread pool. The <<Calculating Threads>> section below describes methodologies for determining what this setting should be, whereas the <<Threading Profile Configuration Reference>> section describes the options you can set for each threading profile.
 
 == About Pooling Profiles
 
-Unlike singleton components, pooled components (see PooledJavaComponent) each have a _component pool_, which contains multiple instances of the component to handle simultaneous incoming requests. A component's _pooling profile_ configures its component pool. The most important setting is `maxActive`, which specifies the maximum number of instances of the component that Mule will create to handle simultaneous requests. Note that this number should be the same as the `maxThreadsActive` setting on the receiver thread pool, so that you have enough component instances available to handle the threads. You can use the Mule Enterprise Console to monitor your component pools and see the maximum number of components you've used from the pool to help you tune the number of components and threads.
+Unlike singleton components, pooled components (see PooledJavaComponent) each have a _component pool_, which contains multiple instances of the component to handle simultaneous incoming requests. A component's _pooling profile_ configures its component pool. The most important setting is maxActive, which specifies the maximum number of instances of the component that Mule will create to handle simultaneous requests. Note that this number should be the same as the maxThreadsActive setting on the receiver thread pool, so that you have enough component instances available to handle the threads. You can use the Mule Enterprise Console to monitor your component pools and see the maximum number of components you've used from the pool to help you tune the number of components and threads.
 
 For more information on configuring the pooling profile, see <<Pooling Profile Configuration Reference>> below.
 
@@ -63,7 +64,7 @@ To calculate the number of threads to set, you must take the following factors i
 
 * *Concurrent User Requests*: In general, the number of concurrent user requests is the total number of requests to be processed simultaneously at any given time by the Mule server. For a *flow*, concurrent user requests is the number of requests the flow's inbound endpoints can process simultaneously. Concurrent user requests at the *connector* level is the total concurrent requests of all flows that share the same connector. Typically, you get the total concurrent user requests from the business requirements.
 
-* *Processing Time*: Processing time is the average time Mule takes to process a user request from the time a connector receiver starts the execution until it finishes (optionally, by sending a response back to the caller by the connector receiver after a round trip). Processing time must be calculated empirically.
+* *Processing Time*: Processing time is the average time Mule takes to process a user request from the time a connector receiver starts the execution until it finishes (optionally, by sending a response back to the caller by the connector receiver after a round trip.) Typically, you determine the processing time from the unit tests.
 
 * *Response Time*: If a flow runs in *synchronous* mode, the response time is the actual amount of time the end user is required to wait for the response to come back. If the flow runs in *asynchronous* mode, it is the total time from when a request arrives in Mule until the flow finishes processing it. In a thread pooling environment, when a request arrives, there is no guarantee that a thread will be immediately available. In this case, the request is put into an internal thread pool _work queue_ to wait for the next available thread. Therefore, the response time is a function of the following: +
  Response time = average of thread pool waiting time in work queue + average of processing time +
@@ -76,32 +77,32 @@ To calculate the number of threads to set, you must take the following factors i
 
 Even if you are performing synchronous messaging only, you must calculate the flow threads so that you can correctly calculate the receiver threads. This section describes how to calculate the flow threads.
 
-Your business requirements dictate how many threads each flow must be able to process concurrently. For example, one flow might need to be able to process 50 requests at a time, while another might need to process 40 at a time. Typically, you use this requirement to set the `maxThreadsActive` attribute on the flow (`maxThreadsActive`="40").
+Your business requirements dictate how many threads each flow must be able to process concurrently. For example, one flow might need to be able to process 50 requests at a time, while another might need to process 40 at a time. Typically, you use this requirement to set the maxThreadsActive attribute on the flow (maxThreadsActive="40").
 
 If you have requirements for timeout settings for synchronous processing, you must do some additional calculations for each flow.
 
 . Run synchronous test cases to determine the response time.
 . Subtract the response time from the timeout time dictated by your business requirements. This is your _maximum wait time_ (maximum wait time = timeout time - response time).
 . Divide the maximum wait time by the response time to get the number of _batches_ that will be run sequentially to complete all concurrent requests within the maximum wait time (batches = maximum wait time / response time). Requests wait in the queue until the first batch is finished, and then the first batch's threads are released and used by the next batch.
-. Divide the concurrent user requests by the number of batches to get the thread size for the flow's `maxThreadsActive` setting (that is, `maxThreadsActive` = concurrent user requests / processing batches). This is the total number of threads that can be run simultaneously for this flow.
+. Divide the concurrent user requests by the number of batches to get the thread size for the flow's maxThreadsActive setting (that is, maxThreadsActive = concurrent user requests / processing batches). This is the total number of threads that can be run simultaneously for this flow.
 
 In summary, the formulas for synchronous processing with timeout restrictions are:
 
 * Maximum wait time = timeout time - response time
 * Batches = maximum wait time / response time
-* `maxThreadsActive` = concurrent user requests / batches
+* maxThreadsActive = concurrent user requests / batches
 
 === Calculating the Receiver Threads
 
-A connector's receiver is shared by all flows that specify the same connector on their inbound endpoint. The previous section described how to calculate the `maxThreadsActive` attribute for each flow. To calculate the `maxThreadsActive` setting for the receiver, that is, how many threads you should assign to a connector's receiver thread pool, sum the `maxThreadsActive` setting for each flow that uses that connector on their inbound endpoints:
+A connector's receiver is shared by all flows that specify the same connector on their inbound endpoint. The previous section described how to calculate the maxThreadsActive attribute for each flow. To calculate the maxThreadsActive setting for the receiver, that is, how many threads you should assign to a connector's receiver thread pool, sum the maxThreadsActive setting for each flow that uses that connector on their inbound endpoints:
 
-`maxThreadsActive` = ∑ (flow 1 `maxThreadsActive`, flow 2 `maxThreadsActive`...flow _n_ `maxThreadsActive`)
+maxThreadsActive = ∑ (flow 1 maxThreadsActive, flow 2 maxThreadsActive...flow _n_ maxThreadsActive)
 
-For example, if you have three flows whose inbound endpoints use the VM connector, and your business requirements dictate that two of the flows should handle 50 requests at a time and the third flow should handle 40 requests at a time, set `maxThreadsActive` to 140 in the receiver threading profile for the VM connector.
+For example, if you have three flows whose inbound endpoints use the VM connector, and your business requirements dictate that two of the flows should handle 50 requests at a time and the third flow should handle 40 requests at a time, set maxThreadsActive to 140 in the receiver threading profile for the VM connector.
 
 === Calculating the Dispatcher Threads
 
-Dispatcher threads are used only for asynchronous outbound processing (that is, one-way outbound dispatching from asynchronous flows). Typically, set `maxThreadsActive` for the dispatcher to the sum of `maxThreadsActive` values for all flows that use that dispatcher.
+Dispatcher threads are used only for asynchronous outbound processing (that is, one-way outbound dispatching from asynchronous flows). Typically, set maxThreadsActive for the dispatcher to the sum of maxThreadsActive values for all flows that use that dispatcher.
 
 === Other Considerations
 
@@ -109,20 +110,9 @@ You can trade off queue sizes and maximum pool sizes. Using large queues and sma
 
 == Additional Performance Tuning Tips
 
-* In the `log4j.properties` file in your `conf` directory, set up logging to a file instead of the console, which will bypass the wrapper logging and speed up performance. To do this, create a new file appender (org.apache.log4j.FileAppender), specify the file and optionally the layout and other settings, and then change "console" to the file appender. For example:
-+
-[source,text,linenums]
-----
-log4j.rootCategory=INFO, mulelogfile
-
-log4j.appender.mulelogfile=org.apache.log4j.FileAppender
-log4j.appender.mulelogfile.layout=org.apache.log4j.PatternLayout
-log4j.appender.mulelogfile.layout.ConversionPattern=%-22d{dd/MMM/yyyy HH:mm:ss} - %m%n
-log4j.appender.mulelogfile.file=custommule.log
-----
-
-* If you have a very large number of flows in the same Mule instance, if you have components that take more than a couple seconds to process, or if you are processing very large payloads or are using slower transports, you should increase the `shutdownTimeout` attribute (see xref:3.7@global-settings-configuration-reference.adoc[Global Settings Configuration Reference]) to enable graceful shutdown.
-* If polling is enabled for a connector, one thread will be in use by polling, so you should increment your `maxThreadsActive` setting by one. Polling is available on connectors such as File, FTP, and STDIO that extend AbstractPollingMessageReceiver.
+* You can define what kinds of messages will be logged, in what way (asynchronously or synchronously), and where they get logged (e.g. to the console, to disk, to an endpoint or to a database) by setting the log4j2 file. For example you can set up logging to a file instead of the console, which will bypass the wrapper logging and speed up performance. For instructions on how to edit these settings, see xref:logging-in-mule.adoc[Logging in Mule].
+* If you have a very large number of flows in the same Mule instance, if you have components that take more than a couple seconds to process, or if you are processing very large payloads or are using slower transports, you should increase the shutdownTimeout attribute (see xref:global-settings-configuration-reference.adoc[Global Settings Configuration Reference]) to enable graceful shutdown.
+* If polling is enabled for a connector, one thread will be in use by polling, so you should increment your maxThreadsActivesetting by one. Polling is available on connectors such as File, FTP, and STDIO that extend AbstractPollingMessageReceiver.
 * If you are using VM to pass a message between flows, you can typically reduce the total number of threads because VM is so fast.
 * If you are processing very heavy loads, or if your endpoints have different simultaneous request requirements (for example, one endpoint requires the ability to process 20 simultaneous requests but another endpoint using the same connector requires 50), you might want to split up the connector so that you have one connector per endpoint.
 

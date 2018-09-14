@@ -2,6 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint, components, elements, security, aes
 
 Designed as a simple demo, this example application offers some insight into how to use two Anypoint Enterprise Security features: Mule Digital Signature Processor and Mule Message Encryption Processor. The demo illustrates how to complete the following tasks with Mule:
 
@@ -9,11 +10,11 @@ Designed as a simple demo, this example application offers some insight into how
 * Encrypt part of a message payload
 * Decrypt a message payload
 
-== Assumptions
+== Prerequisites
 
-This document assumes that you have xref:5@studio::basic-studio-tutorial.adoc[Anypoint Studio Essentials] interface. To increase your familiarity with Studio, consider completing one or more xref:5@studio::basic-studio-tutorial.adoc[Basic Studio Tutorials].
+This document assumes that you have xref:installing-anypoint-enterprise-security.adoc[installed the Anypoint Enterprise Security] extensions.
 
-This document describes the details of the example within the context of Anypoint Studio, Mule’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot.
+This document describes the details of the example within the context of Anypoint Studio, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot.
 
 == Importing the Application
 
@@ -22,10 +23,8 @@ This document describes the details of the example within the context of Anypoin
 . Under the *File* menu, select *Import...*
 . Studio opens an Import wizard. Expand the *Mule* folder in the wizard, then select **Anypoint Studio generated Deployable Archive (.zip)**. Click *Next*.
 +
-
 [TIP]
 If your operating system automatically unzipped the application, select *Anypoint Studio Project from External Location* instead of **Anypoint Studio generated Deployable Archive (.zip)**.
-
 . Use the ellipsis button (. . .) next to the *Zip File* field to browse for, then select, the Mule application you downloaded:` anypoint-enterprise-security-example.zip`.
 . Click *Finish*. Studio imports, then opens the project.
 
@@ -40,23 +39,20 @@ If your operating system automatically unzipped the application, select *Anypoin
 
 == How it Works
 
-The *Encrypted Message Producer* application consists of three simple xref:3.6@mule-application-architecture.adoc[flows], each of which acts as a Web service provider which encrypts or decrypts a message before returning a response to the caller. Organized according to function, these flows serve different purposes within the application.
+The *Encrypted Message Producer* application consists of three simple xref:mule-application-architecture.adoc[flows], each of which acts as a Web service provider which encrypts or decrypts a message before returning a response to the caller. Organized according to function, these flows serve different purposes within the application.
 
 * *Get_CC_information* receives Web service requests for a customer’s credit card information, which it retrieves, encrypts, then returns to the caller. (See image below, top.)
 * *Decrypt_The_Request* decrypts messages it receives, logs the decryption activity, then returns the unencrypted message contents — in this case, credit card information — to the caller. (See image below, middle.)
 * *Get_secret_file* decrypts, upon request, the contents of a file, then returns a response to the caller that displays the decrypted contents of the file. (See image below, bottom.)
-
++
 image::full-example-flow.png[]
 
-image::mule-enterprise-security-example.png[mule_enterprise_security_example]
-
-*View the XML*
+=== View the XML
 
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-
-<mule xmlns:secure-property-placeholder="http://www.mulesoft.org/schema/mule/secure-property-placeholder"
+<mule xmlns:spring="http://www.springframework.org/schema/beans" xmlns:secure-property-placeholder="http://www.mulesoft.org/schema/mule/secure-property-placeholder"
     xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
     xmlns:encryption="http://www.mulesoft.org/schema/mule/encryption"
     xmlns:signature="http://www.mulesoft.org/schema/mule/signature"
@@ -64,13 +60,13 @@ image::mule-enterprise-security-example.png[mule_enterprise_security_example]
     xmlns="http://www.mulesoft.org/schema/mule/core"
     xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="
-http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/signature http://www.mulesoft.org/schema/mule/signature/current/mule-signature.xsd
 http://www.mulesoft.org/schema/mule/encryption http://www.mulesoft.org/schema/mule/encryption/current/mule-encryption.xsd
 http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-http://www.mulesoft.org/schema/mule/secure-property-placeholder http://www.mulesoft.org/schema/mule/secure-property-placeholder/current/mule-secure-property-placeholder.xsd">
+http://www.mulesoft.org/schema/mule/secure-property-placeholder http://www.mulesoft.org/schema/mule/secure-property-placeholder/current/mule-secure-property-placeholder.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
 
     <signature:config name="Signature" enableLanguage="true" doc:name="Signature">
         <signature:jce-signer-config algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU=" />
@@ -90,13 +86,15 @@ http://www.mulesoft.org/schema/mule/secure-property-placeholder http://www.mules
 
     <encryption:config name="Encryption" doc:name="Encryption" />
 
-    <flow name="Get_CC_information" doc:name="Get_CC_information">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" />
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+
+    <flow name="Get_CC_information" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP Connector"/>
         <expression-filter
-            expression="#[message.inboundProperties['token'] != null &amp;&amp; message.inboundProperties['user'] !=null ]"
+            expression="#[message.inboundProperties.'http.query.params'.token] != null &amp;&amp; message.inboundProperties.'http.query.params'.user] !=null ]"
             doc:name="Expression" />
         <signature:verify-signature config-ref="Signature"
-            input-ref="#[message.inboundProperties['user']]" expectedSignature="#[message.inboundProperties['token']]"
+            input-ref="#[message.inboundProperties.'http.query.params'.user]" expectedSignature="#[message.inboundProperties.'http.query.params'.token]"
             doc:name="Verify User Signature"
             doc:description="Verify if the Signature is correct, so we can validate the User" />
         <set-payload
@@ -107,22 +105,20 @@ http://www.mulesoft.org/schema/mule/secure-property-placeholder http://www.mules
             input-ref="#[payload.toString()]" />
     </flow>
 
-    <flow name="Decrypt_The_Request" doc:name="Decrypt_The_Request">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081"
-            doc:name="HTTP" path="decrypt" />
+    <flow name="Decrypt_The_Request" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="decrypt" doc:name="HTTP Connector"/>
         <object-to-string-transformer doc:name="Object to String" />
         <encryption:decrypt config-ref="plainXml" using="XML_ENCRYPTER" doc:name="Decrypt the xml payload" />
         <logger level="INFO" message="#[new String(e.jce().encrypt(payload))]" doc:name="Log the return but encrypted" />
     </flow>
 
-    <flow name="Get_secret_file" doc:name="Get_secret_file">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081"
-            doc:name="HTTP" path="getFile" />
+    <flow name="Get_secret_file" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="getFile" doc:name="HTTP Connector"/>
         <expression-filter
-            expression="#[message.inboundProperties['token'] != null &amp;&amp; message.inboundProperties['user'] !=null ]"
+            expression="#[message.inboundProperties.'http.query.params'.token] != null &amp;&amp; message.inboundProperties.'http.query.params'.user] !=null ]"
             doc:name="Expression" />
         <signature:verify-signature config-ref="Signature"
-            input-ref="#[message.inboundProperties['user']]" expectedSignature="#[message.inboundProperties['token']]"
+            input-ref="#[message.inboundProperties.'http.query.params'.user]" expectedSignature="#[message.inboundProperties.'http.query.params'.token]"
             doc:name="Verify User Signature"
             doc:description="Verify if the Signature is correct, so we can validate the User" />
         <scripting:component doc:name="Look for Encrypted Message">
@@ -147,8 +143,9 @@ From a browser, an end user submits a request via the URL to the Mule applicatio
 
 ==== Processing
 
-Upon receipt of an HTTP request, this flow uses a Mule Digital Signature Processor to verify the identity of the message’s sender. Mule evaluates the token it receives as a parameter of the request (that is, the token in the URL of the request). The table below describes the configurations of the Digital Signature Processor.
+Upon receipt of an HTTP request, this flow passes it through a filter that uses a MEL expression to verify that it contains both a user and a token in its query parameters.
 
+Then it uses a Mule Digital Signature Processor to verify the identity of the message’s sender. Mule evaluates the token it receives as a parameter of the request (that is, the token in the URL of the request). The table below describes the configurations of the Digital Signature Processor.
 
 [cols="2*"]
 |===
@@ -162,23 +159,30 @@ image::example-signature-1.png[]
 
 [source,xml,linenums]
 ----
-<signature:verify-signature config-ref="Signature" input-ref="#[message.inboundProperties['user']]" expectedSignature="#[message.inboundProperties['token']]" doc:name="Verify User Signature" doc:description="Verify if the Signature is correct, so we can validate the User"/>
+<signature:verify-signature config-ref="Signature" input-ref="#[message.inboundProperties.'http.query.params'.user]" expectedSignature="#[message.inboundProperties.'http.query.params'.token]" doc:name="Verify User Signature" doc:description="Verify if the Signature is correct, so we can validate the User"/>
 ----
 
 [NOTE]
-*What is a Global Element?* +
-+
-Mule ESB uses *Global Elements*, like the *Signature* global element in this example, to specify transport details and set reusable configurations. +
-+
-Rather than repeatedly write the same code to apply the same configuration to multiple message processors, you can create one global element that details your configurations or transport details. Then, you can instruct any number of message processors in your Mule application to reference that global element. +
-+
-*Learn more...* +
-+
-In this example, the code which specifies the encryption strategy, the algorithm and the key does not exist within the Reservations flow; rather, that code resides in a global element at the top of the application's XML configuration file (and in the *Global Elements* tab in — see image below). The Verify User Signature element in the Get_CC_Information flow references and uses the configurations defined within this global element (see code in expandable section below). +
-+
+====
+*What is a Global Element?*
+
+Mule ESB uses *Global Elements*, like the *Signature* global element in this example, to specify transport details and set reusable configurations.
+
+Rather than repeatedly write the same code to apply the same configuration to multiple message processors, you can create one global element that details your configurations or transport details. Then, you can instruct any number of message processors in your Mule application to reference that global element.
+
+Learn more...
+
+In this example, the code which specifies the encryption strategy, the algorithm and the key does not exist within the Reservations flow; rather, that code resides in a global element at the top of the application's XML configuration file (and in the *Global Elements* tab in — see image below). The Verify User Signature element in the Get_CC_Information flow references and uses the configurations defined within this global element (see code in expandable section below).
+
 image::global-signature.png[global_signature]
 
-*View the XML for Global Signature Element*
+====
+
+===== View the XML for Global Signature Element
+
+After verifying that the requester is valid, Mule uses an expression to set the payload of the message to bank and credit card information. (This function is a simple way to simulate the action of retrieving a customer’s credit card information from a database. For practical reasons in this example, the credit card details are hard-coded into the application.)
+
+Rather than returning the raw credit card information to the caller, Mule first encodes it using a Mule Message Encryption Processor. Using an XML encryption strategy, Mule encrypts the message payload. The table below describes the configurations of the encrypter.
 
 [source,xml,linenums]
 ----
@@ -186,10 +190,6 @@ image::global-signature.png[global_signature]
     <signature:jce-signer algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU="/>
     </signature:config>
 ----
-
-After verifying that the requester is valid, Mule uses an expression to set the payload of the message to bank and credit card information. (This function is a simple way to simulate the action of retrieving a customer’s credit card information from a database. For practical reasons in this example, the credit card details are hard-coded into the application.)
-
-Rather than returning the raw credit card information to the caller, Mule first encodes it using a Mule Message Encryption Processor. Using an XML encryption strategy, Mule encrypts the message payload. The table below describes the configurations of the encrypter.
 
 [cols="2*"]
 |===
@@ -200,11 +200,6 @@ Rather than returning the raw credit card information to the caller, Mule first 
 |===
 
 image::encrypt1.png[]
-
-[source,xml,linenums]
-----
-<encryption:encrypt config-ref="plainXml" doc:name="Encrypt the XML (only th CC Info)" using="XML_ENCRYPTER" input-ref="#[payload.toString()]"/>
-----
 
 The Message Encryption Processor references the *plainXML* global encryption element to behave according to the following configurations:
 
@@ -225,7 +220,7 @@ image::global-xml-encrypt.png[global_XML_encrypt]
 ==== Responding
 
 Finally, Mule uses the HTTP connector to pass the response — encrypted credit card information — to the end user’s browser. The highlighted content in the image below provides the encrypted credit card information.
-+
+
 image::get-cc-info-response.png[get_cc_info_response]
 
 === Decrypt_The_Request Flow
@@ -237,9 +232,26 @@ An end user submits a request to the Mule application to decrypt the message pay
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<user><name>Royal Bank of Canada</name><id>Royal_Bank_Of_Canada</id><cc><xenc:EncryptedData Type="http://www.w3.org/2001/04/xmlenc#Content" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"/><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-<xenc:EncryptedKey xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#kw-aes128" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"/><xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">9eUu9/kVzwb4ExPxr2UTiugRKoU6oJE9</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">cUmSEUP5M/OJsIS9MQvX3tMPBk9MgEo1yu2yGDc8swPVuTcs67nwFi25Yak86v+21I1Y98amjseX
-5jU4hTz3eJXqd3AVkvTsWA/3d79yoY/c1CyOiTenlSw38+kHQ+JR</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></cc></user>
+<user>
+    <name>Royal Bank of Canada</name>
+    <id>Royal_Bank_Of_Canada</id>
+    <cc>
+        <xenc:EncryptedData Type="http://www.w3.org/2001/04/xmlenc#Content" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">
+            <xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"/>
+            <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                <xenc:EncryptedKey xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">
+                    <xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#kw-aes128" xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"/>
+                    <xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">
+                        <xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">9eUu9/kVzwb4ExPxr2UTiugRKoU6oJE9</xenc:CipherValue>
+                    </xenc:CipherData>
+                </xenc:EncryptedKey>
+            </ds:KeyInfo>
+            <xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">cUmSEUP5M/OJsIS9MQvX3tMPBk9MgEo1yu2yGDc8swPVuTcs67nwFi25Yak86v+21I1Y98amjseX
+5jU4hTz3eJXqd3AVkvTsWA/3d79yoY/c1CyOiTenlSw38+kHQ+JR</xenc:CipherValue>
+            </xenc:CipherData>
+        </xenc:EncryptedData>
+    </cc>
+</user>
 ----
 
 ==== Processing
@@ -275,7 +287,16 @@ Finally, Mule uses the HTTP connector to pass the response — decrypted credit 
 
 [source,xml,linenums]
 ----
-<?xml version="1.0" encoding="UTF-8"?><user><name>Royal Bank of Canada</name><id>Royal_Bank_Of_Canada</id><cc><company>Visa</company><number>1234567890</number><secret>123</secret></cc></user>
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+    <name>Royal Bank of Canada</name>
+    <id>Royal_Bank_Of_Canada</id>
+    <cc>
+        <company>Visa</company>
+        <number>1234567890</number>
+        <secret>123</secret>
+    </cc>
+</user>
 ----
 
 === Get_secret_file Flow
@@ -288,7 +309,7 @@ From a browser, an end user submits a request via the URL to the Mule applicatio
 
 ==== Processing
 
-Upon receipt of an HTTP request, this flow, in a manner very similar to the *Get_CC_Information* uses a Mule Digital Signature Processor to verify the identity of the message’s sender.
+Upon receipt of an HTTP request, this flow, in a manner very similar to the *Get_CC_Information* flow, first runs a filter to verify that the user and token query parameters exist. Then it uses a Mule Digital Signature Processor to verify the identity of the message’s sender.
 
 Next, Mule uses a Groovy script to locate the file that contains the data to decrypt (in this case, the `encryption.txt` file in the `src` > `test` > `resources` folder). It then passes the file content to the Mule Message Encryption Processor to decrypt.
 
@@ -297,7 +318,7 @@ The processor references the *symmetricPlain* global encryption element for dire
 ==== Responding
 
 Finally, Mule uses the HTTP connector to pass the response — the decrypted message in the `encrypted.txt` file — to the end user’s browser (see image below).
-+
+
 image::get-secret-file-response.png[get_secret_file_response]
 
 == See Also

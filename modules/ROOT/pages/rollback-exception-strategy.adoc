@@ -2,12 +2,14 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: error handling, exceptions, exception catching, exceptions, rollback
 
 You can define a rollback exception strategy to ensure that a message that throws an exception in a flow is rolled back for reprocessing. Use a rollback exception strategy when you cannot _correct_ an error when it occurs in a flow. Usually, you use a rollback exception strategy to handle errors that occur in a flow that involve a xref:transaction-management.adoc[transaction]. If the transaction fails, that is, if a message throws an exception while being processed, then the rollback exception strategy rolls back the transaction in the flow. If the inbound connector is transactional, Mule delivers the message to the inbound connector of the parent flow again to reattempt processing (that is, message redelivery).
 
 Beyond managing transactional errors, you can use a rollback exception strategy to:
 
 * Manage unhandled exceptions--exceptions that the application fails to catch.
+
 * Put in flows in which messages require redelivery.
 
 A rollback exception strategy has the potential to introduce an infinite loop of activity within a flow: a message throws an error, the rollback exception strategy catches the exception and rolls the message back for reprocessing; the message throws an error again, the rollback exception strategy catches the exception again, and rolls the message back for reprocessing, and so on.
@@ -15,11 +17,12 @@ A rollback exception strategy has the potential to introduce an infinite loop of
 To avoid this infinite loop and responsibly manage unresolvable errors, you can apply two limitations to a rollback exception strategy:
 
 * Define the maximum number of times that the rollback exception strategy attempts to redeliver the message for processing.
+
 * Define a flow to handle messages that exceed the maximum number of redelivery attempts.
 
 == Use Rollback Exception Strategy for Transactions
 
-Unlike a xref:3.6@catch-exception-strategy.adoc[catch exception strategy] which always commits a failed transaction and consumes the message, a rollback exception strategy provides multiple attempts for a message to successfully move through a flow before committing a failed transaction and consuming the message.
+Unlike a xref:catch-exception-strategy.adoc[catch exception strategy] which always commits a failed transaction and consumes the message, a rollback exception strategy provides multiple attempts for a message to successfully move through a flow before committing a failed transaction and consuming the message.
 
 For example, suppose you have a flow that involves a bank transaction to deposit funds in an account. You configure a rollback exception strategy to handle errors that occur in this flow; when an error occurs during processing — say, a flow-external bank account database is temporarily unavailable — the message throws an exception. The rollback exception strategy catches the exception, and rolls the message back to the beginning of the flow to reattempt processing. During the second attempt at processing, the database is back online again, and the message successfully reaches the end of the flow.
 
@@ -36,7 +39,7 @@ If your flow involves a *reliable* transport and a rollback exception strategy, 
 If you deploy a Mule application that contains a flow with an asynchronous processing strategy and a rollback exception strategy configured for message redelivery, the application fails!
 ====
 
-[%header,cols="34,33,33"]
+[%header%autowidth,width=70%]
 |===
 |Transport |Type |When an exception occurs...
 |VM |transactional |The message rolls back to its original state for reprocessing.
@@ -54,8 +57,9 @@ At times, message processors in a flow encounter exceptions that they are unable
 
 Depending on the flow exchange pattern, a rollback exception strategy routes messages with unhandled exceptions in one of two ways:
 
-* When the flow exchange pattern is **one-way**, the rollback exception strategy instructs the inbound connector transport to execute corrective actions.
-* When the flow exchange pattern is **request-response**, rollback exception strategy changes the payload of a message and returns it to the client.
+* When the flow exchange pattern is *one-way*, the rollback exception strategy instructs the inbound connector transport to execute corrective actions.
+
+* When the flow exchange pattern is *request-response*, rollback exception strategy changes the payload of a message and returns it to the client.
 
 === Rollback Exception Strategy vs. Default Exception Strategy
 
@@ -64,15 +68,21 @@ Where once you would have used Mule's default exception strategy to process unha
 Default Exception Strategy:
 
 * Stores the exception information in the payload of the message.
+
 * Returns `null` in the exceptionPayload attributeMessage.
+
 * Injects `NullPayload` as the message's payload; unable to customize.
+
 * Records exception information in the exceptionPayload attribute; unable to customize.
 
 Rollback Exception Strategy:
 
 * Retains the information in the message payload at the time the exception was thrown; does not alter the message payload.
+
 * Stores the exception information in the exceptionPayload.
+
 * Returns the message processing result during execution of the exception strategy.
+
 * Records exception information in the exceptionPayload attribute; able to customize.
 
 Where the default exception strategy faltered, the rollback exception strategy performs. Using a rollback exception strategy, you can send messages with unhandled exceptions to a dead letter queue, send failure notifications, and change the result of a flow's execution.
@@ -86,49 +96,51 @@ Whether your flow involves transactional or reliable transports, you can configu
 [discrete.view]
 === Studio Visual Editor
 
-. Search for and drag and drop the *Rollback Exception Strategy* icon to put into the footer bar of a flow.
-. Open the Rollback Exception Strategy's *Properties Editor*, then configure the attributes according to the table below.
+. From the *Error Handling* palette group, drag and drop the *Rollback Exception Strategy* icon into the footer bar of a flow. +
+Open the Rollback Exception Strategy's *Properties Editor*, then configure the attributes according to the table below.
 +
 image::rollback-es.png[rollback_ES]
 +
-[%header,cols="20s,80a"]
+[%header%autowidth.spread]
 |===
-|Field |Value
-|Display Name |(Required) A unique name for the rollback exception strategy in your application.
-|Max redelivery attempts |(Required)
-Enter an integer to define the number of times you want the rollback exception strategy to roll back a message for reprocessing. If you set the default value to `0`, the rollback exception strategy does _*not* _attempt to redeliver the message and throws a MessageRedeliveredException upon the first processing failure.
+|Field |Req'd |Value
+|*Display Name* |x |A unique name for the rollback exception strategy in your application.
+|*Max redelivery attempts* | x a|
+Enter an integer to define the number of times you want the rollback exception strategy to roll back a message for reprocessing. If you set the default value to `0`, the rollback exception strategy does _*not* _attempt to redeliver the message and throws a MessageRedeliveredException upon the first processing failure. +
 
 [WARNING]
+====
 If you enter nothing in the *Max redelivery attempts* field (leave the field blank), the rollback exception strategy redelivers the message over and over again, creating an infinite loop. Refer to <<Configuring Redelivery Attempts in JMS Global Connector>> below to learn more about setting this value to `0`.
+====
 
-|When |Enter an expression to indicate the kind of exception the rollback exception should handle.
-
-Conditions for this field:
+|*When* |  a|Enter an expression to indicate the kind of exception the rollback exception should handle. +
 
 * *Expression _not_ defined:* All messages in this flow that throw exceptions are handled by this rollback exception strategy.
-* *Expression defined:*  When Mule evaluates the expression against the message being processed and returns true, Mule executes the exception strategy. For example, if you enter the following, only those messages which throw an `org.mule.example.AlreadyProcessedException` exception are handled by this exception strategy:
 
-`#[exception.causedBy(org.mule.example.AlreadyProcessedException)]`,
-
+* *Expression defined:*  When Mule evaluates the expression against the message being processed and returns true, Mule executes the exception strategy. For example, if you enter the following, only those messages which throw an `org.mule.example.AlreadyProcessedException` exception are handled by this exception strategy: +
+`#[exception.causedBy(org.mule.example.AlreadyProcessedException)]`,  +
+ +
 Mule’s default exception strategy implicitly handles all exceptions which do not match the expression you have defined in the *When* field.
-|Enable Notifications |Checked (default). When checked, instructs Mule to send an exception notification to a registered listener — for example, the Mule Management Console — whenever a message throws an exception in this flow.
-|Log Exceptions |Checked (default). When checked, instructs Mule to log the exceptions.
+|*Enable Notifications* |  a|true (_default_)
+
+false
+
+When set to true, instructs Mule to send an exception notification to a registered listener — for example, the Mule Management Console — whenever a message throws an exception in this flow.
 |===
 +
 [TIP]
 ====
 Here are examples of expressions that you can enter in the *When* field:
 
-[source,mel,linenums]
-----
-#[exception.causedBy(org.mule.example.ExceptionType)]
-#[exception.causedExactlyBy(org.mule.example.ExceptionType)]
-#[exception.causeMatches(org.mule.example.*)]
+* `exception.causedBy(org.mule.example.ExceptionType)`
 
-#[exception.causeMatches(*) && +
-!exception.causedBy(java.lang.ArithmeticException) && +
-!exception.causedBy(org.mule.api.registry.ResolverException)]
-----
+* `exception.causedExactlyBy(org.mule.example.ExceptionType)`
+
+* `exception.causeMatches(org.mule.example.*)`
+
+* `exception.causeMatches(*) &&` +
+`!exception.causedBy(java.lang.ArithmeticException) &&` +
+`!exception.causedBy(org.mule.api.registry.ResolverException)`
 ====
 
 . Drag building blocks from the palette into the *Rollback Exception Strategy* box to build a flow that processes messages that throw exceptions in the parent flow. A rollback exception strategy can contain any number of message processors.
@@ -137,38 +149,46 @@ Here are examples of expressions that you can enter in the *When* field:
 ====
 If your flow uses a *reliable* transport, you can stop at this point and _not_ configure a *redelivery exhausted* sub flow. If you choose not to configure a redelivery exhausted sub flow:
 
-. A message that exceeds its redelivery attempts (called "a poisoned message") throws a MessageRedeliveredException.
-. The exception strategy commits the transaction.
-. The exception strategy consumes the message.
+.. A message that exceeds its redelivery attempts (called "a poisoned message") throws a MessageRedeliveredException.
+
+.. The exception strategy commits the transaction.
+
+.. The exception strategy consumes the message.
 ====
 
 . Drag building blocks from the palette into the *redelivery exhausted* box to build a flow that processes messages which exceed the maximum number of redelivery attempts. For example, you may wish to use redelivery exhausted to direct all “poisoned messages” to a dead letter queue. A redelivery exhausted flow can contain any number of message processors.
 
 [WARNING]
-You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a xref:3.7@choice-exception-strategy.adoc[Choice Exception Strategy].
+====
+You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a xref:choice-exception-strategy.adoc[Choice Exception Strategy].
+====
 
 [discrete.view]
 === XML Editor or Standalone
 
-. In your flow, below all the message processors, add a `rollback-exception-strategy` element. Refer to code below.
+. In your flow, below all the message processors, add a *`rollback-exception-strategy`* element. Refer to code below.
+
 . Configure attributes of the exception strategy according to the table below.
 +
-[%header,cols="20s,80a"]
+[%header%autowidth.spread]
 |===
-|Attribute |Value
-|doc:name |(Required) A unique name for the rollback exception strategy in your application. +
+|Attribute |Req'd |Value
+|*doc:name* |x |A unique name for the rollback exception strategy in your application. +
 Not required in Standalone.
-|maxRedeliveryAttempts |(Required) Use an integer to define the number of times you want the rollback exception strategy to rollback a message for reprocessing. If you set the default value to `0`, which means the rollback exception strategy will _not _attempt to redeliver the message and will throw a MessageRedeliveredException upon the first processing failure. Refer to <<Configuring Redelivery Attempts in JMS Global Connector>> below to learn more about setting this value to `0`.
-|when |Define an expression to indicate the kind of exception the rollback exception should handle.
+|*maxRedeliveryAttempts* | x |Use an integer to define the number of times you want the rollback exception strategy to rollback a message for reprocessing. If you set the default value to `0`, which means the rollback exception strategy will _not _attempt to redeliver the message and will throw a MessageRedeliveredException upon the first processing failure. Refer to <<Configuring Redelivery Attempts in JMS Global Connector>> below to learn more about setting this value to `0`.
+|*when* |  a|Define an expression to indicate the kind of exception the rollback exception should handle.
 
-Conditions for this field:
+* *Expression _not_ defined:* all messages in this flow that throw exceptions will be handled by this rollback exception strategy.
 
-* *Expression _not_ defined:* all messages in this flow that throw exceptions will be handled by this rollback exception strategy.  +
-* *Expression defined:*  when Mule evaluates the expression against the message being processed and returns true, Mule executes the exception strategy. For example, if you enter the following, only those messages which throw an `org.mule.example.AlreadyProcessedException` exception are handled by this exception strategy: +
-`#[exception.causedBy(org.mule.example.AlreadyProcessedException)]`, +
+* *Expression defined:*  when Mule evaluates the expression against the message being processed and returns true, Mule executes the exception strategy.
+
+For example, if you enter the following, only those messages which throw an `org.mule.example.AlreadyProcessedException` exception are handled by this exception strategy: `#[exception.causedBy(org.mule.example.AlreadyProcessedException)]`,
 Mule’s default exception strategy implicitly handles all exceptions which do not match the expression you have defined in the when attribute.
-|enableNotifications |Checked (default). When checked, instructs Mule to send an exception notification to a registered listener — for example, the Mule Management Console — whenever a message throws an exception in this flow.
-|logExceptions |Checked (default). When checked, instructs Mule to log the exceptions.
+|*enableNotifications* |  a|true (_default_)
+
+false
+
+When set to true, Mule sends an exception notification to a registered listener — say, the Mule Management Console — whenever the catch exception strategy accepts handles an exception.
 |===
 +
 [source,xml,linenums]
@@ -178,44 +198,45 @@ Mule’s default exception strategy implicitly handles all exceptions which do n
 +
 [TIP]
 ====
-Here are examples of expressions that you can enter in the *When* field:
+The following are examples of expressions that you can enter in the *When* field:
 
-[source,mel,linenums]
-----
-#[exception.causedBy(org.mule.example.ExceptionType)]
-#[exception.causedExactlyBy(org.mule.example.ExceptionType)]
-#[exception.causeMatches(org.mule.example.*)]
+* `exception.causedBy(org.mule.example.ExceptionType)`
 
-#[exception.causeMatches(*) && +
-!exception.causedBy(java.lang.ArithmeticException) && +
-!exception.causedBy(org.mule.api.registry.ResolverException)]
-----
+* `exception.causedExactlyBy(org.mule.example.ExceptionType)`
+
+* `exception.causeMatches(org.mule.example.*)`
+
+* `exception.causeMatches(*) &&` +
+`!exception.causedBy(java.lang.ArithmeticException) &&` +
+`!exception.causedBy(org.mule.api.registry.ResolverException)`
 ====
-+
 . Add child elements to your `rollback-exception-strategy` to build a flow that processes messages that throw exceptions in the parent flow. A rollback exception strategy can contain any number of message processors.
 +
 [NOTE]
 ====
 If your flow uses a *reliable* transport, you can stop at this point and _not_ configure a *redelivery exhausted* sub flow. If you choose not to configure a redelivery exhausted sub flow:
 
-* A message that exceeds its redelivery attempts (a.k.a. “a poisoned message”) throws a `MessageRedeliveredException`.
-* The exception strategy commits the transaction.
-* The exception strategy consumes the message.
-====
-+
-. Add an `on-redelivery-attempts-exceeded` child element to your `rollback-exception-strategy` element at the bottom, below all the message processors included in the exception strategy.
-. Add child elements to your `on-redelivery-attempts-exceeded` child element to build a flow that processes messages which exceed the maximum number of redelivery attempts. For example, you may wish to use redelivery exhausted to direct all “poisoned messages” to a dead letter queue. A redelivery exhausted flow can contain any number of message processors.
-+
-[WARNING]
-You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a xref:3.7@choice-exception-strategy.adoc[Choice Exception Strategy].
+. a message that exceeds its redelivery attempts (a.k.a. “a poisoned message”) throws a MessageRedeliveredException
+. the exception strategy commits the transaction
 
+. the exception strategy consumes the message
+====
+
+. Add an *`on-redelivery-attempts-exceeded`* child element to your `rollback-exception-strategy` element at the bottom, below all the message processors included in the exception strategy.
+
+. Add child elements to your `on-redelivery-attempts-exceeded` child element to build a flow that processes messages which exceed the maximum number of redelivery attempts. For example, you may wish to use redelivery exhausted to direct all “poisoned messages” to a dead letter queue. A redelivery exhausted flow can contain any number of message processors.
+
+[WARNING]
+====
+You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a xref:choice-exception-strategy.adoc[Choice Exception Strategy].
+====
 =====
 
 == Configuring Redelivery Attempts in JMS Global Connector
 
 Mule creates a http://itlaw.wikia.com/wiki/Message_digest[digest] of a message’s payload in order to generate a redelivery attempt ID. Mule uses this unique ID as part of its *redelivery policy* which keeps track of the number of message redelivery attempts. (To generate a digest, Mule applies a hash function to the message to obtain a fixed-size bit string that is unique to the message.)
 
-You can use a xref:3.7@jms-transport-reference.adoc[JMS global connector]'s redelivery policy to improve the performance of a flow that processes very large or streaming message payloads. Rather than generating a unique ID from a message's (potentially large or streaming) payload, a JMS global connector uses its JMSRedelivery property to keep track of message redelivery attempts.
+You can use a xref:jms-transport-reference.adoc[JMS global connector]'s redelivery policy to improve the performance of a flow that processes very large or streaming message payloads. Rather than generating a unique ID from a message's (potentially large or streaming) payload, a JMS global connector uses its JMSRedelivery property to keep track of message redelivery attempts.
 
 If your flow uses a JMS global connector, you can configure it to manage the redelivery policy by defining its *Max Redelivery*.
 
@@ -224,16 +245,16 @@ If your flow uses a JMS global connector, you can configure it to manage the red
 [discrete.view]
 === Studio Visual Editor
 
-. Search for "jms" and drag the *JMS* connector to the Canvas.
-. Click the green plus sign to the right of the *Connector Configuration* field.
-. In the *Choose Global Type* field, expand the *JMS* entry, click *JMS*, and click *OK*.
-. Click the *Advanced* tab. Scroll down to the *JMS Advanced* section of the menu.
+. In the Global Elements tab, double-click to open the **JMS Global Connector's** Global Element Properties panel, then click the *Advanced* tab.
+
 . Enter an integer in the *Max Redelivery* field to define the number of times you want the rollback exception strategy to rollback a message for reprocessing, and click *OK* to save your changes. Note that the default value of this field is set to `-1`; this ensures that the JMS global connector’s redelivery policy defers to your rollback exception strategy’s redelivery policy by default.
 +
 image::max-redelivery-jms.png[max_redelivery_JMS]
-+
+
 . Click the *Message Flow* tab, then double-click title bar of your rollback exception strategy.
+
 . In the Rollback Exception Strategy Properties panel that appears, enter a “0” in the *Max redelivery attempts* field and click *OK*to save your changes.
+
 . Refer to the table below to learn more about entering a value in the maxDelivery fields.
 
 [discrete.view]
@@ -241,71 +262,45 @@ image::max-redelivery-jms.png[max_redelivery_JMS]
 
 . To your global `jms:connector` element set above all the flows in your Mule project, add a *`maxRedelivery`* attribute and set the value to an integer to define the number of times you want the rollback exception strategy to rollback a message for reprocessing (see code below). Note that if you set the value of the attribute to **`-1`**`,` the JMS global connector’s redelivery policy defers to your rollback exception strategy’s redelivery policy by default.
 +
-[source,xml]
+source
 ----
 <jms:connector name="JMS" validateConnections="true" maxRedelivery="1" doc:name="JMS"/>
 ----
-+
-. To the *`rollback-exception-strategy`* element in your flow, set the value of the `maxRedeliveryAttempts` attribute to "0". Setting to "0" instructs Mule to use the value of maxRedelivery in the global JMS connector's configuration.
-. Refer to the table below to learn more about the setting the value of the maxDelivery attributes.
 
+. To the *`rollback-exception-strategy`* element in your flow, set the value of the `maxRedeliveryAttempts` attribute to "0". Setting to "0" instructs Mule to use the value of maxRedelivery in the global JMS connector's configuration.
+
+. Refer to the table below to learn more about the setting the value of the maxDelivery attributes.
 =====
 
 [WARNING]
+====
 If your flow uses a JMS global connector and you _do not_ want the connector to manage your rollback strategy’s redelivery policy, then be sure to set the connector’s max redelivery value to `-1`. This ensures that the JMS global connector’s redelivery policy defers to your rollback exception strategy’s redelivery policy by default.
+====
 
-[%header,cols="25a,75a"]
+[%header%autowidth.spread]
 |===
-|Rollback Exception Strategy configured in flow? |Results If
-|`yes`
-|If *Max Redelivery Set in Rollback ES in the flow* = `3` +
-And if *Max Redelivery Set in JMS Global Connector* = `-1` +
-And if *Redelivery Exhausted Configured?* = `yes`
-
-*Then:* Rollback exception strategy redelivers the message to parent flow 3 times. After 3 failures, message throws a `MessageRedeliveredException`. The rollback exception strategy routes the message to redelivery exhausted for processing before committing the transaction and consuming the message.
-
-|`yes`
-|If *Max Redelivery Set in Rollback ES in the flow* = `3` +
-And if *Max Redelivery Set in JMS Global Connector* = `-1` +
-And if *Redelivery Exhausted Configured?* = `no`
-
-*Then:* Rollback exception strategy redelivers the message to parent flow 3 times. After 3 failures, message throws a `MessageRedeliveredException`. Rollback exception strategy commits the transaction and consumes the message.
-
-|`yes`
-|If *Max Redelivery Set in Rollback ES in the flow* = `0` +
-And if *Max Redelivery Set in JMS Global Connector* = `-1` +
-And if *Redelivery Exhausted Configured?* = `no`
-
-*Then:* Rollback exception strategy redelivers the message over and over again, creating an infinite loop.
-
-|`yes`
-|If *Max Redelivery Set in Rollback ES in the flow* = `0` +
-And if *Max Redelivery Set in JMS Global Connector* = `-1` +
-And if *Redelivery Exhausted Configured?* = `yes`
-
-*Then:* Rollback exception strategy redelivers the message over and over again, creating an infinite loop.
-
-|`yes`
-|If *Max Redelivery Set in Rollback ES in the flow* = `0` +
-And if *Max Redelivery Set in JMS Global Connector* = `4` +
-And if *Redelivery Exhausted Configured?* = `no`
-
-*Then:* Rollback exception strategy redelivers the message to parent flow 4 times, as per the JMS global connector redelivery policy. After 4 failures, the message throws a `MessageRedeliveredException`, and the rollback exception strategy commits the transaction and consumes the message. Note: This rollback strategy doesn’t retry at all if Redelivery Exhausted Configured? = `no`.
+|Rollback Exception Strategy configured in flow? |Max Redelivery Set in Rollback ES in the flow |Max Redelivery Set in JMS Global Connector |Redelivery Exhausted Configured? |Result
+|yes |3 |-1 |yes |Rollback exception strategy redelivers the message to parent flow 3 times. After 3 failures, message throws a MessageRedeliveredException. Rollback exception strategy routes message to redelivery exhausted for processing before committing the transaction and consuming the message.
+|yes |3 |-1 |no |Rollback exception strategy redelivers the message to parent flow 3 times. After 3 failures, message throws a MessageRedeliveredException. Rollback exception strategy commits the transaction and consumes the message.
+|yes |0 |-1 |no |Rollback exception strategy redelivers the message over and over again, creating an infinite loop.
+|yes |0 |-1 |yes |Rollback exception strategy redelivers the message over and over again, creating an infinite loop.
+|yes |0 |4 |yes |Rollback exception strategy redelivers the message to parent flow 4 times, as per the JMS global connector redelivery policy. After 4 failures, the message throws a `MessageRedeliveredException`, and the rollback exception strategy commits the transaction and consumes the message. Note: This rollback strategy doesn’t retry at all if Redelivery Exhausted Configured? = `no`.
 |===
 
 == Creating a Global Rollback Exception Strategy
 
-You can create one or more xref:3.7@error-handling.adoc[global exception strategies] to reuse in flows throughout your entire Mule application. First, create a global rollback exception strategy, then add a xref:3.7@reference-exception-strategy.adoc[*Reference Exception Strategy*] to a flow to apply the error handling behavior of your new global rollback exception strategy.
+You can create one or more xref:error-handling.adoc[global exception strategies] to reuse in flows throughout your entire Mule application. First, create a global rollback exception strategy, then add a xref:reference-exception-strategy.adoc[*Reference Exception Strategy*] to a flow to apply the error handling behavior of your new global rollback exception strategy.
 
 [.ex]
 =====
 [discrete.view]
 === Studio Visual Editor
 
-. From *File* > *New* > *Mule Configuration File*, create a global configuration file to contain your *Rollack Exception Strategy*.
-. Refer to step 2 <<cares,Configuring a Rollback Exception Strategy>> to configure your global rollback exception strategy in your configuration file.
-. Click the *Message Flow* tab below the canvas and add building blocks to your configuration file.
-. Follow steps 3 - 5 <<cares,Configuring a Rollback Exception Strategy>> to build your global rollback exception strategy flow in your configuration file and to set the redelivery exhausted flow.
+. In the Global Elements tab, create a *Rollack Exception Strategy*.
+
+. Refer to step 2 <<Configuring a Rollback Exception Strategy>> to configure your global rollback exception strategy.
+
+. Click the *Message Flow* tab below the canvas. On the Message Flow canvas, note that your newly created global rollback exception strategy box appears _outside_ the parent flow. Because it is global, your new rollback exception strategy exists independently of any Mule flow.
 +
 image::global-rollback.png[global+rollback]
 
@@ -314,44 +309,49 @@ image::global-rollback.png[global+rollback]
 [discrete.view]
 === XML Editor or Standalone
 
-. Above all the flows in your application, create a `rollback-exception-strategy` element.
-. To the global `rollback-exception-strategy` element, add the attributes according to step 2 <<Configuring a Rollback Exception Strategy>>.
-. Follow steps 3 - 5 <<Configuring a Rollback Exception Strategy>> to build your global rollback exception strategy flow and the redelivery exhausted flow.
+. Above all the flows in your application, create a `rollback`**`-exception-strategy`** element.
 
+. To the global `rollback-exception-strategy` element, add the attributes according to step 2 <<Configuring a Rollback Exception Strategy>>.
+
+. Follow steps 3 - 5 <<Configuring a Rollback Exception Strategy>> to build your global rollback exception strategy flow and the redelivery exhausted flow.
 =====
 
 === Applying a Global Rollback Exception Strategy to a Flow
 
-Use a xref:3.7@reference-exception-strategy.adoc[reference exception strategy] to instruct a flow to employ the error handling behavior defined by your global rollback exception strategy. In other words, you must ask your flow to refer to the global rollback exception strategy for instructions on how to handle errors.
+Use a xref:reference-exception-strategy.adoc[reference exception strategy] to instruct a flow to employ the error handling behavior defined by your global rollback exception strategy. In other words, you must ask your flow to refer to the global rollback exception strategy for instructions on how to handle errors.
 
 [.ex]
 =====
 [discrete.view]
 === Studio Visual Editor
 
-. From the *Error Handling* palette group, drag and drop the *Reference Exception Strategy* icon into the footer bar of a flow.
+. From the *Error Handling* palette group, drag and drop the *Reference Exception Strategy* icon into the footer bar of a flow.  +
 
 . Open the Reference Exception Strategy's *Properties Editor*.
 +
 image::ref-global-rollback.png[ref_global_rollback]
 
 . Use the drop-down to select your *Global Exception Strategy*.
-. Click anywhere in the canvas to save your changes.
 
+. Click anywhere in the canvas to save your changes.
++
 [NOTE]
-You can create a global rollback exception strategy (that is access the Choose Global Type panel) from the reference exception strategy’s pattern properties panel. Click the image:add.png[(plus)] button next to the *Global Exception Strategy* drop-down and follow the steps above to create a global choice exception strategy.
+====
+You can create a global rollback exception strategy (that is access the Choose Global Type panel) from the reference exception strategy’s pattern properties panel. Click the plus sign button next to the *Global Exception Strategy* drop-down and follow the steps above to create a global choice exception strategy.
+====
 
 [discrete.view]
 === XML Editor or Standalone
 
-. In your flow, below all the message processors, add a **`reference-exception-strategy`** element. Refer to code below.
+. In your flow, below all the message processors, add a *`reference-exception-strategy`* element. Refer to code below.
+
 . Configure attributes of the exception strategy according to the table below.
 +
-[%header%autowidth.spread]
+[%header%autowidth,width=80%]
 |===
 |Attribute |Req'd |Value
 |*ref* |x |The name of the global exception strategy to which your flow should refer to handle exceptions.
-|*doc:name* |x |A unique name for the rollback exception strategy in your application. +
+|*doc:name* |x a|A unique name for the rollback exception strategy in your application.
 Not required in Standalone.
 |===
 +
@@ -359,13 +359,15 @@ Not required in Standalone.
 ----
 <exception-strategy ref="Global_Rollback_Exception_Strategy" doc:name="Reference Exception Strategy"/>
 ----
-
 =====
 
 [TIP]
+====
 You can append a *Reference Exception Strategy* to any number of flows in your Mule application and instruct them to refer to any of the global catch, rollback or choice exception strategies you have created. You can direct any number of reference exception strategies to refer to the same global exception strategy.
+====
 
 == See Also
 
-* Learn how to configure xref:3.6@catch-exception-strategy.adoc[catch exception strategies].
-* Learn how to configure xref:3.7@choice-exception-strategy.adoc[choice exception strategies].
+* Learn how to configure xref:catch-exception-strategy.adoc[catch exception strategies].
+
+* Learn how to configure xref:choice-exception-strategy.adoc[choice exception strategies].

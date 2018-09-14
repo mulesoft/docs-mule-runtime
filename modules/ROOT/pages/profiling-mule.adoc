@@ -2,38 +2,120 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: anypoint studio, esb, profiling, yourkit, monitoring, performance, memory, cpu, tuning
+:keywords: anypoint studio, profiling, yourkit, monitoring, performance, memory, cpu, tuning
 
-The Mule Profiler Pack uses YourKit 9.0 to provide CPU and memory profiling, helping you identify memory leaks in your custom Mule ESB extensions. To use a different version of YourKit, instead of using the Profiler Pack see the YourKit documentation for the appropriate version for instructions on how to profile a Java application. When doing this with standalone Mule, note that any JVM flags need to be prefaced with -M so that they affect the Mule process rather than the wrapper process.
+Profiling Mule can be useful in helping you identify memory leaks in your custom Mule ESB extensions. https://www.yourkit.com/[YourKit] is a commonly used Java profiler for analyzing JVM performance. Hooking into YourKit can be achieved by <<Profiling with the YourKit Agent>>.
 
-== Installing the Profiler Pack
+NOTE: There are multiple Java profiler options available. If you're not using YourKit, visit your respective profiler's documentation to understand how to hook into the Mule-Java process.
 
-The Profiler Pack is contained in the Mule Enterprise Edition download. If you are installing Mule Enterprise Edition using the graphical installer, simply select the Profiler check box when installing the product.
+== Profiling with the YourKit Agent
 
-If you are installing Mule Community Edition, go to the downloads page, and under the latest stable community release, expand the *Downloads* section. You can then click the link to the .zip, .tar, or .gz version of the Profiler pack. After downloading, unpack it on top of the Mule installation.
+YourKit allows you to remotely attach to a Java process using the remote attach wizard. This method is especially useful when you have SSH access to the Mule Server you want to profile and would rather not alter the Mule code itself to begin profiling.
 
-Set the following environment variable:
+=== Attaching the Profiler Agent
 
-[source,text,linenums]
+. Download the profiler at https://www.yourkit.com/download on to the Mule server.
+. Unpackage the profiler.
+. Determine the PID of Mule by running `jps`.
++
+[source,console]
 ----
-LD_LIBRARY_PATH=$MULE_HOME/lib/native/profiler
+jps
+----
++
+. Capture the PID of the `MuleContainerBootstrap`.
++
+----
+2838 MuleContainerBootstrap
+21311 Jps
+----
++
+. Within the YourKit package, open the `bin` directory.
++
+[source,console]
+----
+cd yjp-2015-build-15086/bin
+----
++
+. Run `yph.sh` including the `-attach` flag with the PID of `MuleContainerBootstrap`.
++
+[source,console]
+----
+./yph.sh -attach 2838
+----
++
+. Verify the agent is attached:
++
+[source,console]
+----
+Attaching to process 2838 using default options
+The profiler agent has attached. Waiting while it initializes...
+The agent is loaded and is listening on port 10001.
+You can connect to it from the profiler UI.
 ----
 
-== Enabling the Profiler Agent
+NOTE: Steps above can vary in a Windows environment. Check the YourKit documentation if the steps above cannot be translated.
 
-The Profiler agent exposes the YourKit Profiler to JMX to provide CPU and memory profiling. You configure the Profiler agent with the `<management:yourkit-profiler/>` element. For more information, see xref:3.6@jmx-management.adoc[JMX Management].
+=== Connecting the YourKit UI
 
-== Running the Profiler
+. Launch YourKit on your local machine.
+. In Monitor Remote Applications, click Connect to remote application.
++
+image::monitor-remote-apps.png[width=500]
++
+. Set up your server username and password.
+. Configure the SSH authentication.
++
+image::yourkit-auth.png[width=500]
++
+. Click OK.
+. After scanning for available applications, the YourKit should now be hooked up to your Mule instance.
++
+image::yourkit-hooked-up.png[width=1000]
 
-To run the profiler, you run Mule with the *-profile* switch plus any extra http://www.yourkit.com/docs/90/help/startup_options.jsp[YourKit startup options] with multiple parameters separated by commas, e.g. **-profile onlylocal,onexit=memory**. This integration pack will automatically take care of configuration differences for Java 1.4.x and 5.x/6.x.
+=== Enabling the Profiler Agent
+
+The Profiler agent exposes the YourKit Profiler to JMX to provide CPU and memory profiling. You configure the Profiler agent with the `<management:yourkit-profiler/>` element. For more information, see xref:jmx-management.adoc[JMX Management].
+
+=== Running the Profiler
+
+To run the profiler, you run Mule with the *-profile* switch plus any extra http://www.yourkit.com/docs/90/help/startup_options.jsp[YourKit startup options] with multiple parameters separated by commas, for example, *-profile onlylocal,onexit=memory*. This integration pack will automatically take care of configuration differences for Java 1.4.x and 5.x/6.x.
 
 For example:
 
-[source,text,linenums]
 ----
 ./mule -profile
 ----
 
-== Embedded Mule
+=== Embedded Mule
 
-If you are running Mule embedded in a webapp, the Profiler configuration is completely delegated to the owning container. Launch YourKit Profiler, *Tools -> Integrate with J2EE server...* and follow the instructions. Typically, a server's launch script is modified to support profiling, and you then use this modified start script instead of the original.
+If you are running Mule embedded in a webapp, the Profiler configuration is completely delegated to the owning container. Launch YourKit Profiler, *Tools* > *Integrate with J2EE server* and follow the instructions. Typically, a server's launch script is modified to support profiling, and you then use this modified start script instead of the original.
+
+== Hooking Mule into the YourKit Agent
+
+In order to use your own *YourKit* profiler, you need to first download the build to the Mule host, and add the following line to the `wrapper.conf` file located in the `$MULE_HOME/conf` path.
+
+----
+wrapper.java.additional.NN=-agentpath:<absolute-path-to-the-agent>=delay=10000
+----
+
+This enables the YourKit agent to interact with your Mule instance.
+
+The <absolute-path-to-the-agent> value varies depending on the configuration and OS of your machine. Once you downloaded and expanded YourKit package content, you can usually find the agent inside the `/bin/` folder.
+
+Assuming you downloaded `yjp-2013-build-13062` for Linux, for example, the entry to add in wrapper.conf should look like this:
+
+----
+wrapper.java.additional.NN=-agentpath:/yjp-2013-build-13062/bin/linux-x86-64/libyjpagent.so=delay=10000
+----
+
+Detailed installation instructions for different operative systems, can be found in the https://www.yourkit.com/docs/[YourKit documentation].
+
+[NOTE]
+By default, YourKit agent scans for an internet facing port. If a specific port is desired, you can set it by adding: +
+`wrapper.java.additional.NN=-agentpath:<absolute-path-to-the-agent>=delay=10000,port=<port>`. +
+A full list of start up parameters can be found in https://www.yourkit.com/docs/java/help/startup_options.jsp[YourKit startup options].
+
+Restart Mule and set the YourKit profiler UI to connect to the host (with port, if specific port was specified).
+
+Check https://www.yourkit.com/docs/java/help/running_profiler.jsp[YourKit documentation] for a more detailed explanation on how to properly launch the agent based on your operative system.

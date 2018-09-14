@@ -1,24 +1,8 @@
-= Starting and Stopping Mule ESB
+= Starting and Stopping Mule
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-
-[TIP]
-====
-*Quick Tip:* +
-
-*Run Mule on Unix*
-[source,text,linenums]
-----
-$MULE_HOME/bin/mule start|stop
-----
-
-*Run Mule on Windows*
-[source,text,linenums]
-----
-$MULE_HOME\bin\mule.bat start|stop
-----
-====
+:keywords: mule, deploy, launch, run, terminate
 
 Mule uses the http://wrapper.tanukisoftware.org/[Java Service Wrapper] to control the Java Virtual Machine (JVM) from your native OS. The wrapper provides many options and features, including the ability to run Mule as a Unix daemon or install/remove Mule as a Windows Service. The wrapper can handle system signals and start parameters, and overall provides much better interaction between the JVM and the underlying OS.
 
@@ -40,12 +24,12 @@ The table below lists all the parameters that the script accepts.
 [%header%autowidth.spread]
 |===
 |Parameter |Description
-| `start` |Starts the Mule ESB server in the terminal background.
-| `stop` |Stops the Mule ESB server.
-| `restart` |Restarts the Mule ESB server.
-| `status` |Displays the status of the Mule ESB server (`running` or `not running`) and the process PID if running.
+| `start` |Starts the Mule server in the terminal background.
+| `stop` |Stops the Mule  server.
+| `restart` |Restarts the Mule  server.
+| `status` |Displays the status of the Mule  server (`running` or `not running`) and the process PID if running.
 | `dump` | *(Unix only.)* Dumps the Mule wrapper's core to `$MULE_HOME/log/mule_ee.log`.
-| `console` |Start Mule ESB in the terminal foreground (console mode). Same as running `mule` with no parameters.
+| `console` |Start Mule  in the terminal foreground (console mode). Same as running `mule` with no parameters.
 | `install` | *(Windows only.)* Install Mule as a Windows service.
 | `remove` | *(Windows only.)* Remove Mule from your Windows services.
 |===
@@ -104,7 +88,7 @@ Include your parameters as script parameters (if running in background, after th
 
 === Passing Parameters to the JVM via the Wrapper Config File
 
-Include your parameters in the configuration file `$MULE_HOME/conf/wrapper.conf`. The distribution includes this file with comments (see fragment below). You can edit this file or add to it as needed.  For more information about the  `wrapper.conf`  file, consult the Java Service Wrapper  http://wrapper.tanukisoftware.com/doc/english/properties.html[online documentation] for the file.
+Include your parameters in the configuration file `$MULE_HOME/conf/wrapper.conf`. The distribution includes this file with comments (see fragment below). You can edit this file or add to it as needed.  For more information about the  `wrapper.conf`  file, consult the Java Service Wrapper  http://wrapper.tanukisoftware.com/doc/english/properties.html[online documentation]  for the file.
 
 [source,text,linenums]
 ----
@@ -136,7 +120,15 @@ wrapper.license.features=64bit
 ...
 ----
 
-For example, to set Mule's encoding, you could add wrapper.java.additional.1=-Dmule.encoding=ISO-8859-1 to the Wrapper configuration file, or you could add -D-Mmule.encoding=ISO-8859-1 to the Mule script at the command line. Note that if you add wrapper.java.additional.n entries to the configuration file, you must change each instance of n to a consecutive number, or Java will not parse the properties correctly.
+==== Set Mule Standalone Server Memory
+
+Enter the `$MULE_HOME/conf/wrapper.conf` configuration file and search for the `maxheap` parameter:
+`# Maximum Java Heap Size (in MB)
+wrapper.java.maxmemory=1024`. The memory allowed must be specified in MB. To set the memory to 2GB, replace `1024` with `2048`.
+
+==== Set Mule Encoding
+
+For example, to set Mule's encoding, you could add `wrapper.java.additional.1=-Dmule.encoding=ISO-8859-1` to the Wrapper configuration file, or you could add `-D-Mmule.encoding=ISO-8859-1` to the Mule script at the command line. Note that if you add wrapper.java.additional.n entries to the configuration file, you must change each instance of n to a consecutive number, or Java does not parse the properties correctly.
 
 ==== Passing Additional Arguments to the Wrapper
 
@@ -146,9 +138,61 @@ For example, to set the logfile that the Wrapper's uses, you could add wrapper.l
 
 == Running Mule As a Unix Daemon
 
-To run Mule as a Unix daemon, you need to write a simple wrapper script for the Mule startup script. Place your wrapper script in your system's appropriate directory (such as `/etc/init.d`) and use your system's init script architecture tools to ensure that your wrapper script is invoked in the runlevels you wish.
+To run Mule as a Unix daemon, you need to write a simple management script for the Mule startup script. Place your management script in your system's appropriate directory (such as `/etc/init.d`) and use your system's init script architecture tools to ensure that your management script is invoked in the runlevels you wish.
 
-Your wrapper script needs to set the required environment for Mule; a sample script is provided below below.
+On some systems, you can set up startup scripts for use with the `service` utility (System V). Consult your operating system's documentation for details.
+
+Here is a sample `init.d` script for Red Hat Enterprise Linux:
+
+[source,text,linenums]
+----
+#!/bin/bash
+# RHEL Mule Init Script
+#
+# chkconfig: 2345 65 64
+# description: Mule ESB service
+
+. /etc/init.d/functions
+#
+if [ -f /etc/sysconfig/mule ]; then
+   . /etc/sysconfig/mule
+fi
+
+# Set JDK related environment
+JAVA_HOME=/usr/java/default
+PATH=$PATH:$JAVA_HOME/bin
+
+# Set Mule related environment
+MULE_HOME=/opt/mule
+MULE_LIB=$MULE_HOME/lib
+PATH=$PATH:$MULE_HOME/bin
+RUN_AS_USER=mule
+MULE_ENV=production
+
+# Export environment variables
+export JAVA_HOME MULE_HOME MULE_LIB PATH MULE_ENV RUN_AS_USER
+
+case "$1" in
+   start)
+      echo "Start service mule"
+      $MULE_HOME/bin/mule start -M-Dspring.profiles.active=$MULE_ENV -M-DMULE_ENV=$MULE_ENV
+      ;;
+   stop)
+      echo "Stop service mule"
+      $MULE_HOME/bin/mule stop
+      ;;
+   restart)
+      echo "Restart service mule"
+      $MULE_HOME/bin/mule restart -M-Dspring.profiles.active=$MULE_ENV -M-DMULE_ENV=$MULE_ENV
+      ;;
+   *)
+      echo "Usage: $0 {start|stop|restart}"
+      exit 1
+      ;;
+esac
+----
+
+Your management script needs to set the required environment for Mule; a more generic sample script is provided below below.
 
 [source,text,linenums]
 ----
@@ -170,7 +214,6 @@ export JAVA_HOME MULE_HOME MULE_LIB PATH
 $MULE_HOME/bin/mule $1 -config <path to mule-conf.xml>
 ----
 
-On some systems, you can set up startup scripts for use with the `service` utility (System V). Consult your operating system's documentation for details.
 
 == Running Mule As a Windows Service
 
@@ -217,11 +260,67 @@ The table below lists some parameters common to Mule, which are not documented i
 |===
 |Parameter |Description
 |`-D-Mmule.agent.enabled` |*(* _Boolean_ *_)_* Start Mule ESB with or without the Management Console agent, which is enabled by default.
-a|`-D-Mmule.mmc.bind.port`|Specify a port or port range for the Mule ESB agent listener that the Management Console binds to. To specify a port range, use `<port>-<port>`, for example `3000-3010`.
+a|
+----
+
+-D-Mmule.mmc.bind.port
+----
+
+ |Specify a port or port range for the Mule ESB agent listener that the Management Console binds to. To specify a port range, use `<port>-<port>`, for example `3000-3010`.
 |===
 
 The `$MULE_HOME/conf/wrapper.conf` configuration file includes many more parameters, some of which are by default commented out, but documented in the comments.
 
+////
+DOCS-1704 section follows:
+////
+
+== Shutting Down Mule
+
+You can shut down Mule using the `mule stop` command that is run from the MULE_HOME/bin directory. When Mule stops,
+inbound endpoints are shut down, and in-flight Mule messages continue to process until the timeout setting elapses and final
+shutdown occurs.
+
+You can set a timeout value to enable the current flow to complete. However, there is no built in method or utility
+to check what messages are in flight. You can connect a profiler and see the active threads (or just a thread dump), this should provide you an overview of what's happening at the JVM level.
+
+=== Timeout From wrapper.conf
+
+You can set the timeout value in `wrapper.conf` using the `wrapper.shutdown.timeout` statement where the value is in
+seconds, for example:
+
+[listing]
+wrapper.shutdown.timeout="30"
+
+More information is available in the
+http://wrapper.tanukisoftware.com/doc/english/prop-ping-timeout.html[Tanuki wrapper.shutdown.timeout] page.
+
+=== Shutdown Timeout From a Flow
+
+Alternatively, you can set `shutdownTimeout` to a milliseconds value for a flow; hwoever this is not
+a global value.
+
+Example for testing purposes:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <configuration shutdownTimeout="10000"/>
+
+    <flow name="TestService">
+        <test:component/>
+    </flow>
+
+</mule>
+----
+
 == See Also
 
-* *NEXT STEP:* Graduate to the content of the First Week with Mule chapter, starting with xref:3.6@mule-application-architecture.adoc[Mule Application Architecture].
+* *NEXT STEP:* Graduate to the content of the First Week with Mule chapter, starting with xref:mule-application-architecture.adoc[Mule Application Architecture].

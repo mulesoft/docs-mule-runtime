@@ -2,8 +2,9 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: flow processing, synchronous, asynchronous, sync, async, non-blocking, blocking, cluster
 
-A flow *processing strategy* determines how Mule implements message processing for a given flow.
+A flow processing strategy determines how Mule implements message processing for a given flow.
 
 * Should the message be processed synchronously (on the same thread) or asynchronously (on a different thread)?
 * If asynchronously, what are the properties of the pool of threads used to process the messages?
@@ -32,8 +33,8 @@ Each flow varies in the degree to which it can benefit from the transactional re
 
 Mule selects a processing strategy for a flow based on two criteria:
 
-. the flow's exchange pattern
-. whether or not the flow is transactional
+* The flow's exchange pattern
+* Whether or not the flow is transactional
 
 A flow employs one of two exchange patterns, determined by the exchange pattern of the flow's inbound endpoint:
 
@@ -46,7 +47,7 @@ In addition, some inbound endpoints can be configured to operate xref:transactio
 
 The following table summarizes how Mule chooses a flow processing strategy:
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Exchange Pattern |Transactional? |Flow Processing Strategy
 |Request-Response |Yes |Synchronous
@@ -61,29 +62,23 @@ The synchronous approach is used to process messages in the same thread that ini
 
 * The sender of the message expects a response. This is known as a "request-response" exchange pattern.
 * The flow needs to meet the requirements of transactional processing. In other words, all the steps in the flow are considered a single unit, which must succeed entirely or fail entirely. Additionally, appropriate parties (such as the sender of the message or the administrator of the business process encapsulated by the flow) must be notified of the result. This means that a transactional flow must not hand off processing to other threads, where errors can occur after the transaction is completed.
-* The flow's inbound endpoint must be notified of all errors that occur during the processing of the message. This situation is discussed further in xref:reliability-patterns.adoc[Reliability Patterns]. +
+* The flow's inbound endpoint must be notified of all errors that occur during the processing of the message. This situation is discussed further in xref:reliability-patterns.adoc[Reliability Patterns].
 
 === The Queued-Asynchronous Flow Processing Strategy
 
 The queued-asynchronous approach uses a queue to decouple the flow's receiver from the rest of the steps in the flow.
 
-image::non-blocking-queued-async.png[]
-
-This means that once the receiver places a message into a queue, it can immediately return and accept a new incoming message. Furthermore, each message waiting in the queue can be assigned a different thread from a pool of threads. A component called a Work Manager assigns pending messages to available threads, so they can be processed in parallel. Such parallel processing is ideal for situations where the receiver can, at peak times, accept messages significantly faster than the rest of the flow can process those messages.
+After the receiver places a message into a queue, it can immediately return and accept a new incoming message. Each message waiting in the queue can be assigned a different thread from a pool of threads. A component called a Work Manager assigns pending messages to available threads, so they can be processed in parallel. Such parallel processing is ideal for situations where the receiver can, at peak times, accept messages significantly faster than the rest of the flow can process those messages.
 
 However, the increased throughput facilitated by the asynchronous approach comes at the cost of transactional reliability.
 
-[NOTE]
 The specific type of queue implemented for the queued-asynchronous flow processing strategy is known as a SEDA queue.
 
-[WARNING]
-====
-*Behavior in a Cluster*
+=== Behavior in a Cluster
 
 A flow with an queued-asynchronous processing strategy can execute on any node in a cluster.
 
 A flow with a synchronous processing strategy executes on the same node of the cluster until processing in the flow is complete.
-====
 
 == Changing the Processing Strategy
 
@@ -94,14 +89,13 @@ Mule's choice of processing strategy is almost always optimal for the flow to wh
 * You can accept Mule's choice of the queued-asynchronous flow processing strategy, but then *fine-tune the processing strategy*. Note that you cannot do any fine-tuning for a synchronous flow.
 
 * You can wrap one or more message processors within your synchronous flow in an *xref:async-scope-reference.adoc[asynchronous scope]* to define a processing block that Mule processes asynchronously with the main flow. You can also create an asynchronous flow by wrapping a flow-ref in an asynchronous scope.
-
 * You can call out to a subflow (which always processes synchronously) or a synchronous flow from any flow, regardless of what processing strategy is applied to the triggering flow. The triggering flow waits until this synchronous processing block returns a message before proceeding with processing. See xref:flows-and-subflows.adoc[Flows and Subflows] for more information about subflows and synchronous flows.
 
 * You can create a *custom flow processing strategy* to fit your exact needs. For instance, you might prefer a queued-asynchronous flow that uses an increased number of threads to handle high peak loads.
 
 === Summary
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Flow Processing Strategy implictly applied by Mule |Can you specify a different +
 processing strategy? |Can you fine-tune +
@@ -126,7 +120,7 @@ The most frequent use case for specifying a processing strategy is to force a fl
 
 In rare use cases, you might want to specify another kind of asynchronous processing strategy on a flow that would otherwise follow a queued-asynchronous processing strategy. You can either declare it directly in the flow configuration, just as in the example immediately above which declares a synchronous processing strategy, or you can create a global element and further fine tune the processing strategy. The table below lists the processing strategy names, which can each be declared as values for the `processingStrategy` attribute, or as a global element.
 
-[%header%autowidth.spread]
+[%header,cols="2*"]
 |===
 |Additional Asynchronous Processing Strategy Element/Global Element Names |Description
 |*asynchronous-processing-strategy* |Not applicable to most use cases. Same as queued-asynchronous processing strategy except that it doesn't use a queue. Use this only if for some reason you do not want your processing to be distributed across nodes.
@@ -146,14 +140,13 @@ You can fine-tune a queued-asynchronous processing strategy by:
 
 You achieve this fine-tuning by specifying parameters for a global processing strategy, then referencing the parameters within the flow or flows you wish to fine-tune. If you don't specify a certain configuration parameter at either the global or local levels, Mule sets a default value for the parameter. The table below lists these default values.
 
-[NOTE]
-Note that in addition to fine-tuning the attributes of the queued-asynchronous processing strategy, you can also xref:tuning-performance.adoc[tune performance] of your Mule application by analyzing and configuring thread profiles.
+In addition to fine-tuning the attributes of the queued-asynchronous processing strategy, you can also xref:tuning-performance.adoc[tune performance] of your Mule application by analyzing and configuring thread profiles.
 
 The following example defines a global processing strategy (`queued-asynchronous-processing-strategy`), which sets the maximum number of threads (`maxThreads`) to 500. The example also shows how a flow references the global processing strategy. This flow:
 
 * is asynchronous, because it refers to the queued-asynchronous processing strategy
 * allows up to 500 concurrent threads, because of the value set for `maxThreads`
-
++
 [source,xml,linenums]
 ----
 <queued-asynchronous-processing-strategy name="allow500Threads" maxThreads="500"/>
@@ -166,7 +159,7 @@ The following example defines a global processing strategy (`queued-asynchronous
 
 The following table lists the configuration parameters you can fine-tune for asynchronous processing strategies. (The synchronous processing strategy cannot be configured.) All of these attributes can be configured on the global element.
 
-[%header%autowidth.spread]
+[%header,cols="20,16,16,16,16,16"]
 |===
 |Attribute |Type |Queued only? |Default value |Description |Optional?
 |*maxBufferSize* |integer |no |1 |Determines how many requests are queued when the pool reaches maximum capacity and the pool exhausted action is WAIT. The buffer is used as an overflow. |yes
@@ -206,7 +199,7 @@ If no processing strategy is configured for the async scope, Mule applies a queu
 
 The following global elements are available for configuring the processing strategy of an asynchronous scope.
 
-[%header%autowidth.spread]
+[%header,cols="2*"]
 |===
 |Global Element |Description
 |*asynchronous-processing-strategy* |Not applicable to most use cases. Same as queued-asynchronous processing strategy (which is what Mule applies if no other processing strategy is configured) except that it doesn't use a queue. Use this only if for some reason you do not want your processing to be distributed across nodes.
@@ -267,10 +260,11 @@ You can use a named processing strategy, either a custom processing strategy tha
 </flow>
 ----
 
+
 == See Also
 
-* Refer to the xref:async-scope-reference.adoc[Async Scope Reference] for information on how to embed an asynchronous processing block in an otherwise synchronous flow.
-* Review the different kinds of xref:flows-and-subflows.adoc[Flows and Subflows] in Mule.
-* Read more about xref:reliability-patterns.adoc[Reliability Patterns].
-* Find out how to xref:tuning-performance.adoc[tune performance] by analyzing and configuring threading profiles.
-* Check out the Asynchronous Message Cheat Sheet on our https://blogs.mulesoft.com/dev/mule-dev/cheat-sheet-asynchronous-message-processing/[MuleSoft Blog].
+* xref:async-scope-reference.adoc[Async Scope Reference]
+* xref:flows-and-subflows.adoc[Flows and Subflows]
+* xref:reliability-patterns.adoc[Reliability Patterns]
+* xref:tuning-performance.adoc[Tune performance]
+* https://blogs.mulesoft.com/dev/mule-dev/cheat-sheet-asynchronous-message-processing/[MuleSoft Blog]

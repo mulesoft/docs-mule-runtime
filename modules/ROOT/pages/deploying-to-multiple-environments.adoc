@@ -2,8 +2,13 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: deploy, deploying, cloudhub, on premises, on premise
 
-Throughout the different phases in the development lifecycle you may wish to deploy an application to multiple different environments, such as Production, QA and Test. You can configure your Mule application to facilitate deployment to one of many different environments, both on-premise and in the cloud. To do so, you must complete the following macro steps:
+Throughout the different phases in the development lifecycle, like QA, pre-production or production, your application may need to be configured differently as server names, credentials and other similar parameters will vary.
+
+As a developer facing this kind of variability, your goal is to produce a single Mule application for all your environments and to externalize all the environment-specific configuration parameters. This is the key to reproducible deployments.
+
+You can configure your Mule application to facilitate deployment to one of many different environments, both on-premises and in the cloud. To do so, you must complete the following macro steps:
 
 . In your application, create a properties file for each environment.
 
@@ -13,24 +18,78 @@ Throughout the different phases in the development lifecycle you may wish to dep
 
 Consider externalizing other aspects of your configuration, like time-out values, polling frequencies, etc... even if they don't vary between environments. This will facilitate tuning and experimenting as the whole Mule application would become configurable through a single properties file.
 
+[TIP]
+====
+Should you need to encrypt passwords in your properties file, consider using the xref:mule-credentials-vault.adoc[Mule Credentials Vault]. Refer to the documentation for xref:anypoint-enterprise-security.adoc[Anypoint Enterprise Security] for more information on securing applications in Mule.
+====
+
 == Assumptions
 
-This document assumes that you are familiar with the exercise of building and deploying Mule applications in Mule Studio. Consider reading the xref:3.7@mule-fundamentals.adoc[Mule Fundamentals] for more information.
+This document assumes that you are familiar with the exercise of building and deploying Mule applications in Mule Studio.
+
+== Basic Anatomy
+
+[WARNING]
+====
+If you're deploying multiple applications through a xref:shared-resources.adoc[Shared Resources] structure, then you shouldn't set anything in the properties files, as there might potentially be conflicts between the various apps that share a domain. Instead, you can set environment variables over the scope of the deployed app, its domain and other apps under that domain.
+
+As explained in the Shared Resources page, in Studio you can create these variables through the *Environment tab* of the *Run Configurations menu*, reachable via the dropdown menu next to the Play button.
+====
+
+Consider the following Mule configuration fragment that defines an HTTP connector with variable configuration:
+
+[source,xml,linenums]
+----
+<http:listener-config name="HttpListenerConfiguration"
+                    doc:name="HTTP Listener Configuration"
+                    host="${mule.env.host}"
+                    port="${mule.env.port}"
+                    basePath="${mule.env.path}" />
+----
+
+This example uses Spring's property placeholder resolution mechanism. The variable bits are clearly visible: the *base path*, *host*, and *port* can vary for each environment where this connector gets deployed in. When deploying your application, `mule.env` can be dynamically replaced by the particular environment you're deploying to, such as `qa` or `prod`.
+
+To provide values for these variables, we use a standard Java properties file:
+
+[source,text,linenums]
+----
+qa.basePath=test/products
+qa.host=localhost
+qa.port=8082
+----
+
+You could then add also a second properties file with other values assigned to the same variables and entirely avoid having to touch your application's code to change these values:
+
+[source,text,linenums]
+----
+prod.basePath=products
+prod.host=www.acme.com
+prod.port=8081
+----
+
+[TIP]
+====
+Use a consistent naming strategy for your properties and make them unique across applications: this will greatly facilitate re-use across teams.
+
+A good strategy is to use the application name or ID in the default and override properties file names.
+====
 
 == Configuring an Application to Deploy in Multiple Environments
+
+Follow the steps below to configure your application with variable properties.
 
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
 . Define a list of environments you wish to support in your application. For example, one common use case involves configuring the application to support both Production and a QA environments.
 
 . Right-click the  `src/main/resources`  folder, then select  *New*  >  *File*   to create a properties file for each environment you wish to support. For example:
-* qa.properties
-* production.properties
+** `qa.properties`
+** `production.properties`
 +
-image::properties-files-alt.png[properties_files]
+image::properties-files.png[properties_files]
 
 . Double-click each of these new files to open them in new tabs in Studio. By editing hem, you can configure the properties of the environment that correspond to the filename. For example, in `production.properties`, you may wish to add the properties as per the image below.  Keep in mind that you can use these properties anywhere in your application.
 +
@@ -38,7 +97,7 @@ image::properties.png[]
 +
 [TIP]
 ====
-Learn how to encrypt a properties file using the xref:3.6@mule-credentials-vault.adoc[Mule Credentials Vault].
+Learn how to encrypt a properties file using the xref:mule-credentials-vault.adoc[Mule Credentials Vault].
 ====
 
 . Close the properties files.
@@ -51,14 +110,14 @@ Learn how to encrypt a properties file using the xref:3.6@mule-credentials-vault
 +
 [TIP]
 ====
-Learn more about xref:3.7@configuring-properties.adoc[configuring variable properties].
+Learn more about xref:configuring-properties.adoc[configuring variable properties].
 ====
 
-. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using xref:3.6@datasense.adoc[DataSense]*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project.
+. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using xref:datasense.adoc[DataSense]*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project.
 +
 [WARNING]
 ====
-If you deploy your application to the cloud, in Studio select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
+If you deploy your application to the cloud, right click on your application on the package explorer and select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
 ====
 
 . Add an environment variable named *`mule.env`* with a value that matches the environment to which you wish to deploy by default (in the image below, the value is `qa`).
@@ -76,10 +135,10 @@ image::runtime-env.png[runtime_env]
 
 . Right-click the  `src/main/resources`  folder, then select  *New*  >  *File*   to create a properties file for each environment you wish to support. For example:
 
-* qa.properties
-* production.properties
+** `qa.properties`
+** `production.properties`
 +
-image::properties-files-alt.png[properties_files]
+image::properties-files.png[properties_files]
 
 . Double-click each of these new files to open them in new tabs in Studio. By editing hem, you can configure the properties of the environment that correspond to the filename. For example, in `production.properties`, you may wish to add the properties as per the image below.  Keep in mind that you can use these properties anywhere in your application.
 +
@@ -87,7 +146,7 @@ image::properties.png[]
 +
 [TIP]
 ====
-Learn how to encrypt a properties file using the xref:3.6@mule-credentials-vault.adoc[Mule Credentials Vault].
+Learn how to encrypt a properties file using the xref:mule-credentials-vault.adoc[Mule Credentials Vault].
 ====
 
 . Close the properties files.
@@ -101,14 +160,14 @@ Learn how to encrypt a properties file using the xref:3.6@mule-credentials-vault
 +
 [TIP]
 ====
-Learn more about xref:3.7@configuring-properties.adoc[configuring variable properties].
+Learn more about xref:configuring-properties.adoc[configuring variable properties].
 ====
 
-. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using xref:3.6@datasense.adoc[DataSense]*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project. +
+. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using xref:datasense.adoc[DataSense]*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project. +
 +
 [WARNING]
 ====
-If you deploy your application to the cloud, right click on your project in the package explorer and select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
+If you deploy your application to the cloud, right click on your application and select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
 ====
 
 .  Add an environment variable named *`mule.env`* with a value that matches the environment to which you wish to deploy by default (in the image below, the value is `qa`).
@@ -170,10 +229,50 @@ To learn more about deploying to test environments in CloudHub, access the *Clou
 ====
 =====
 
+== Overriding Properties
+
+To override some or all of the properties, create a my-mule-app-override.properties file and drop it in `$MULE_HOME/conf`.
+
+Create the properties override file only in the environments where it's needed and with only the properties that actually need to be overridden.
+
+Here is a method of accomplishing this:
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:context="http://www.springframework.org/schema/context"
+  xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core
+            http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+      http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.springframework.org/schema/context
+            http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+  <spring:beans>
+    <context:property-placeholder
+             location="classpath:my-mule-app.properties,
+                       classpath:my-mule-app-override.properties" />
+  </spring:beans>
+</mule>
+----
+
+If your ops team can't drop files in Mule's directory hierarchy, the alternative is to configure the placeholder configurer to pick up the override file from a well-known location, as shown here:
+
+[source,xml,linenums]
+----
+<context:property-placeholder
+         location="classpath:my-mule-app.properties,
+                   file:///etc/mule/conf/my-mule-app-override.properties" />
+----
+
 == See Also
 
-* Learn more about encrypting a properties file using the xref:3.6@mule-credentials-vault.adoc[Mule Credentials Vault].
+* Learn more about encrypting a properties file using the xref:mule-credentials-vault.adoc[Mule Credentials Vault].
 
 * To learn more about deploying to test environments in CloudHub, access the CloudHub Sandbox Environments documentation.
 
-* Learn more about xref:3.7@configuring-properties.adoc[Properties Placeholders] in Mule.
+* Learn more about xref:configuring-properties.adoc[Properties Placeholders] in Mule.
+
+* Learn how to proceed when deploying multiple applications with xref:shared-resources.adoc[Shared Resources]

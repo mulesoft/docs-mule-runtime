@@ -2,14 +2,48 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint, studio, connectors, transports
 
-There are two basic connector structures in Mule: connectors that are endpoint-based and connectors that are operation based. This document describes the general configuration needed for both of these models. Please consult the individual connector's reference information for configuration instructions that are specific to each connector.
+There are two basic connector structures in Mule: operations-based connectors and <<Endpoint-Based Connector Configuration>> connectors. This document describes the general configuration needed for both of these types.
 
-Reference information for all connectors bundled automatically in Anypoint Studio is available via the Reference column in xref:anypoint-connectors.adoc[this table.]
+This document does not provide instructions for specific connectors; to obtain these instructions you will need to consult the desired connector's documentation.
+
+For quick access to reference information on all connectors bundled with Anypoint Studio, perform these steps:
+
+. Go to the xref:anypoint-connectors.adoc[Anypoint Connectors] page.
+
+. Go to the *Accessing Connectors* section.
+
+. Check the *Reference* column in the provided table.
+
+*Note*: HTTP connector changes in Mule 3.6: As of Mule 3.6 and later, the HTTP and HTTPS endpoint-based connectors and transports have been replaced by a single HTTP operation-based connector which supports HTTPS. The legacy endpoint-based HTTP connectors will be removed in a future version.
 
 == Assumptions
 
-This document assumes that you are familiar with Mule and the xref:6@studio::index.adoc[Anypoint Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:6@studio::basic-studio-tutorial.adoc[Anypoint Studio Tutorials]. Further, this example assumes that you have a basic understanding of xref:3.7@mule-concepts.adoc[Mule flows], xref:3.6@global-elements.adoc[Global Elements], and xref:3.7@anypoint-connectors.adoc[Anypoint Connectors].
+This document assumes that you are familiar with Mule and the xref:6@studio::index.adoc[Anypoint Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:6@studio::basic-studio-tutorial.adoc[Anypoint Studio Tutorials]. Further, this example assumes that you have a basic understanding of xref:mule-concepts.adoc[Mule flows], xref:global-elements.adoc[Global Elements], and xref:anypoint-connectors.adoc[Anypoint Connectors].
+
+== Operation-Based Connector Configuration
+
+Operation-based connectors vary too widely to make generic configuration instructions possible. However, at minimum, all operation-based connectors will require the following fields to be configured on the General tab:
+
+[%header%autowidth.spread]
+|===
+|Field |Description
+|*Connector Configuration* |Define global connection parameters. Most operation-based connectors require that the connection credentials be configured at the global level instead of inside the flow where the operation is specified.
+|*Operation* |Select an operation from the drop-down list to specify the function that the connector should perform against the API or protocol.
+|===
+
+Be sure to refer to the connector-specific configuration instructions for guidance on the remaining fields. Information on which connectors are bundled automatically in Anypoint Studio is available at https://www.mulesoft.com/exchange[Anypoint Exchange].
+
+To configure an operation-based connector in your flow:
+
+. *Configure a global connector configuration.* Click the *Global Element* tab below the canvas in Anypoint Studio to create a new global connector configuration, or add a **`<connectorname>:config `**to your flow in the XML editor.
+
+. *Configure connector operation in your flow.* Drag and drop a connector from the palette onto your canvas and select the appropriate operation, or add a  **`<connectorname>:<operation> `**in your flow in the XML editor.
+
+. *Reference the connector configuration from the connector operation.* Click the drop-down next to *Connector Configuration* in the properties editor to select the global connector that you configured in step 1, or add a **`config-ref`** attribute in the XML editor and supply the name of the global connector configuration.
+
+. *Configure any additional parameters necessary for the operation.*
 
 == Endpoint-Based Connector Configuration
 
@@ -29,14 +63,15 @@ Each incoming message must follow the specific protocol supported by the receivi
 image::connector-conf-inf-3.png[connector+conf+inf+3]
 
 [discrete.view]
-=== XML Editor or Standalone
+=== XML Editor
 
 [source,xml,linenums]
 ----
-<flow name="exampleflow" doc:name="exampleflow">
-        <http:inbound-endpoint exchange-pattern="one-way" host="localhost" port="8081" doc:name="HTTP"/>
+<http:request-config name="HTTP_Request_Configuration" host="localhost" port="8083" doc:name="HTTP Request Configuration"/>
+    <flow name="exampleflow2" >
+        <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
         <set-payload doc:name="Set Payload" value="foo"/>
-        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8083" method="POST" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="POST" doc:name="HTTP"/>
         <logger level="INFO" doc:name="Logger" message="bar"/>
     </flow>
 ----
@@ -56,17 +91,18 @@ image::connector-config-ref2.png[connector+config+ref2]
 Drag the Composite Source Scope onto the canvas from the palette, then drag the connectors into the Composite Source Scope processing block. The composite source then allows the each embedded connector to act as a temporary, non-exclusive message source when it receives an incoming message.
 
 [discrete.view]
-=== XML Editor or Standalone
+=== XML Editor
 
 [source,xml,linenums]
 ----
-<flow name="exampleflow2" doc:name="exampleflow2">
+<http:request-config name="HTTP_Request_Configuration" host="localhost" port="8083" doc:name="HTTP Request Configuration"/>
+    <flow name="exampleflow2" >
         <composite-source doc:name="Composite Source">
+            <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
             <jetty:inbound-endpoint exchange-pattern="one-way" address="www.example.com" doc:name="Jetty"/>
-            <http:inbound-endpoint exchange-pattern="one-way" host="localhost" port="8082" doc:name="HTTP"/>
         </composite-source>
         <set-payload doc:name="Set Payload" value="foo"/>
-        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8083" method="POST" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="POST" doc:name="HTTP"/>
         <logger level="INFO" doc:name="Logger" message="bar"/>
     </flow>
 ----
@@ -92,10 +128,10 @@ image::connector-config-ref-4.png[connector+config+ref+4]
 
 [source,xml,linenums]
 ----
-<flow name="exampleflow" doc:name="exampleflow">
-        <http:inbound-endpoint exchange-pattern="one-way" host="localhost" port="8081" doc:name="HTTP"/>
+<flow name="exampleflow2" >
+        <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
         <set-payload doc:name="Set Payload" value="foo"/>
-        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8083" method="POST" doc:name="HTTP"/>
+        <pop3:outbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
         <logger level="INFO" doc:name="Logger" message="bar"/>
     </flow>
 ----
@@ -111,7 +147,7 @@ The *General* tab often provides these fields.
 |===
 |Field |Description
 |*Display Name* |Defaults to the connector name. Change the display name, which must be alpha-numeric, to reflect the endpoint's specific role, e.g., `Order Entry Endpoint`
-|*Exchange-Pattern* |Defines the interaction between the client and server. The available patterns are *one-way* and *request-response*. A one-way exchange-pattern assumes that no response from the server is necessary, while a request-response exchange-pattern waits for the server to respond before it allows message processing to continue.
+|*Exchange-Pattern* |Defines the interaction between the client and server. The available patterns are *one-way* and **request-response**. A one-way exchange-pattern assumes that no response from the server is necessary, while a request-response exchange-pattern waits for the server to respond before it allows message processing to continue.
 |*Host* |The default name is `localhost`. Enter the Fully Qualified Domain Name (FQDN) or IP address of the server.
 |*Port* |The port number used to connect to the server. (For example, 80)
 |*Path* |Allows specification of a path. for example, /enter/the/path
@@ -126,7 +162,7 @@ Depending on the protocol and type (inbound or outbound); these additional param
 |*Polling Frequency* |Time is milliseconds (ms) to check for incoming messages. Default value is 1000 ms.
 |*Output Pattern* |Choose the pattern from a drop down list. Used when writing parsed filenames to disk.
 |*Query Key* |Enter the key of the query to use.
-|*Transaction* |Lets you select the element to use for a transaction. Use the image:add.png[(plus)] button to add Mule transactions.
+|*Transaction* |Lets you select the element to use for a transaction. Use the plus sign button to add Mule transactions.
 
 |*Cron Information* |Enter a cron expression to schedule events by date and time.
 |*Method* |The operation performed on message data. Available options are: *OPTION, GET, HEAD, POST, PUT, TRACE, CONNECT* and *DELETE*.
@@ -155,34 +191,14 @@ The *Transformers* tab often includes these fields.
 |*Global Transformers (Response)* |Enter a list of synchronous transformers that will be applied to the response before it is returned from the transport.
 |===
 
-== Operation-Based Connector Configuration
-
-Operation-based connectors vary too widely to make generic configuration instructions possible. However, at minimum, all operation-based connectors will require the following fields to be configured on the General tab:
-
-[%header%autowidth.spread]
-|===
-|Field |Description
-|*Connector Configuration*	|Define global connection parameters. Most operation-based connectors require that the connection credentials be configured at the global level instead of inside the flow where the operation is specified.
-|*Operation*	|Select an operation from the drop-down list to specify the function that the connector should perform against the API or protocol.
-|===
-
-Be sure to refer to the connector-specific configuration instructions for guidance on the remaining fields.
-
-To configure an operation-based connector in your flow:
-
-. *Configure a global connector configuration*. Click the *Global Element* tab below the canvas in Anypoint Studio to create a new global connector configuration, or add a *<connectorname>:config* to your flow in the XML editor.
-. *Configure connector operation in your flow.* Drag and drop a connector from the palette onto your canvas and select the appropriate operation, or add a  *<connectorname>:<operation>* in your flow in the XML editor.
-. *Reference the connector configuration* from the connector operation.* Click the drop-down next to Connector Configuration in the properties editor to select the global connector that you configured in step 1, or add a *config-ref* attribute in the XML editor and supply the name of the global connector configuration.
-. *Configure any additional parameters necessary for the operation.*
-
 == Global Connector Configuration
 
 Some connectors require that connection information such as username, password, and security tokens be configured in a global element rather than at the level of the message processor within the flow. This global connector configuration maintains the configuration and state, and many connectors of the same type in one application can reference the connector configuration at the global level. For example, a Mule application with four different HTTP connectors may all reference the same globally-configured HTTP connector which defines specifics such as security, protocol, and proxy settings. Because they all reference the same global connector configuration, all four HTTP endpoints behave consistently within the application.
 
-Selected global connector configurations can also be defined as *shared resources* for a domain, then referenced by all applications that reference that same domain. For more information, see xref:3.7@shared-resources.adoc[Shared Resources].
+Selected global connector configurations can also be defined as *shared resources* for a domain, then referenced by all applications that reference that same domain. For more information, see xref:shared-resources.adoc[Shared Resources].
 
-Note that the global element that you configure in Anypoint Studio is called a *Connector Configuration*. The corresponding XML tags are *<connectorName>:config* for operation-based connectors and *<connectorName>:connector* for endpoint-based connectors.
+Note that the global element that you configure in Anypoint Studio is called a *Connector Configuration*. The corresponding XML tags are **<connectorName>:config** for operation-based connectors and **<connectorName>:connector** for endpoint-based connectors.
 
 == See Also
 
-* Return to the xref:3.7@anypoint-connectors.adoc[Anypoint Connectors] main page.
+* Return to the xref:anypoint-connectors.adoc[Anypoint Connectors] main page.

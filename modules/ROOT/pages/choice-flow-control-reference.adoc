@@ -2,30 +2,27 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: anypoint, studio, esb, choice, conditional, if, flow control
 
 The *choice flow control* dynamically routes messages based on message payload or properties. It adds conditional programming to a flow, similar to an `if/then/else` code block.
 
-A choice flow control uses xref:3.7@mule-expression-language-mel.adoc[expressions] to evaluate the content of a message, then it routes the message to one of the *routing options* within its scope (see image below). It directs messages to the first routing option in the scope that matches the routing configurations ( i.e. evaluates to true). If none of expressions evaluate to true, the choice flow control directs the message to the *default* (`i.e. else`) route.
+A choice flow control uses xref:mule-expression-language-mel.adoc[expressions] to evaluate the content of a message, then it routes the message to one of the *routing options* within its scope (see image below). It directs messages to the first routing option in the scope that matches the routing configurations (evaluates to true). If none of expressions evaluate to true, the choice flow control directs the message to the *default* (`else`) route.
 
 image::choice-schematic.png[Choice_schematic]
 
-*<<Complete Example Code>>*
-
 == Adding the Choice Flow Control
-
-
 
 [.ex]
 =====
 [discrete.view]
 === Studio Visual Editor
 
-In Studio, drag the *Choice* icon from the Studio palette to the canvas, positioning it within the sequence of xref:3.7@elements-in-a-mule-flow.adoc[building blocks] that form the flow (below).
+In Studio, drag the *Choice* icon from the Studio palette to the canvas, positioning it within the sequence of xref:elements-in-a-mule-flow.adoc[building blocks] that form the flow (below).
 
 image::choice-flow-2.png[choice+flow+2]
 
 [discrete.view]
-=== Studio XML or Standalone
+=== Studio XML Editor or Standalone
 
 Add a `choice` element in your flow, with one attribute and, at minimum, two child elements as per the table below. Refer to the code sample below.
 
@@ -40,17 +37,18 @@ Add a `choice` element in your flow, with one attribute and, at minimum, two chi
 
 [source,xml,linenums]
 ----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
         <choice doc:name="Choice">
             <when expression="">
             </when>
             <otherwise>
             </otherwise>
         </choice>
-        <scripting:component doc:name="Groovy">
-            <scripting:script engine="Groovy"/>
-        </scripting:component>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
 </flow>
 ----
 =====
@@ -59,255 +57,284 @@ Add a `choice` element in your flow, with one attribute and, at minimum, two chi
 
 To configure the choice flow control, you need to determine the following message routing details:
 
-* the Content the choice flow router should evaluate to determine routing
-* the Number of routing options with which to supply the choice flow control
-* the processing Mule should perform for each routing option
-* the Default routing option
+* Content the choice flow router should evaluate to determine routing
 
-Once you have determined your routing goals, follow this procedure to define the routing options, then the routing instructions.
+* Number of routing options with which to supply the choice flow control
 
-[.ex]
-=====
-[discrete.view]
-=== Studio Visual Editor
+* What processing Mule should perform for each routing option
 
-. Insert message processors within the dashed line area that signifies the choice flow control scope to define the routing options, making sure to place one of them within the "Default" box to define it as the default routing option. You can place several message processors in a chain for each routing option, as needed. In our example, shown below, we have defined three routing options to reply in Spanish, French, or English: +
+* Default routing option
+
+After you determine your routing goals, follow this procedure to define the routing options, then the routing instructions.
+
+. Insert message processors within the dashed line area that signifies the choice flow control scope to define the routing options, making sure to place one of them within the "Default" box to define it as the default routing option. You can place several message processors in a chain for each routing option, as needed. In our example, shown below, we have defined three routing options to reply in Spanish, French, or English:
 +
 image::studio-choice-routingoptions.png[Studio_Choice_routingoptions]
+
+. Click the *Choice Router* building block to open its Properties Editor. Here, enter Mule expressions to define the routing logic that Mule applies to incoming messages (see table below; detailed instructions follow).
 +
+[%header,cols="2*"]
+|===
+a|
+When
 
-Click for more detail
+a|
+Route Message to
 
-.. Drag, then drop a message processor into the blank area above the default box within the dashed line which signifies the scope of the choice flow control. This is the first message processor in the flow control’s first routing option. In the example (below), we use the Expression transformer as the first message processor in the first routing option.
+|` #[flowVars.language == 'Spanish'] ` |`Set Payload`
+|` #[flowVars.language == 'French'] ` |`Set Payload`
+|`Default` |`Variable`
+|===
+
+. In the table, double-click the first empty row under *When*:
 +
-image::drag-to-choice.png[drag_to_choice]
+image::choiceclickhere.png[ChoiceClickHere]
 
-.. To add additional processing steps to a routing option, drag and drop another message processor into the space immediately after the message processor you just added, still within the scope of the choice flow control. In the example (below), we add the Session Variable transformer as the second message processor in the first routing option.
+. In the Route Properties dialog, enter: `#[flowVars.language == 'Spanish']`
 +
-image::drag-session.png[drag_session]
+image::choicerouteproperties.png[ChoiceRouteProperties]
 
-.. To add another routing option, drag and drop a message processor into the choice flow control scope. In the example below, we add an Attachment transformer as our second routing option.
-+
-image::drag-attachment.png[drag_attachment]
+. Click *OK*. This expression tells Mule to look for a flow variable called `language` on the incoming message and check whether it equals Spanish. If this expression evaluates to true, Mule routes the message to the message processor in that path.
 
-.. Next, add a message processor within the "Default" box to set the default routing option. In our example below, we add an FTP connector.
-+
-image::drag-ftp.png[drag_FTP]
+. Click the next empty row, and enter: `#[flowVars.language == 'French']`
 
-. Open the Choice Flow Control's Properties Editor (below)
-+
-image::choice1.png[]
+Just as in the previous row, this expression tells Mule to look for a flow variable called `language` on the incoming message. This time, the expression indicates Mule should check whether `language` equals French. If this expression evaluates to true, Mule routes the message to the message processor in that path.
 
-. Mule displays a table with two columns: When and Route Message to. Notice, in the image above, that Mule displays a line item for each routing option. Mule identifies each routing option by its first message processor. Double-click the first empty line item in the Route Message to column to open the Route Properties panel (below).
-+
-image::studio-choice-routeproperties-expression.png[Studio_Choice_RouteProperties_Expression]
+[start=7]
+. Click *OK* to save the routing configurations.
 
-. In the Expression field, enter an expression for the choice router to use to evaluate the contents of a message. For example:
-#[payload['name'] == null]
-. Repeat the two preceding steps until you have supplied the choice flow control with a When expression for each non-default routing option (see example below).
-+
-image::choice2.png[]
+. Double-click the **Default **line item to open its Route Properties panel.
 
-. Double-click the Default line item to open its Route Properties panel.
 Notice that:
-.. you cannot edit the Expression field
-.. the Otherwise box is checked
+
+.. You cannot edit the *Expression* field
+
+.. The *Otherwise* box is checked
 +
 image::studio-choice-default-routeproperties.png[Studio_Choice_default_routeproperties]
+
+The *Otherwise* box identifies this route as the *Default*  for the choice flow control. If the flow control cannot route a message to any of the preceding routing options in its scope, it directs the message to the default route.
+
+[start=9]
+. Next, click the topmost *Set Payload* building block within your Choice Router scope to open its Properties Editor and set Value to: `Hola!  `
 +
+image::holaamigos.png[HolaAmigos]
 
-The Otherwise box identifies this route as the Default for the choice flow control. If the flow control cannot route a message to any of the preceding routing options in its scope, it directs the message to the default route.
+If Mule finds the flow variable `language=Spanish`, your message produces this payload as a response.
 
+. Click the next *Set Payload* building block for *Reply in French* and set the value to:
 +
-. Click OK to save the routing configurations.
-. As it processes messages, Mule evaluates the expressions defined in your routing options in order, top down, until one of them evaluates to "true". If necessary, drag and drop building blocks within the choice flow control scope on the canvas to reorder routing options.
+[source,text,linenums]
+----
+Bonjour!
+----
 
-[discrete.view]
-=== Studio XML Editor or Standalone
+If Mule finds the flow variable `language=French`, your message produces this payload as a response.
 
-. To the first when element within your choice element, add message processors as child elements to form a routing option to which the choice element can direct messages. In the code sample below, we have added an expression-transformer and a session-variable-transformer.
+[start=10]
+. Click the *Variable Transformer* inside the Default box to open its Properties Editor, then configure it as:
 +
+image::varsetlangtoenv.png[VarSetLangToEnv]
 
+This Variable Transformer, and the Set Payload that follows it, are only invoked if neither of the expressions in the choice routing logic evaluate to true. Thus, if Mule does not find either the flow variable `language=Spanish` or the flow variable `language=French`, Mule routes the message to this default processing option, which sets the flow variable `language` with the value `English`.
+
+[NOTE]
+====
+Note that in this configuration you are setting a literal value for the variable, rather than using Mule expression language to extract a value from the message, as you did in the previous Variable Transformer.
+====
+
+[start=12]
+. Click the *Set Payload* after the Variable Transformer inside the Default box to open its Properties Editor, then configure it as:
++
+image::setpayloadenglish.png[SetPayLoadEnglish]
+
+This Set Payload transformer sets a payload for the default option you configured above in your choice routing logic.
+
+. As it processes messages, Mule evaluates the expressions defined in your routing options in order, top down, until one of them evaluates to "true".
+
+If necessary, drag and drop building blocks within the choice flow control scope on the canvas to reorder routing options.
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. To the first `when` element within your choice element, add message processors as child elements to form a routing option to which the choice element can direct messages. Add as many additional `when` elements as needed.
++
 [source,xml,linenums]
 ----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
         <choice doc:name="Choice">
             <when expression="">
-                <expression-transformer doc:name="Expression"/>
-                <session-variable-transformer doc:name="Session Variable"/>
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+            </when>
+            <when expression="">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
             </when>
             <otherwise>
             </otherwise>
         </choice>
-        <scripting:component doc:name="Groovy">
-            <scripting:script engine="Groovy"/>
-        </scripting:component>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
 </flow>
 ----
 
+. Configure the contents of the `otherwise` child element to define the default routing option to which your choice router can direct messages if all the previous when expressions evaluate to false. Refer to code sample below.
 +
-. Configure the contents of one or more additional when elements to define multiple routing options for your choice element. Refer to code sample below.
-. Configure the contents of the otherwise child element to define the default routing option to which your choice router can direct messages if all the previous when expressions evaluate to false. Refer to code sample below.
-+
-
 [source,xml,linenums]
 ----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
         <choice doc:name="Choice">
             <when expression="">
-                <expression-transformer doc:name="Expression"/>
-                <session-variable-transformer doc:name="Session Variable"/>
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
             </when>
             <when expression="">
-                <attachment-transformer doc:name="Attachment"/>
-             </when>
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+            </when>
             <otherwise>
-                 <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+                <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+                <set-payload value="Hello!" doc:name="Reply in English"/>
             </otherwise>
         </choice>
-        <scripting:component doc:name="Groovy">
-            <scripting:script engine="Groovy"/>
-        </scripting:component>
-    </flow>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
 ----
 
-. For each when element, enter an expression for the choice router to use to evaluate the contents of a message. If, during processing, the expression associated with a routing option evaluates to true, Mule directs the message to that route. Refer to example expression below.
-
-
+. For each `when` element, enter an expression for the choice router to use to evaluate the contents of a message. If, during processing, the expression associated with a routing option evaluates to true, Mule directs the message to that route. Refer to example expression below.
++
 [source,xml,linenums]
 ----
-<when expression="#[payload['name'] == null]">
+<when expression="#[flowVars.language == 'Spanish']">
 ----
 
-. As it processes messages, Mule evaluates the expressions defined in your routing options in the order they appear in the config, top down, until one of them evaluates to "true". Adjust the order of the when elements in your flow with this in mind.
+.  As it processes messages, Mule evaluates the expressions defined in your routing options in the order they appear in the config, top down, until one of them evaluates to "true". Adjust the order of the `when` elements in your flow with this in mind.
 
-[discrete]
-==== Configuration Summary
+=== Configuration Summary
 
 [%header%autowidth.spread]
 |===
 |Element |Description
-|*choice*	|Dynamically routes messages based on message payload or properties, adding conditional programming to a flow, similar to an if/then/else code block.
+|*choice* |Dynamically routes messages based on message payload or properties, adding conditional programming to a flow, similar to an `if/then/else` code block.
 |===
 
-[%header%autowidth.spread]
+[%header,cols="2*"]
 |===
 |Element Attribute |Description
-|*doc:name*	|Customize to display a unique name for the flow control in your application. +
- +
+|*doc:name* a|
+Customize to display a unique name for the flow control in your application.
+
 Note: Attribute not required in Mule Standalone configuration.
+
 |===
 
 [%header%autowidth.spread]
 |===
 |Child Element |Description
-|*when*	|Use to define all non-default routing options within the choice flow control.
+|*when* |Use to define all non-default routing options within the choice flow control.
 |===
 
 [%header%autowidth.spread]
 |===
 |Child Element Attribute |Value |Description
-|*expression*	|Mule expression	|Use MEL to define an expression that the choice router will use to evaluate the contents of a message. If the expression evaluates to "true", Mule directs the message to this routing option.
+|*expression* |Mule expression |Use MEL to define an expression that the choice router will use to evaluate the contents of a message. If the expression evaluates to "true", Mule directs the message to this routing option.
 |===
 
 [%header%autowidth.spread]
 |===
 |Child Element |Description
-|*otherwise*	|Use to define the default routing option for the message, should none of the preceding when expressions evaluate to "true"
+|*otherwise* |Use to define the default routing option for the message, should none of the preceding `when` expressions evaluate to "true"
 |===
-=====
+
+[TIP]
+To run and test this example, you might find it useful to take a look at xref:general:getting-started:content-based-routing.adoc[Content-Based Routing]. There you'll find details about the configuration of the other building blocks in the flow, as well as instructions on how to send requests to it.
 
 == Changing the Default Route
 
 You can change the choice flow control configuration to identify a different default routing option.
 
-[.ex]
-=====
-[discrete.view]
-=== Studio Visual Editor
-
-. Open the Choice Flow Control's Properties Editor, then, in the table, double-click the line item of whichever routing option that you would like to specify as the new default route. +
+. Open the Choice Flow Control's Properties Editor, then, in the table, double-click the line item of whichever routing option that you would like to specify as the new default route.
 +
 image::choice-select-default-1.png[choice+select+default+1]
 
-. Check the *Otherwise* box (see below), then click *OK*.  +
+. Check the *Otherwise* box (see below), then click *OK*.
 +
 image::select-default.png[select+default]
 
-. Mule applies the *Default* label to the new default routing option in the table on the Properties Editor (below). (Note that the English routing option now needs a "when" expression defined.) +
+. Mule applies the *Default* label to the new default routing option in the table on the Properties Editor (below). (Note that the English routing option now needs a "when" expression defined.)
 +
 image::select-default-2.png[select+default+2]
 
-. Define a when expression for the routing option previously identified as the default. (In the example, the FTP routing option.)
-
-[discrete.view]
-=== Studio XML Editor or Standalone
-
+. Define a `when` expression for the routing option previously identified as the default. (In the example, the english routing option.)
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
 Adjust your XML configuration to swap the contents of a `when` element and the `otherwise` element.
 
 The code sample below has been adjusted to make the Spanish language the default routing option and change the English language to a `when` element. Note that the `otherwise` element requires no further configuration, but we defined a new expression for the new `when` element.
 
 [source,xml,linenums]
 ----
-<flow name="ChoiceFlowFlow1" doc:name="ChoiceFlowFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
         <choice doc:name="Choice">
-            <when expression="#[payload['name'] == null]">
-                <expression-transformer doc:name="Expression"/>
-                <session-variable-transformer doc:name="Session Variable"/>
+            <when expression="#[flowVars.language == 'french']">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+             </when>
+            <otherwise >
+                <set-variable variableName="language" value="spanish" doc:name="Set Language to Spanish"/>
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+             </otherwise>
+            <when expression="#[flowVars.language == 'english']">
+                <set-payload value="Hello!" doc:name="Reply in English"/>
             </when>
-            <when expression="#[payload['amount'] &gt; 30000]">
-                <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
-            </when>
-            <otherwise>
-                <attachment-transformer doc:name="Attachment"/>
-            </otherwise>
         </choice>
-        <scripting:component doc:name="Groovy">
-            <scripting:script engine="Groovy"/>
-        </scripting:component>
-    </flow>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
 ----
-=====
 
 == Complete Example Code
 
 [source,xml,linenums]
 ----
-<?xml version="1.0" encoding="UTF-8"?>
-
-<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-    xmlns:spring="http://www.springframework.org/schema/beans"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd
-http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
-
-    <flow name="choiceFlow1" doc:name="choiceFlow1">
-        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
         <choice doc:name="Choice">
-            <when expression="#[payload['amount'] &gt; 30000]">
-                <attachment-transformer doc:name="Attachment"/>
-            </when>
-            <when expression="#[payload['name'] == null]">
-                <expression-transformer doc:name="Expression"/>
-                <session-variable-transformer doc:name="Session Variable"/>
-            </when>
-            <otherwise>
-                <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
-            </otherwise>
+            <when expression="#[flowVars.language == 'french']">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+             </when>
+            <when expression="#[flowVars.language == 'spanish']">
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+             </when>
+            <otherwise >
+                <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+                <set-payload value="Hello!" doc:name="Reply in English"/>
+             </otherwise>
         </choice>
-        <scripting:component doc:name="Groovy">
-            <scripting:script engine="Groovy"/>
-        </scripting:component>
-    </flow>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
 </mule>
 ----
 
+The flow for this example is:
+
+image::finalflow.png[FinalFlow]
+
 == See Also
 
-* For more information on the Choice Flow Control, see the xref:3.6@routers.adoc[Choice] section on the Routing Message Processors page.
+* For more information on the Choice Flow Control, see the xref:routers.adoc[Choice] section on the Routing Message Processors page.

@@ -2,10 +2,11 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: expression component, native code, legacy code, python, groovy, custom code
 
-In spite of the rich selection of elements available in Mule, you may find yourself in need to put together some custom code to carry out part of a complex task. If you're comfortable coding in Ruby, then the Ruby Component is the ideal versatile tool to fall back on for these cases. Mule also includes equivalent scripting components for other languages. The Ruby Component is also handy for modernizing legacy systems, as you can simply throw the old lines of code into a component instead of having to re-engineer the code's behavior through a series of different Mule components. The Python script is generally executed at runtime (client-side request); the custom logic embedded in the script can be used to trigger an application to execute a database transaction, or modify your web-page interface.
+In spite of the rich selection of elements available in Mule, you may find yourself in need to put together some custom code to carry out part of a complex task, if you're comfortable coding in Ruby, then the Ruby Component is the ideal versatile tool to fall back on for these cases. Mule also includes also equivalent scripting components for other languages. The Ruby Component is also handy for when you're modernizing legacy systems, as you can simply throw the old lines of code into a component instead of having to reengineer the code's behavior through a series of different Mule components (this is not ideal from a debugging and maintenance perspective, though). The Python script is generally executed at runtime (client-side request) and the custom logic embedded in the script could trigger an application to execute a database transaction, or modify your web-page interface.
 
-Python also allows the developer to configure interceptors and alter the values or references of particular properties in a script. Interceptors are configured to provide additional services to a message as it flows through a component. For example, a developer can configure an interceptor to execute scheduling or logging of a particular event while a message is being processed. The Python component also includes a custom interceptor which allows you to configure settings for Spring elements. Use the Advanced tab to access Script Properties, then define the value and reference for a particular property in the script.
+Python also allows the developer to configure interceptors and alter the values or references of particular properties in a script. Interceptors are configured to provide additional services to a message as it flows through a component. For example, a developer can configure an interceptor to execute scheduling or logging of a particular event while a message is being processed. The Python component also includes a custom interceptor which allows you to configure settings for Spring elements. Use the *Advanced* tab to access *Script Properties*, then define the value and reference for a particular property in the script.
 
 When using Python, typing-in or appending a script to the component is the only configuration required.
 
@@ -20,18 +21,18 @@ To configure the Python component, from the Message Flow canvas double-click the
 
 image::python-general.png[python_general]
 
-[%header,cols="25s,75a"]
+[%header,cols="2*"]
 |===
 |Panel |Description
 |Display |Defaults to the generic component name. Change the Display Name, which must be alpha-numeric, to reflect the component's specific role, that is, `Welcome Page Python Script`.
-|Script |Script Text: Type the script that the component  loads directly into this space. +
+|Script |Script Text: Type the script that the component loads directly into this space. +
 Script File: Enter the location of the script to be loaded by the component. The file can reside on the classpath or the local file system. +
 Bean Reference: Lets you add a Java bean, which encapsulates multiple objects into a single bean. The Script component can then store and re-use the bean when applicable.
 |===
 
 === Advanced Tab
 
-Use the Advanced tab to optionally configure interceptors and, depending on the interceptor, enter Spring values. You also have the option to specify script properties, which are key/value pairs used to alter or change properties in the script. See the xref:script-component-reference.adoc[Script Component Reference] page for information on using the advanced tab.
+Use the Advanced tab to optionally configure interceptors and, depending on the interceptor, enter Spring values.You also have the option to specify script properties, which are key/value pairs used to alter or change properties in the script. See the xref:script-component-reference.adoc[Script Component Reference] page for information on using the advanced tab.
 
 image::python-advanced.png[python_advanced]
 
@@ -39,13 +40,90 @@ image::python-advanced.png[python_advanced]
 
 Interceptors alter the values or references of particular properties in a script. They are configured to provide additional services to a message as it flows through a component. For example, you can configure an interceptor to execute scheduling or logging of a particular event while a message is being processed. The Script component also includes a custom interceptor which allows you to configure settings for Spring elements.
 
-Interceptors enable the developer to provide additional services to the component such as the ability to log transactions and the ability to log the time for each transaction. Use Add Custom Interceptor to create a custom interceptor that can reference Spring objects. The Interceptor Stack enables you to bundle multiple interceptors. Use the Interceptor Stack to apply multiple interceptors on a Python component. The interceptors are applied in the order defined in the stack.
+For example, you can add an interceptor that logs transactions and the time for each transaction. Use the *Add Custom Interceptor* to create a custom interceptor that can reference Spring objects. The *Interceptor Stack* enables you to bundle multiple interceptors. Use the Interceptor Stack to apply multiple interceptors on a Python component. The interceptors are applied in the order defined in the stack.
 
 === Script Properties
 
 Configure these parameters to define the attribute keys and their associated values. This enables the script component to quickly look up a value associated with a key.
 
+== Adding External Libraries
+
+In Mule, Python is used through http://www.jython.org[Jython]. This library requires to set the environment variable http://www.jython.org/archive/22/userfaq.html#id33[python.path] to correctly find the external libraries.
+
+When deploying to a customer managed Mule runtime (one that's deployed on-premises), then you can set the `python.path` property directly in the `wrapper.conf` file. See xref:configuring-properties.adoc#system-properties[system properties] for a better understanding of how to set it.
+
+When deploying to a MuleSoft managed Mule runtime (deployed to CloudHub), then you must add an xref:runtime-manager::secure-application-properties.adoc[application property] to your deployed application. Name this property python.path and set it to */opt/mule/mule-CURRENT/apps/<APPNAME>/classes*.
+
+== Examples
+
+The example below uses the http://en.wikipedia.org/wiki/Change-making_problem[“Greedy Coin Changer” algorithm] to transform one currency into another.  It uses some transformers to transform the input data and then applies a Python algorithm to convert the currency.
+
+[source,xml,linenums]
+----
+<http:listener-config name="http_conf" host="localhost" port="8081" doc:name="HTTP Response Configuration"/>
+<flow name="greedy">
+    <http:listener path="/" doc:name="HTTP Connector" config-ref-inbound="http_conf"/>
+    <http:body-to-parameter-map-transformer />
+
+    <set-payload value="#[payload['amount']]" />
+    <transformer ref="StringToNumber" />
+    <transformer ref="DollarsToCents"/>
+
+
+    <scripting:component doc:name="GBP Currency Script">
+        <scripting:script file="greedy.py">
+            <property key="currency" value="GBP"/>
+        </scripting:script>
+    </scripting:component>
+
+</flow>
+----
+
+Below are the contents of the python file that implements the algorithm:
+
+[source,python,linenums]
+----
+# Adapted from "Python Algorithms: Greedy Coin Changer" by Noah Gift
+# http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html
+
+import sys
+
+class Change:
+    def __init__(self, currency, amount):
+        self.amount = amount
+        if currency == "USD":
+            self.coins = [1,5,10,25]
+            self.coin_lookup = {25: "quarters", 10: "dimes", 5: "nickels", 1: "pennies"}
+        elif currency == "GBP":
+            self.coins = [1,2,5,10,20,50,100,200]
+            self.coin_lookup = {200: "two_pounds", 100: "pounds", 50: "fifty_pence", 20: "twenty_pence", 10: "ten_pence", 5: "five_pence", 2: "two_pence", 1: "pennies"}
+        #else:
+        #   print "Currency $currency not recognized"
+        #   exit 1
+        self.result = ""
+
+    def printer(self,num,coin):
+        if num:
+            if coin in self.coin_lookup:
+                if self.result == "":
+                    self.result = '%1.0f %s' % (num, self.coin_lookup[coin])
+                else:
+                    self.result = '%s, %1.0f %s' % (self.result, num, self.coin_lookup[coin])
+
+    def recursive_change(self, rem):
+        if len(self.coins) == 0:
+            return []
+        coin = self.coins.pop()
+        num, new_rem = divmod(rem, coin)
+        self.printer(num,coin)
+        return self.recursive_change(new_rem) + [num]
+
+c = Change(currency, payload)
+c.recursive_change(c.amount)
+result = "[" + c.result + "]"
+----
+
 == See Also
 
 * Refer to the generic xref:script-component-reference.adoc[Script Component Reference] to see how a script works with one-way and request-response connectors.
-* For more information see the Mule page xref:scripting-module-reference.adoc[Scripting Module].
+* For more information see the Mule ESB page xref:scripting-module-reference.adoc[Scripting Module].

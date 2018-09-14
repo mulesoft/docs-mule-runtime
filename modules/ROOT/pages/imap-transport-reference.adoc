@@ -2,8 +2,9 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:keywords: email, transport, pop3, smtp, imap
 
-The IMAP transport can be used for receiving messages from IMAP inboxes using the `javax.mail API`. The IMAPS Transport uses secure connections over SSL/TLS.
+The IMAP transport can be used for receiving messages from IMAP inboxes using the `javax.mail` API. The IMAPS Transport uses secure connections over SSL/TLS.
 
 Using the IMAP transport provides a simple way to interact with an IMAP server without having to write your own IMAP client. It allows you to log in to an IMAP server at a specified frequency, pull messages from the server, optionally filter them based on the email subject, and transform them into standard java objects which you can use in your application.
 
@@ -11,31 +12,96 @@ TLS/SSL connections are made on behalf of an entity, which can be anonymous or i
 
 == Transport Info
 
-[%header%autowidth.spread]
+[%header,cols="10,9,9,9,9,9,9,9,9,9,9"]
 |===
-|Transport |Doc |Inbound |Outbout |Request |Transaction |Streaming |Retries |MEPs |Default MEP |Maven Artifact
-|IMAP |[JavaDoc Sechema Doc] |image:check.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |one-way |one-way |org.mule.transport:mule-transport-imap
-|IMAPS |[JaveDoc SchemaDoc] |image:check.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |one-way |one-way |org.mule.transport:mule-transport-imaps
+a|
+Transport
+
+ a|
+Doc
+
+ a|
+Inbound
+
+ a|
+Outbound
+
+ a|
+Request
+
+ a|
+Transactions
+
+ a|
+Streaming
+
+ a|
+Retries
+
+ a|
+MEPs
+
+ a|
+Default MEP
+
+ a|
+Maven Artifact
+
+|IMAP
+a|* https://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/transport/email/package-summary.html[JavaDoc]
+* http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_imap/namespace-overview.html[SchemaDoc] |image:check.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |one-way |one-way |org.mule.transport:mule-transport-imap
+
+|IMAPS
+a|* https://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/transport/email/package-summary.html[JavaDoc]
+* http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_imaps/namespace-overview.html[SchemaDoc] |image:check.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |image:error.png[] |one-way |one-way |org.mule.transport:mule-transport-imaps
 |===
 
-//collapsed content//
-Legend
-
-* *Transport* - The name/protocol of the transport
-* *Docs* - Links to the JavaDoc and SchemaDoc for the transport
-* *Inbound* - Whether the transport can receive inbound events and can be used for an inbound endpoint
-* *Outbound* - Whether the transport can produce outbound events and be used with an outbound endpoint
-* *Request* - Whether this endpoint can be queried directly with a request call (via MuleClient or the EventContext)
-* *Transactions* - Whether transactions are supported by the transport. Transports that support transactions can be configured in either local or distributed two-phase commit (XA) transaction.
-* *Streaming* - Whether this transport can process messages that come in on an input stream. This allows for very efficient processing of large data. For more information, see Streaming.
-* *Retry* - Whether this transport supports retry policies. Note that all transports can be configured with Retry policies, but only the ones marked here are officially supported by MuleSoft
-* *MEPs* - Message Exchange Patterns supported by this transport
-* *Default MEP* - The default MEP for endpoints that use this transport that do not explicitly configure a MEP
-* *Maven Artifact* - The group name a artifact name for this transport in [Maven].
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:email="http://www.mulesoft.org/schema/mule/email"
+      xsi:schemaLocation="
+      http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.6/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.6/mule-imap.xsd
+      http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.6/mule-email.xsd
+      http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.6/mule-vm.xsd">
+<imap:connector name="imapConnector"  />
+<expression-transformer name="returnAttachments">
+  <return-argument evaluator="attachments-list" expression="*" optional="false"/> ❶
+</expression-transformer>
+<file:connector name="fileName">
+  <file:expression-filename-parser/>
+</file:connector>
+  <imaps:connector name="imapsConnector"> ❶
+  <imaps:tls-client path="clientKeystore" storePassword="mulepassword" />
+  <imaps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+</imaps:connector>
+<flow name="incoming-orders">
+  <imap:inbound-endpoint user="bob" password="password"
+   host="emailHost" port="143" transformer-refs="returnAttachments"
+   disableTransportTransformer="true"/> ❷
+  <collection-splitter/>
+  <file:outbound-endpoint path="./received"
+    outputPattern="#[function:datestamp].dat"> ❹
+    <expression-transformer>
+      <return-argument expression="payload.inputStream" evaluator="groovy" /> ❺
+    </expression-transformer>
+  </file:outbound-endpoint>
+  </flow>
+</mule>
+----
 
 == Namespace and Syntax
 
-=== XML namespace:
+XML namespace:
 
 [source,text,linenums]
 ----
@@ -43,15 +109,15 @@ xmlns:imap "http://www.mulesoft.org/schema/mule/imap"
 xmlns:imaps "http://www.mulesoft.org/schema/mule/imaps"
 ----
 
-=== XML Schema Location
+XML Schema location:
 
 [source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd
-http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd
+http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.6/mule-imap.xsd
+http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.6/mule-imaps.xsd
 ----
 
-=== Connector Syntax
+Connector syntax:
 
 [source,xml,linenums]
 ----
@@ -64,27 +130,25 @@ http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/im
 </imaps:connector>
 ----
 
-=== Endpoint Syntax
+Endpoint syntax:
+ You can define your endpoints 2 different ways:
 
-You can define your endpoints in 2 different ways
-
-. Prefixed Endpoint
+. Prefixed endpoint:
 +
-[source,text,linenums]
- ----
- <imap:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
+[source,xml,linenums]
+----
+<imap:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
 <imaps:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
- ----
-
+----
 . Non-prefixed URI:
 +
-[source,text,linenums]
- ----
- <inbound-endpoint address="imap://bob:password@localhost:65433"/>
+[source,xml,linenums]
+----
+<inbound-endpoint address="imap://bob:password@localhost:65433"/>
 <inbound-endpoint address="imaps://bob:password@localhost:65433"/>
- ----
+----
 
-See the selections below for more information.
+See the sections below for more information.
 
 == Features
 
@@ -107,8 +171,8 @@ If you want to include the IMAP email transport in your configuration, these are
        xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
        xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
-       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.6/mule-imap.xsd">
 ...
 ----
 
@@ -123,8 +187,8 @@ For the secure version, you would use the following:
        xmlns:imaps="http://www.mulesoft.org/schema/mule/imaps"
        xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
-       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.6/mule-imaps.xsd">
 ...
 ----
 
@@ -148,11 +212,11 @@ The built-in transformer is declared ❶ and gets the list of email attachments.
        xmlns:email="http://www.mulesoft.org/schema/mule/email"
        xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
-       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.5/mule-file.xsd
-       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd
-       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.5/mule-email.xsd
-       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.5/mule-vm.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.6/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.6/mule-imap.xsd
+       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.6/mule-email.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.6/mule-vm.xsd">
 
     <imap:connector name="imapConnector"  />
 
@@ -179,6 +243,8 @@ The built-in transformer is declared ❶ and gets the list of email attachments.
 
 The IMAPS connector has tls client and server keystore information ❶. The built-in transformer is declared ❷ and gets the list of email attachments. This transformer is then applied to the inbound endpoint ❸. Then we define a list list-message-splitter-router ❹ which iterates through all of the email attachments. Next we define a file outbound endpoint that writes the attachment to the './received' directory with a datestamp as the file name ❺. A simple groovy expression ❻ gets the inputStream of the attachment to write the file.
 
+//github below?
+
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
@@ -200,25 +266,25 @@ The IMAPS connector has tls client and server keystore information ❶. The buil
     <imap:connector name="imapConnector"  />
 
     <expression-transformer name="returnAttachments">
-        <return-argument evaluator="attachments-list" expression="*" optional="false"/> â¶
+        <return-argument evaluator="attachments-list" expression="*" optional="false"/> ❶
     </expression-transformer>
 
     <file:connector name="fileName">
         <file:expression-filename-parser/>
     </file:connector>
 
-    <imaps:connector name="imapsConnector"> â¶
+    <imaps:connector name="imapsConnector"> ❶
         <imaps:tls-client path="clientKeystore" storePassword="mulepassword" />
         <imaps:tls-trust-store path="greenmail-truststore" storePassword="password" />
     </imaps:connector>
 
         <flow name="incoming-orders">
             <imap:inbound-endpoint user="bob" password="password" host="emailHost"
-                     port="143" transformer-refs="returnAttachments" disableTransportTransformer="true"/> â·
+                     port="143" transformer-refs="returnAttachments" disableTransportTransformer="true"/> ❷
             <collection-splitter/>
-            <file:outbound-endpoint path="./received" outputPattern="#[function:datestamp].dat"> â¹
+            <file:outbound-endpoint path="./received" outputPattern="#[function:datestamp].dat"> ❹
                 <expression-transformer>
-                    <return-argument expression="payload.inputStream" evaluator="groovy" /> âº
+                    <return-argument expression="payload.inputStream" evaluator="groovy" /> ❺
                 </expression-transformer>
             </file:outbound-endpoint>
         </flow>
@@ -229,36 +295,39 @@ The IMAPS connector has tls client and server keystore information ❶. The buil
 
 === Connectors
 
-The IMAP connector supports all the [common connector attributes and properties] and the following additional attributes:
+The IMAP connector supports all the xref:configuring-a-transport.adoc[common connector attributes and properties] and the following additional attributes:
 
-[%header%autowidth.spread]
+[%header,cols="4*"]
 |===
 |Attribute |Description |Default |Required
 |backupEnabled |Whether to save copies to the backup folder |False |No
-|backupFolder |The folder where messages are moved after they have been read | |No
-|checkFrequency |Period (ms) between poll connections to server |60000 |Yes
-|mailboxFolder |The remote folder to check for email |INBOX |No
-|deleteReadMessages |Whether to delete messages from the server when they have been downloaded. If set to false, the message are set to defaultProcessMessageAction attribute value. |True |No
-|moveToFolder a|The remote folder to move all mail once it has been read. It is recommended that "deleteReadMessage" is set to false when this is used.
-
-This is very useful when working with public email services such as Gmail where marking messages for deletion doesn't work. Instead set `@moveToFolder=Gmail/Trash`. | |No
-|defaultProcessMessageAction |The action performed if the deleteReadMessage attribute is not set to false. Valid values are: ANSWERED, DELETED, DRAFT, FLAGGED, RECENT, SEEN, USER, and NONE. |SEEN |No
+|backupFolder |The folder where messages are moved after they have been read. |  |No
+|checkFrequency |Period (ms) between poll connections to the server. |60000 |Yes
+|mailboxFolder |The remote folder to check for email. |INBOX |No
+|deleteReadMessages |Whether to delete messages from the server when they have been downloaded. If set to false, the messages are set to defaultProcessMessageAction attribute value. |true |No
+|moveToFolder |The remote folder to move mail to once it has been read. It is recommended that 'deleteReadMessages' is set to false when this is used. +
+This is very useful when working with public email services such as GMail where marking messages for deletion doesn't work. Instead set `@moveToFolder=GMail/Trash`. |  |No
+|defaultProcessMessageAction |The action performed if the deleteReadMessages attribute is set to false. Valid values are: ANSWERED, DELETED, DRAFT, FLAGGED, RECENT, SEEN, USER, and NONE |SEEN |No
 |===
 
 For the secure version, the following elements are also required:
 
-[%header%autowidth.spread]
+[%header,cols="2*"]
 |===
-|Element |Dscription
-|tis-client a|Configues the client key store with the following attributes:
+|Element |Description
+|tls-client a|
+Configures the client key store with the following attributes:
 
-* path: The location which will be resolved relative to the current classpath and file system, if possible) of the keystore that contains public certificates and private keys for identification
+* path: The location (which will be resolved relative to the current classpath and file system, if possible) of the keystore that contains public certificates and private keys for identification
 * storePassword: The password used to protect the keystore
 * class: The type of keystore used (a Java class name)
-|tis-trust-store a|Configures the trust store. The attributes are:
+
+|tls-trust-store a|
+Configures the trust store. The attributes are:
 
 * path: The location (which will be resolved relative to the current classpath and file system, if possible) of the trust store that contains public certificates of trusted servers
-* storePassword: The password used to protect the trust stor
+* storePassword: The password used to protect the trust store
+
 |===
 
 For example:
@@ -272,8 +341,8 @@ For example:
        xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
        xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
-       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.6/mule-imap.xsd">
 
     <imap:connector name="imapConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
                     deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
@@ -291,8 +360,8 @@ Secure version:
        xmlns:imaps="http://www.mulesoft.org/schema/mule/imaps"
        xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
-       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.6/mule-imaps.xsd">
 
     <imaps:connector name="imapsConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
                      deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
@@ -304,7 +373,7 @@ Secure version:
 
 === Endpoints
 
-IMAP and IMAPS endpoints include details about connecting to an IMAP mailbox. You [configure the endpoints] just as you would with any other transport, with the following additional attributes:
+IMAP and IMAPS endpoints include details about connecting to an IMAP mailbox. You xref:endpoint-configuration-reference.adoc[configure the endpoints] just as you would with any other transport, with the following additional attributes:
 
 * *user*: The user name of the mailbox owner.
 * *password*: The password of the user. Note that for Mule Runtime versions prior to 3.8.x, you need to escape the % character using %25 (HTML code for %).
@@ -325,7 +394,7 @@ Secure version:
 <imaps:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
 ----
 
-You can also define the endpoints using URI syntax:
+You can also define the endpoints using a URI syntax:
 
 [source,xml,linenums]
 ----
@@ -335,15 +404,15 @@ You can also define the endpoints using URI syntax:
 
 This will log into the `bob` mailbox on `localhost` on port 65433 using password `password`. You can also specify the endpoint settings using a URI, but the above syntax is easier to read.
 
-For more information about transformers, see the [Transformer] section in the Email Transport Reference.
+For more information about transformers, see the xref:email-transport-reference.adoc[Transformers] section in the Email Transport Reference.
 
-For more information about filters, see [Filters] section in the Email Transport Reference.
+For more information about filters, see the xref:email-transport-reference.adoc[Filters] section in the Email Transport Reference.
 
-=== Maven Module
+== Maven Module
 
-The email transports are implemented by the mule-trasport-email module. You can find the source for the email transport under transport/email.
+The email transports are implemented by the mule-transport-email module. You can find the source for the email transport under transports/email.
 
-If you are using Maven to build your application, use the following dependency snippet to include the email transport in your project:
+If you are using maven to build your application, use the following dependency snippet to include the email transport in your project:
 
 [source,xml,linenums]
 ----
@@ -355,4 +424,4 @@ If you are using Maven to build your application, use the following dependency s
 
 == Limitations
 
-For more information about the limitations, see the [Limitations] section in the Email Transport Reference.
+For more information about the limitations, see the xref:email-transport-reference.adoc[Limitations] section in the Email Transport Reference.
