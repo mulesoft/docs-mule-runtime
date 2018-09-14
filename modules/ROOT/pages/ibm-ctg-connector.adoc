@@ -77,7 +77,7 @@ For Maven dependency management, include this XML snippet in your `pom.xml` file
 <dependency>
   <groupId>org.mule.modules</groupId>
   <artifactId>mule-ibmctg-connector</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
 </dependency>
 ----
 
@@ -107,11 +107,11 @@ The IBM CTG connector provides the following global configuration:
 |CTG Trace |If checked, all debug levels of CTG tracing are turned on. Default value is false.
 |Required Dependencies |
 
-* `ccf2.jar` (CICS Common Connector Framework)
-* `cicsjee.jar` (CICS JEE)
-* `ctgclient.jar` (CTG Client Library)
-* `ctgserver.jar` (CTG Server Library)
-* `geronimo-j2ee-connector_1.6_spec-1.0.jar`
+* ccf2.jar (CICS Common Connector Framework)
+* cicsjee.jar (CICS JEE)
+* ctgclient.jar (CTG Client Library)
+* ctgserver.jar (CTG Server Library)
+* geronimo-j2ee-connector_1.6_spec-1.0.jar
 
 *Note:* Use the JAR files that come bundled within the installation of the CTG server instead of downloading the SDK ZIP from IBM's website to ensure the compatibility between the connector and the CTG system.
 |===
@@ -121,13 +121,15 @@ image::ibm-ctg-global-el-props.png[]
 [[operations]]
 == About Operations
 
-The IBM CTG connector supports the following two outbound operations:
+The IBM CTG connector supports the following four operations:
 
-[%header%autowidth]
+[%header%autowidth.spread]
 |===
 |Name |Description
 |Execute |Invokes a CICS program with data encapsulated as channels and containers.
 |Execute using COMMAREA |Invokes a CICS program with data encapsulated as a COMMAREA. Requests are limited to a maximum of 32 KB.
+|Execute with multiple channels |Invokes a CICS program with multiple channels and containers.
+|Create ChannelAndContent Instance |Create an instance of ChannelAndContent to use in the input list of the "Execute with multiple channels" operation.
 |===
 
 == Use Cases
@@ -135,8 +137,9 @@ The IBM CTG connector supports the following two outbound operations:
 * <<use-case-1,Invoke a COMMAREA Program>>
 * <<use-case-2,Invoke a Channel Program>>
 * <<use-case-3,Invoke a COMMAREA or Channel Program inside a Transactional Scope>>
-* <<use-case-4,Add Custom Metadata>>
-* <<use-case-5,Load Java Metadata>>
+* <<use-case-4,Invoke a Channel Program with Multiple Requests>>
+* <<use-case-5,Add Custom Metadata>>
+* <<use-case-6,Load Java Metadata>>
 
 To successfully run use cases 1 to 3, the invoked CICS programs must be available on the target CICS system.
 
@@ -421,8 +424,100 @@ values:
 }
 ----
 
+
 [[use-case-4]]
-=== Use Case 4: Add Custom Metadata
+=== Invoke a Channel Program with Multiple Requests
+
+This application calls EC03, a channel-based program that takes an input data container and returns three containers:
+
+* A data and time container.
+* The length of the input data, and returns uses channels and containers in a CICS program.
+* An output container that contains a copy of the input data, or an error message.
+
+image::<missing>ctg-use-case-4.png[use-case-4]
+
+. Perform Steps 1 to 3 from the previous example and set the HTTP path to `/multiChannel`.
+. Double-click the IBM CTG component, select the operation Execute With Multiple Channels and configure the following parameters:
++
+[%header%autowidth]
+|===
+|Parameter|Value
+|Encoding | `US-ASCII`
+|Channel And Content List Reference | `#[payload]`
+|===
++
+. Add a Transform Message between the HTTP and the IBM CTG components.
+.. In the payload use the schema file ec03-type.ffd to complete the fields for the content:
++
+[source,text,linenums]
+----
+%dw 1.0
+%output text/plain schemaPath = "ec03-type.ffd", segmentIdent = "DFHCOMMAREA", encoding="cp037"
+---
+[{
+	CICS-DATE-TM: ""
+}]
+----
++
+.. Create a flowVar named `request` and configure the following fields (see section <<Load Java Metadata>>):
++
+[source,text,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	channel: "EC03",
+	encoding: "US-ASCII",
+	errorContainer: "OUTPUTMESSAGE",
+	programName: "EC03",
+	requestContainer: "INPUTDATA",
+	responseContainer: "CICSDATETIME",
+	tpnName: "CSMI"
+} as :object {
+	class : "org.mule.modules.ibmctg.internal.model.ChannelRequest"
+}
+----
++
+. Add a IBM CTG component after the Transform Message and select the Create ChannelAndContent Instance operation:
+.. In the Content Reference set the #[payload] reference.
+.. In the Request Reference set the #[flowVars.request] reference.
+.. In the Target Property set the name of the variable (for example, ChannelAndContent1) where the result of operation save the new ChannelAndContent instance.
+
+. After the previous component, add other *Transform Message* with the same content of the step 3.
+. After the previous Transform Message, add other *IBM CTG* component and select the Create ChannelAndContent Instance operation:
+.. In the Content Reference set the `#[payload]` reference.
+.. In the Request Reference set the `#[flowVars.request]` reference.
+.. In the Target Property set the name of the variable (for example, ChannelAndContent2) where the result of operation save the new ChannelAndContent instance.
+
+. After the previous IBM Component, add other Transform Message that stores the ChannelAndContent in a List, which is the Input of the operation "Execute with multiple channels":
++
+----
+%dw 1.0
+%output application/java
+---
+[
+	flowVars.ChannelAndContent1,
+	flowVars.ChannelAndContent2
+]
+----
++
+. Add a Transform Message after the IBM CTG Multiple Channel to convert the result into readable format.
+. Add a Logger at the end of the flow.
+. Save the changes and deploy the Mule Application. Open a browser and make a request to `+http://localhost:8081/multiChannel+`. The result should be similar to:
++
+----
+{
+  "cics-date-time": [
+    "20/03/2018 10:57:56",
+    "20/03/2018 10:57:56"
+  ]
+}
+----
+
+
+[[use-case-5]]
+=== Use Case 5: Add Custom Metadata
 
 The IBM CTG connector does not provide dynamic or static metadata out-of-the-box, but allows users to define custom types using the Metadata Type tool. Follow the below guide to define input and output metadata:
 
@@ -445,8 +540,8 @@ image::ibm-ctg-use-case-4-3.png[]
 
 Metadata definition is not a required step to use the IBM CTG connector but it is essential to improve the usability of the connector.  Refer to xref:6@studio::defining-metadata.adoc[Defining Metadata] for additional information.
 
-[[use-case-5]]
-=== Use Case 5: Load Java Metadata
+[[use-case-6]]
+=== Use Case 6: Load Java Metadata
 
 Inside DataWeave, click Define Metadata to open the Metadata window.
 
