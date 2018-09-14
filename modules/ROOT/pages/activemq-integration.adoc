@@ -2,7 +2,7 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: activemq, apache activemq, apache
+:keywords: esb, mule, activemq
 
 http://activemq.apache.org[Apache ActiveMQ] is a popular open source messaging provider which is easy to integrate with Mule. ActiveMQ supports the JMS 1.1 and J2EE 1.4 specifications and is released under the Apache 2.0 License.
 
@@ -26,40 +26,44 @@ To configure ActiveMQ connector with most common settings, use `<jms:activemq-co
   <jms:activemq-xa-connector name="jmsXAConnector"
                              brokerURL="tcp://localhost:61616"/>
 
-...
+   ...
 ----
 
-Also copy the jar files you need to the Mule lib directory (`$MULE_HOME/lib/user`) or your application lib directory.
+Also copy the JAR files you need to the Mule lib directory (`$MULE_HOME/lib/user`) or your application lib directory.
 
-[WARNING]
-=====
-Adding https://repository.apache.org/content/repositories/releases/org/apache/activemq/activemq-all/[ActiveMq-all.jar] will create conflicts with other dependencies, so please add only the jar files you need in relation to what you need ActiveMQ for:
+== Dependencies Conflict With JAR Files
 
-*JARs for Embedded ActiveMQ*
+The use of https://repository.apache.org/content/repositories/releases/org/apache/activemq/activemq-all/[activemq-all-x.x.x.jar] creates conflicts with other dependencies, most notably with log4j. Only add the JAR files required by the deployment mode you have chosen for ActiveMQ:
 
-apache-activemq-5.8.0/lib/activemq-kahadb-store-5.8.0.jar +
-apache-activemq-5.8.0/lib/activemq-protobuf-1.1.jar +
-apache-activemq-5.8.0/lib/activemq-openwire-legacy-5.8.0.jar +
-apache-activemq-5.8.0/lib/hawtbuf-1.9.jar +
-apache-activemq-5.8.0/lib/activemq-broker-5.8.0.jar +
-apache-activemq-5.8.0/lib/activemq-client-5.8.0.jar
+*JARs for Embedded ActiveMQ*:
+....
+apache-activemq-5.12.0/lib/activemq-broker-5.12.0.jar
+apache-activemq-5.12.0/lib/activemq-client-5.12.0.jar
+apache-activemq-5.12.0/lib/activemq-kahadb-store-5.12.0.jar
+apache-activemq-5.12.0/lib/activemq-openwire-legacy-5.12.0.jar
+apache-activemq-5.12.0/lib/activemq-protobuf-1.1.jar
+apache-activemq-5.12.0/lib/geronimo-j2ee-management_1.1_spec-1.0.1.jar
+apache-activemq-5.12.0/lib/hawtbuf-1.11.jar
+....
+*JARs for External ActiveMQ*:
+....
+apache-activemq-5.12.0/lib/activemq-client-5.12.0.jar
+apache-activemq-5.12.0/lib/geronimo-j2ee-management_1.1_spec-1.0.1.jar
+apache-activemq-5.12.0/lib/hawtbuf-1.11.jar
+....
+*JARs for Failover ActiveMQ*:
+....
+apache-activemq-5.12.0/lib/activemq-client-5.12.0.jar
+apache-activemq-5.12.0/lib/geronimo-j2ee-management_1.1_spec-1.0.1.jar
+apache-activemq-5.12.0/lib/hawtbuf-1.11.jar
+....
+To include these .jar files in your project, simply right-click on your project and select *Build Path* > *Add External Archives...*
 
-*JARs for External ActiveMQ*
+== ActiveMQ Failover and VM Initialization
 
-apache-activemq-5.8.0/lib/activemq-client-5.8.0.jar +
-apache-activemq-5.8.0/lib/hawtbuf-1.9.jar
+Mule initializes the ActiveMQ connector with the default instance of the ActiveMQ connection factory and establishes a TCP connection to the remote standalone broker running on local host and listening on port 61616.
 
-*JARs for Failover ActiveMQ*
-
-apache-activemq-5.8.0/lib/activemq-client-5.8.0.jar +
-apache-activemq-5.8.0/lib/hawtbuf-1.9.jar
-
-To include these .jar files in your project, simply right-click on your project and select **build path > add external archives**.
-=====
-
-Mule initializes the ActiveMQ connector with a default instance of the ActiveMQ connection factory and establishes a TCP connection to the remote standalone broker running on the local host and listening on port 61616.
-
-Use the failover protocol to connect to the cluster of brokers, and pass additional ActiveMQ options as URI parameters, for example:
+Use the `failover:` protocol to connect to the cluster of brokers, and pass additional ActiveMQ options as URI parameters, for example:
 
 [source,xml,linenums]
 ----
@@ -67,14 +71,14 @@ Use the failover protocol to connect to the cluster of brokers, and pass additio
      brokerURL="failover:(tcp://primary:61616,tcp://secondary:61616)?randomize=false"/>
 ----
 
-To create an embedded instance of ActiveMQ broker, that is, broker running on the same Java VM as Mule, use vm protocol, for example:
+To create an embedded instance of ActiveMQ broker, such as a broker running on the same Java VM as Mule, use the `vm:` protocol, for example:
 
 [source,xml]
 ----
 <jms:activemq-connector name="jmsConnector" brokerURL="vm://localhost"/>
 ----
 
-You may also use additional connector attributes (See “Configuration Reference” for more details)
+You may also use additional connector attributes (See “Configuration Reference” for more details).
 
 Sometimes it might be necessary to explicitly configure an instance of ActiveMQ connection factory, for example, to set redelivery policy, or other ActiveMQ-specific features that are not exposed through Mule connector parameters. To create custom ActiveMQ connection factory instance, first configure it using Spring, for example:
 
@@ -99,12 +103,19 @@ Sometimes it might be necessary to explicitly configure an instance of ActiveMQ 
 </bean>
 ----
 
-Then reference this bean in `<jms:activemq-connector>`, for example:
+Reference this bean in `<jms:activemq-connector>`, for example:
 
 [source,xml]
 ----
-<jms:activemq-connector name="jmsConnector" connectionFactory-ref="connectionFactory"/>
+<jms:activemq-connector name="jmsConnector" connectionFactory-ref="connectionFactory" maxRedelivery="-1"/>
 ----
+
+[WARNING]
+====
+Not setting `maxRedelivery` to -1  causes the default value of 0 to be used, and hence not performing any redelivery attempt.
+
+When the limit is reached, the message is silently discarded, unless the customer configures a http://activemq.apache.org/message-redelivery-and-dlq-handling.html[DLQ (Dead Letter Queue)].
+====
 
 == Debugging ActiveMQ
 
@@ -116,8 +127,6 @@ between the connector and ActiveMQ service:
 ----
 <AsyncLogger name="com.mulesoft.mq" level="DEBUG"/>
 ----
-
-
 
 == ActiveMQ Connector Reference
 

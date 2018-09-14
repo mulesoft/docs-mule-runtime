@@ -12,37 +12,35 @@ The first two examples implement a transactional JMS queue and include a message
 ====
 *About the Examples*
 
-. The in-line numbers (i.e. `<!-- [1] -->`) that conclude certain lines of code correspond to the numbered notes that appear immediately beneath the code.
-
-. Some of the examples use a `throwException` test component to simulate an error condition in a flow.
+* The in-line numbers (that is, `<!-- [1] -->`) that conclude certain lines of code correspond to the numbered notes that appear immediately beneath the code.
+* Some of the examples use a `throwException` test component to simulate an error condition in a flow.
 ====
 
 == Route the Before-Error Message to the Dead Letter Queue
 
-In this first case, the exception strategy recovers the message as it existed _just_ before the error occurred. In other words, Mule has already transformed the message (i.e. appended a string to the payload), but the message has not yet thrown an exception.
+In this first case, the exception strategy recovers the message as it existed _just_ before the error occurred. In other words, Mule has already transformed the message (that is, appended a string to the payload), but the message has not yet thrown an exception.
 
 [source,xml,linenums]
 ----
 <flow name="LastMessageStateRouting">
-        <jms:inbound-endpoint queue="in">
-            <jms:transaction action="ALWAYS_BEGIN" />
-        </jms:inbound-endpoint>
-        <append-string-transformer message=" with some text added"/> <!-- [1] -->
-        <test:component throwException="true"/>
-        <jms:outbound-endpoint queue="out">
-            <jms:transaction action="ALWAYS_JOIN" />
-        </jms:outbound-endpoint>
-        <catch-exception-strategy>
-            <jms:outbound-endpoint queue="dead.letter"> <!-- [2] -->
-                <jms:transaction action="ALWAYS_JOIN" />
-            </jms:outbound-endpoint>
-        </catch-exception-strategy>
-    </flow>
+  <jms:inbound-endpoint queue="in">
+     <jms:transaction action="ALWAYS_BEGIN" />
+  </jms:inbound-endpoint>
+  <append-string-transformer message=" with some text added"/> <!-- [1] -->
+  <test:component throwException="true"/>
+  <jms:outbound-endpoint queue="out">
+    <jms:transaction action="ALWAYS_JOIN" />
+  </jms:outbound-endpoint>
+  <catch-exception-strategy>
+    <jms:outbound-endpoint queue="dead.letter"> <!-- [2] -->
+      <jms:transaction action="ALWAYS_JOIN" />
+    </jms:outbound-endpoint>
+  </catch-exception-strategy>
+</flow>
 ----
 
-. Mule replaces the current payload with the version of the payload (i.e. the transformed payload with the specified string appended) that emerged from the *Append String Transformer* just before the exception was thrown.
-
-. Mule sends the transformed version of the message to the JMS dead letter queue. To accomplish this, Mule "joins" the transaction (i.e. resumes the transaction with the version of the message that existed just before the exception was thrown) at the outbound connector embedded in the exception strategy. Mule commits the transaction after it routes the message through all the exception strategy message processors.
+. Mule replaces the current payload with the version of the payload (that is, the transformed payload with the specified string appended) that emerged from the *Append String Transformer* just before the exception was thrown.
+. Mule sends the transformed version of the message to the JMS dead letter queue. To accomplish this, Mule "joins" the transaction (that is, resumes the transaction with the version of the message that existed just before the exception was thrown) at the outbound connector embedded in the exception strategy. Mule commits the transaction after it routes the message through all the exception strategy message processors.
 
 == Route the Initial-State Message to the Dead Letter Queue
 
@@ -51,28 +49,26 @@ In this second case, rather than processing the message in its transformed state
 [source,xml,linenums]
 ----
 <flow name="OriginalMessageRouting">
-        <jms:inbound-endpoint queue="in">
-            <jms:transaction action="ALWAYS_BEGIN" />
-        </jms:inbound-endpoint>
-        <set-variable variableName="originalMessage" value="#[payload]"/> <!-- [1] -->
-        <append-string-transformer message=" with some text added"/>
-        <test:component/>
-        <jms:outbound-endpoint queue="out">
-            <jms:transaction action="ALWAYS_JOIN" />
-        </jms:outbound-endpoint>
-        <catch-exception-strategy>
-            <set-payload value="#[flowVars['originalMessage']]"/> <!-- [2] -->
-            <jms:outbound-endpoint queue="dead.letter">  <!-- [3] -->
-                <jms:transaction action="ALWAYS_JOIN" />
-            </jms:outbound-endpoint>
-        </catch-exception-strategy>
-    </flow>
+  <jms:inbound-endpoint queue="in">
+    <jms:transaction action="ALWAYS_BEGIN" />
+  </jms:inbound-endpoint>
+  <set-variable variableName="originalMessage" value="#[payload]"/> <!-- [1] -->
+  <append-string-transformer message=" with some text added"/>
+  <test:component/>
+  <jms:outbound-endpoint queue="out">
+     <jms:transaction action="ALWAYS_JOIN" />
+  </jms:outbound-endpoint>
+  <catch-exception-strategy>
+    <set-payload value="#[flowVars['originalMessage']]"/> <!-- [2] -->
+    <jms:outbound-endpoint queue="dead.letter">  <!-- [3] -->
+       <jms:transaction action="ALWAYS_JOIN" />
+    </jms:outbound-endpoint>
+   </catch-exception-strategy>
+</flow>
 ----
 
 . To preserve the original message, Mule stores the original payload in a `originalMessage` variable.
-
 . At this point, Mule replaces the current message payload with the one saved in the `originalMessage` variable.
-
 . Mule sends the message, in its original state, to the dead letter queue.
 
 == Route the Message Based on Exception Type
@@ -82,30 +78,28 @@ Mule can execute different actions depending on the type of exception that a mes
 [source,xml,linenums]
 ----
 <flow name="RouteByExceptionType">
-        <jms:inbound-endpoint queue="in">
-            <jms:transaction action="ALWAYS_BEGIN" />
-        </jms:inbound-endpoint>
-        <test:component/>
-        <jms:outbound-endpoint queue="out">
-            <jms:transaction action="ALWAYS_JOIN" />
-        </jms:outbound-endpoint>
-        <choice-exception-strategy>
-            <catch-exception-strategy when="exception.causedBy(com.company.BusinessException)"> <!-- [1] -->
-                <jms:outbound-endpoint queue="dead.letter">
-                    <jms:transaction action="ALWAYS_JOIN" />
-                </jms:outbound-endpoint>
-            </catch-exception-strategy>
-            <rollback-exception-strategy when="exception.causedBy(com.company.NonBusinessException)"> <!-- [2] -->
-                <logger level="ERROR" message="Payload failing: #[payload]"/>
-            </rollback-exception-strategy>
-        </choice-exception-strategy>
-    </flow>
+  <jms:inbound-endpoint queue="in">
+     <jms:transaction action="ALWAYS_BEGIN" />
+  </jms:inbound-endpoint>
+  <test:component/>
+  <jms:outbound-endpoint queue="out">
+     <jms:transaction action="ALWAYS_JOIN" />
+  </jms:outbound-endpoint>
+  <choice-exception-strategy>
+     <catch-exception-strategy when="exception.causedBy(com.company.BusinessException)"> <!-- [1] -->
+     <jms:outbound-endpoint queue="dead.letter">
+        <jms:transaction action="ALWAYS_JOIN" />
+     </jms:outbound-endpoint>
+     </catch-exception-strategy>
+        <rollback-exception-strategy when="exception.causedBy(com.company.NonBusinessException)"> <!-- [2] -->
+           <logger level="ERROR" message="Payload failing: #[payload]"/>
+         </rollback-exception-strategy>
+  </choice-exception-strategy>
+</flow>
 ----
 
 . When a message throws a `com.company.BusinessException`, the choice exception strategy routes the message to the `catch-exception-strategy`. The catch exception strategy sends the message to a dead letter queue, then consumes the source.
-
-. When a message throws a `com.company.NonBusinessException` (i.e. unexpected failure), the choice exception strategy routes the message to the `rollback-exception-strategy`. The rollback exception strategy logs the error, then rolls back the JMS transaction to prepare to reprocess the message.
-
+. When a message throws a `com.company.NonBusinessException` (that is, an unexpected failure), the choice exception strategy routes the message to the `rollback-exception-strategy`. The rollback exception strategy logs the error, then rolls back the JMS transaction to prepare to reprocess the message.
 . If a message throws an exception that is neither `BusinessException` nor `NonBusinessException`, Mule's implicitly-applied default exception strategy handles the error.
 
 == Returning an Error Message
@@ -129,7 +123,6 @@ Mule can catch an exception, then create an error message to return to the calle
 ----
 
 . The catch exception strategy sets the variables `errorStatusCode` and `errorReasonPhrase` in the HTTP Listener's child element.
-
 . The HTTP Listener provides these two values as a response to the request made to it
 
 Alternatively, you could achieve the same results by configuring your exception strategy like below:
@@ -137,15 +130,13 @@ Alternatively, you could achieve the same results by configuring your exception 
 [source,xml,linenums]
 ----
 <catch-exception-strategy>
-            <set-payload value="The request cannot be processed, the error is #[exception.getSummaryMessage()]"/>
-            <set-property propertyName="http.status" value="500"/>
-        </catch-exception-strategy>
+   <set-payload value="The request cannot be processed, the error is #[exception.getSummaryMessage()]"/>
+   <set-property propertyName="http.status" value="500"/>
+</catch-exception-strategy>
 ----
 
 . The catch exception strategy replaces the message payload with new content. Mule uses the xref:mule-expression-language-mel.adoc[Mule Expression Language MEL] `exception` variable to include an error number in the message payload.
-
 . The catch exception strategy sets the HTTP status code of the response to `500` to indicate a server error.
-
 . Mule sends the new message payload to the caller.
 
 == Rollback the Transaction and Send a Notification
@@ -155,56 +146,54 @@ When an error occurs, Mule can rollback transactions, then send failure notifica
 [source,xml,linenums]
 ----
 <flow name="RollbackTransactionAndSendEmail">
-
-        <jms:inbound-endpoint queue="in">
-            <jms:transaction action="ALWAYS_BEGIN"/>
-        </jms:inbound-endpoint>
-        <test:component throwException="true"/>
-        <rollback-exception-strategy> <!-- [1] -->
-
-            <set-payload value="#['Failed to process message: ' + payload]"/> <!-- [2] -->
-
-            <smtp:outbound-endpoint user="pablolagreca" password="mypassword" host="smtp.gmail.com" from="failures-app@mycompany.com" to="technical-operations@mycompany.com" subject="Message Failure"/>  <!-- [3] -->
-        </rollback-exception-strategy>
-    </flow>
+  <jms:inbound-endpoint queue="in">
+     <jms:transaction action="ALWAYS_BEGIN"/>
+  </jms:inbound-endpoint>
+  <test:component throwException="true"/>
+  <rollback-exception-strategy> <!-- [1] -->
+    <set-payload value="#['Failed to process message: ' + payload]"/> <!-- [2] -->
+    <smtp:outbound-endpoint user="me" password="mypassword" host="smtp.gmail.com" from="failures-app@mycompany.com" to="technical-operations@mycompany.com" subject="Message Failure"/>  <!-- [3] -->
+  </rollback-exception-strategy>
+</flow>
 ----
 
 . Whenever a message throws an exception, Mule rolls back the transaction.
-
 . Mule sets a new payload on the message which contains both:
 
-* the failure notification message `'Failed to process message: '`
-
-* the payload of the message
-
-. Mules sends a failure notification email to `technical-operations@mycompany.com`.
+** The failure notification message `Failed to process message:`
+** The payload of the message
+. Mule sends a failure notification email to `technical-operations@mycompany.com`.
 
 == Stop Processing When an Exception Occurs
 
-Mule can prevent a flow from accepting any more messages after certain types of errors occur. For example, when external service becomes unavailable (i.e. goes offline), every message processing attempt will fail until the unavailable resource is restored. In this case, Mule can shut down the flow to prevent it from attempting to process any more messages.
+Mule can prevent a flow from accepting any more messages after certain types of errors occur. For example, when an external service becomes unavailable (that is, goes offline), every message processing attempt fails until the unavailable resource is restored. In this case, Mule can shut down the flow to prevent it from attempting to process any more messages.
 
 [source,xml,linenums]
 ----
 <http:request-config name="request-config" host="localhost"
 port="808"/>
 <flow name="StopFlowBasedOnExceptionType">
-        <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
-        <http:request config-ref="request-config" path="/" method="GET" doc:name="HTTP Connector" responseTimeout="5"/>
-        <choice-exception-strategy>
-            <rollback-exception-strategy when="exception.causedBy(java.net.ConnectException)">  <!-- [1] -->
-                <script:component>
-                    <script:script engine="groovy">
-                        flowConstruct.stop();
-                    </script:script>
-                </script:component>
-             </rollback-exception-strategy>
-            <rollback-exception-strategy> <!-- [2] -->
-                <logger/>
-            </rollback-exception-strategy>
-        </choice-exception-strategy>
-    </flow>
+   <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
+   <http:request config-ref="request-config" path="/" method="GET" doc:name="HTTP Connector" responseTimeout="5"/>
+   <choice-exception-strategy>
+      <rollback-exception-strategy when="exception.causedBy(java.net.ConnectException)">  <!-- [1] -->
+         <script:component>
+           <script:script engine="groovy">
+                        StopFlowBasedOnExceptionType.stop();
+            </script:script>
+          </script:component>
+       </rollback-exception-strategy>
+       <rollback-exception-strategy> <!-- [2] -->
+           <logger/>
+       </rollback-exception-strategy>
+  </choice-exception-strategy>
+</flow>
 ----
 
 . When the exception type is `ConnectionException`, the choice exception strategy routes the message to the first rollback exception strategy. The rollback exception strategy runs a script that stops the flow from processing any more messages.
-
 . For all other exception types, the choice exception strategy routes the message to the second rollback exception strategy, which logs the error.
+
+== See Also
+
+* https://developer.mulesoft.com/anypoint-platform[Mule Community Edition]
+* https://www.mulesoft.com/platform/studio[Anypoint Studio]

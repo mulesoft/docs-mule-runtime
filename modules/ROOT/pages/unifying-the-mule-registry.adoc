@@ -1,0 +1,103 @@
+= Unifying the Mule Registry
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Mule 3.7 and newer versions provides upgrades to the lifecycle and xref:dependency-injection.adoc[dependency injection mechanisms], and unifies the Mule Registry. These changes maintain backwards compatibility.
+
+The MuleContext contains the concept of an object registry. The Mule Registry is basically a set of key-value pairs used to gain access to Mule components such as connectors, factories, object stores, managers, and more.
+
+*Important:* Before starting, https://blogs.mulesoft.com/dev/mule-dev/sneak-peek-mule-3-7-deepest-internals/[read the Mule 3.7 internals blog].
+
+== New SimpleRegistry
+
+Mule 3.7 and newer, provides the new SimpleRegistry to provide a non-Spring way to decouple Mule core from Spring, which is important for testing. All tests that directly extend  *AbstractMuleContextTestCase*  need the MuleContext to have a registry to function.
+
+The SimpleRegistry has these properties:
+
+* SimpleRegistry is lightweight and simple enough for testing implementation of the Registry interface.
+*Important*: Do not use the SimpleRegistry in production.
+* SimpleRegistry does not apply lifecycle operations when registering or unregistering any objects (unlike TransientRegistry).
+* SimpleRegistry provides only basic non-performant support for JSR-330, and performs dependency injection only on fields annotated with @Inject.
+* SimpleRegistry extends backwards compatibility to any custom tests that reference TransientRegistry; however, this is not recommended.
+
+Mule automatically adds SimpleRegistry to the MuleContext on all subclasses of AbstractMuleContextTestCase that do not extend FunctionalTestCase.
+
+The *FunctionalTestCase* base class continues to behave as usual, but only uses the *SpringRegistry*. Do not use SimpleRegistry or TransientRegistry in that case, which mimics how the actual runtime behaves.
+
+== TransientRegistry Deprecated
+
+Mule converges on SpringRegistry, which is a single Spring registry. The previous Mule TransientRegistry is deprecated. For backward compatibility, TransientRegistry is provided in the Mule software distribution, but not used.
+
+The benefits of the single SpringRegistry are:
+
+* All objects now appear in the registry without interoperability problems.
+* Spring creates all objects in the correct order and injects dependencies into them, even in cases of circular dependencies.
+* Spring provides out of the box support for https://jcp.org/en/jsr/detail?id=330[JSR-330].
+* Spring is a proven tool that we already rely on.
+
+This unification solves all issues with registry split, interoperability, and dependency injection. For more information, see http://blogs.mulesoft.com/sneak-peek-mule-3-7-deepest-internals/[A sneak peek into Mule 3.7’s deepest internals].
+
+Also deprecated and no longer used are the *InjectProcessor* and *PreInitProcessor* interfaces and all their implementations.
+
+== SpringRegistryBootstrap Replaces SimpleRegistryBootstrap
+
+If you replace TransientRegistry with SpringRegistry, then the latter or another component needs to assume responsibility for all the tasks that TransientRegistry performed. One of those tasks is processing the `registry-bootstrap.properties` files.
+
+When Mule starts, it searches the classpath for `registry-bootstrap.properties` files, which contain keys and class names for objects to automatically add to the registry. For example, the new xref:http-connector.adoc[HTTP Connector] uses a properties file to register a connection manager. The Batch module uses it to register the batch engine, etc.
+
+The SimpleRegistryBootstrap component previously was responsible for creating Instances of those classes and registering them in the TransientRegistry. This was problematic because:
+
+* TransientRegistry wrongfully applied the initialize() phase when those objects were registered
+* SimpleRegistryBootstrap object was fired as a http://blogs.mulesoft.com/tag/spring/[spring] bean, which created a very odd functional dependency between the TransientRegistry and the SpringRegistry.
+
+SimpleRegistryBootstrap is also deprecated in 3.7.0, and is replaced by SpringRegistryBootstrap, which is similar in terms of functionality, but doesn’t instantiate and registers objects. Instead it creates and registers BeanDefinition objects which are added to the Spring BeanFactory *before* it is initialized. In that way, bootstrap objects go through the same cycle of creation, injection, initialization as the components defined in XML. This fixes a key issue where objects formerly attempted to fetch dependencies that didn’t exist. Now that you can use dependency injection, you don’t need to fetch dependencies at all!
+
+== Override Mechanisms
+
+Mule also provides backwards compatibility with Agents and CoreExtensions, which are Mule extension points that cross reference an application deployed in a Mule container. An example of that is the ClusterCoreExtension, which replaces the default QueueManager and ObjectStore instances for cluster versions of them, while adding objects of its own, like the HazelcastManager.
+
+Before Mule 3.7, that mechanism worked because the TransientRegistry already existed to receive those objects, and because it had precedence over the SpringRegistry.
+
+The following call shows how the version in the TransientRegistry was returned instead of the one in Spring:
+
+[source,text,linenums]
+----
+muleContext.getRegistry().lookupObject(QueueManager.class)
+----
+
+However, this is not a consistent behavior, because you can declare this:
+
+[source,xml,linenums]
+----
+<bean id="myComponent" class="org.my.Component" >
+    <property name="queueManager" ref="_muleQueueManager" />
+</bean>
+----
+
+You can view the https://gist.github.com/marianogonzalez/6bc6e7cd04c079839ea6#file-gistfile1-xml[gistfile1.xml] for this example in https://github.com/[GitHub].
+
+The myComponent bean gets a local QueueManager instead of the cluster one because it is being created and injected by Spring, which knows nothing about the cluster awareQueueManager that the ClusterCoreExtension gave to the TransientRegistry.
+
+This issue is solved by the unification of the registries, but it introduces another problem: by the time theCoreExtension is executes, the SpringRegistry doesn’t exist yet.
+
+The solution to that problem is:
+
+* When the MuleContext creates, by default it has one registry, but is no longer a TransientRegistry, but a SimpleRegistry, which means no eager initialization.
+* SimpleRegistry catches any object registered before Spring kicks in.
+* Upon creation, SpringRegistry iterates through all other registries (if any) and takes over its registered objects. Objects and registries that have been taken over are considered absorbed.
+* Mule removes each absorbed registry from the MuleContext.
+* When SpringRegistry asks for an absorbed object, Mule ensures that a returned instance is the exact same that used to live in the absorbed registry.
+
+In this way Mule achieves:
+
+* Backwards compatibility with agents and core extensions.
+* A consistent mechanism for overriding definitions.
+* Overridden objects get fair treatment during initialization and dependency injection.
+
+== See Also
+
+* http://blogs.mulesoft.com/sneak-peek-mule-3-7-deepest-internals/[A sneak peek into Mule 3.7’s deepest internals]
+* http://blogs.mulesoft.com/mule-3-6-library-upgrades/[Library upgrades in Mule ESB 3.6]
+* http://blogs.mulesoft.com/mule-3-6-xml-xpath-xslt-xquery3/[You’re into XML? Mule now supports XPath, XSLT and XQuery 3.0]
+* xref:3.8@connector-devkit::building-a-batch-enabled-connector.adoc[Mule How-to: Build a Batch Enabled Cloud Connector]

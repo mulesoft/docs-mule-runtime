@@ -1,0 +1,695 @@
+= Validations Module
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: validate, validations, filter, if, assert, exception, confirm
+
+The Validations module provides an easy out-of-the-box way to verify that the content of a message in your flow matches a given set of criteria. The main advantage this has over using xref:filters.adoc[Filters] is traceability, as filters all raise identical exceptions, making it hard for you to know where the exception was caused. Validators, on the other hand, raise an exception with a meaningful message attached. You can optionally customize this message and even the type of exception you want it to throw.
+
+*Note:* This feature is supported by the Mule runtime as of xref:release-notes::mule-runtime/mule-esb-3.7.0-release-notes.adoc[Mule ESB 3.7.0] in both Community and Enterprise editions. However, Studio support only became available starting with the September 2015 release.
+
+== Basics
+
+The validations module was designed following these principles:
+
+* If the message doesn't meet the specified criteria, the validation fails and a *ValidationException* is thrown.
+* By default, this exception has a meaningful message attached. You can optionally customize this message and change the type of exception thrown, as long as the new exception type has a constructor that overrides Exception(String).
+* In case you want to throw an Exception type that lacks this constructor, or in which its creation is not trivial, or in which you want it to contain additional information, you can xref:building-a-custom-validator.adoc[build a custom validator].
+
+=== Validator as a Message Processor
+
+You can use the validator as a Message Processor, either through the Studio UI or by adding it as an XML tag. Use it in this way when you want to perform validations as part of your flow and you want an exception to be thrown when the validated criteria isn't met.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-email.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<flow name="validator flow">
+   (...)
+   <validation:is-email email="mule@mulesoft.com" />
+   (...)
+</flow>
+----
+
+=====
+
+
+=== Validator as a MEL Expression
+
+Also, in most cases you can invoke a validator via a xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)] expression. The purpose of exposing validators through MEL is to use them in decision making. Unlike the message processor version, these work as boolean functions and don't produce an output message, they just return true when the validation is successful or false otherwise. All of the validators are available through a *validator* variable in the MEL context.
+
+[source,xml,linenums]
+----
+<flow name="melValidation">
+  <choice>
+    <when expression="#[validator.validateEmail(payload.email)]">
+      <flow-ref name="sendEmail" />
+    </when>
+    <otherwise>
+      <logger message="no email. Try contacting the user some other way" />
+    </otherwise>
+  </choice>
+</flow>
+----
+
+== Types of Validator
+
+There are several different types of validator that out of the box cover most of the common use cases you might run into. If none of the validators described below cover what you need, you can also xref:building-a-custom-validator.adoc[build a custom validator].
+
+=== Validate Email Address
+
+Checks that a given email is valid.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-email.png[email]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-email email="mule@mulesoft.com" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.validateEmail('mule@mulesoft.com')]
+----
+
+=====
+
+=== Validate Using a Regular Expression
+
+Validates that a given expression matches a Java regular expression.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-regex.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<!-- Matches Canadian PostalCode formats with or without spaces (e.g., "T2X 1V4" or "T2X1V4") -->
+<validation:matches-regex expression="T2X1V4" regex="^[ABCEGHJKLMNPRSTVXY]{1}\d{1}[A-Z]{1} *\d{1}[A-Z]{1}\d{1}$" caseSensitive="true" value="#[payload]" />
+----
+
+The 'caseSensitive' parameter is optional and defaults to true.
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.matchesRegex('T2X1V4', '^[ABCEGHJKLMNPRSTVXY]{1}\d{1}[A-Z]{1} *\d{1}[A-Z]{1}\d{1}$', true)];
+----
+
+The final parameter defines if the validation will be case sensitive, it's optional and defaults to true.
+
+=====
+
+=== Validate String is a Valid Time
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-time.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-time time="Wed, Jul 4, '01" pattern="EEE, MMM d, ''yy" locale="US" />
+----
+
+'pattern' and 'locale' are optional arguments.
+* 'Pattern' defaults to the locale’s default pattern.
+* 'Locale' defaults to the system’s locale
+
+
+This same validator can also be used to process a timeless date:
+
+[source,xml,linenums]
+----
+<validation:is-time time="12:08 PM" pattern="h:mm a" locale="US" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.isTime('12:08 PM', 'h:mm a')]
+#[validator.isTime('12:08 PM', 'h:mm a', 'US')]
+----
+
+The second and third arguments, 'pattern' and 'locale', are optional.
+* 'Pattern' defaults to the locale’s default pattern.
+* 'Locale' defaults to the system’s locale
+
+=====
+
+=== Valid String, Collection or Map is not Empty
+
+In the case of a String, the definition of not empty is that length is greater than zero and it’s not composed of all whitespace characters. In the case of a Collection or Map, it refers to how many items it contains.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-not-empty.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-not-empty expression="#[value]" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.notEmpty(value)]
+----
+
+=====
+
+=== Valid String, Collection or Map is Empty
+
+In the case of a String, the definition of empty is that length equals zero or is composed of all whitespace characters. In the case of a Collection or Map, it refers to how many items it contains.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-empty.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-empty expression="#[value]" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.isEmpty(value)]
+----
+
+=====
+
+=== Validate Size
+
+Validates that the input’s size is between given min and max boundaries. It's valid for inputs of type String, Collection, Map and Array. In the case of a String, the size refers to the length in characters.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-size.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:validate-size value="#[payload]" min="#[minLength]" max="#[maxLength]" />
+----
+
+* 'min' is optional and defaults to zero, which in practice means that a blank String is accepted. This number must be in the integer range
+* 'max' is also optional and defaults to null, which in practice means that no upper bound is enforced. This number must be in the integer range
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.validateSize('John’, 1, 4)]
+----
+
+* the second parameter, 'min', is optional and defaults to zero, which in practice means that a blank String is accepted. This number must be in the integer range
+* the third parameter, 'max', is also optional and defaults to null, which in practice means that no upper bound is enforced. This number must be in the integer range
+
+=====
+
+=== Validate Not Null
+
+Fails if the value is null or an instance of NullPayload
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-not-null.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:not-null expression="#[value]" value="#[payload]" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.isNotNull(value)]
+----
+
+=====
+
+=== Validate Null
+
+Fails if the value is *not* null and *not* an instance of NullPayload
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-null.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-null expression="#[nullValue]" value="#[payload]" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.isNull(value)]
+----
+
+=====
+
+=== Validate that a String can be Transformed Into a Number
+
+This processor validates that a String can be parsed as a number of a certain type.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-number.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-number value="#[value]" numberType="LONG" minValue="#[min]" maxValue="#[max]" />
+----
+
+* 'minValue' and 'maxValue' are optional and allow to check that, if valid, the parsed number is between certain inclusive boundaries. If not provided, then those bounds are not applied.
+* The valid options for the 'numberType' attribute are:
+** INTEGER
+** LONG
+** DOUBLE
+** SHORT
+** FLOAT
+It is also possible to specify a pattern and a locale to perform the validation.
+* 'locale' defaults to the system locale.
+* 'pattern' defaults to the locale’s default pattern.
+
+
+The full form of this validator looks like this:
+
+[source,xml,linenums]
+----
+<validation:is-number value="#[value]" numberType="LONG" minValue="#[min]" maxValue="#[max]" pattern="#[pattern]" locale="US" />
+----
+
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.isNumber(payload, numberType, minValue, maxValue)]
+----
+
+* 'minValue' and 'maxValue' are optional and allow to check that, if valid, the parsed number is between certain inclusive boundaries. If not provided, then those bounds are not applied.
+* The valid options for the 'numberType' attribute are:
+** INTEGER
+** LONG
+** DOUBLE
+** SHORT
+** FLOAT
+It is also possible to specify a pattern and a locale to perform the validation.
+* 'locale' defaults to the system locale.
+* 'pattern' defaults to the locale’s default pattern.
+
+=====
+
+=== Validate IP Adress
+
+Checks that a given ip address is valid. It supports both IPV4 and IPV6. In the case of IPV6, both full and collapsed addresses are supported, but addresses containing ports are not.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-ip.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-ip ip="127.0.0.0" />
+<validation:is-ip ip="FE80:0000:0000:0000:0202:B3FF:FE1E:8329" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.validateIp(‘127.0.0.1’)]
+----
+
+=====
+
+=== Validate URL
+
+Validates that a given String can be interpreted as a URL. This is done by invoking the URL(String) constructor in the 'java.net.URL' class. If this constructor throws exception, then the validation fails. Any String that this constructor accepts is considered valid.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-url.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-url url="http://www.mulesoft.com" />
+----
+
+[discrete.view]
+=== MEL Expression
+
+[source,java,linenums]
+----
+#[validator.validateUrl(‘http://www.mulesoft.com’)]
+----
+
+=====
+
+=== is True and is False Fallback Validators
+
+Although the validators above are quite general and cover many use cases, you may always find yourself in a situation that doesn't quite match your use case, that’s why there are two fallback expressions which simply evaluate that a given expression is true or false. One of them expects the expression to evaluate to true, the other one to false.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::validator-is-true.png[validator]
+
+
+image::validator-is-false.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-true expression="#[payload &gt; 21]" />
+<validation:is-false expression="#[customer.hasDebt()]" />
+----
+
+Because conceptually speaking a validator should not modify the message payload or any of its properties, the MEL expression used here is expected to not cause any side effects.
+
+There is no MEL expression for this, since boolean comparison is something already built into MEL language.
+
+=====
+
+
+== Configuring Validators
+
+=== Through Global Settings
+
+At a global level, you can override the default ExceptionFactory, to change the exception type raised by your validators. You cannot set the message that accompanies the exception at a global level, since you should keep these different in order to know which of the validators is the one that has failed. You can configure it like this:
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+In Studio, you can create a validation:config global element by dropping a validation component in your flow and clicking on the add configuration icon:
++
+image::validator-global-element.png[validator]
+
+Then select the validation configuration:
++
+image::validator-global-element2.png[validator]
+
+A configuration window will open where you can either provide the classname of an ExceptionFactory or a reference to a Spring Bean. You can also set Internationalization settings for the messages that go with the exceptions.
+
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:config name="validation">
+  <validation:exception-factory class="com.myproject.ExceptionFactory" />
+</validation:config>
+----
+
+Alternatively, you can provide a reference to a Spring Bean instead:
+
+[source,xml,linenums]
+----
+<spring:beans>
+  <spring:bean id="customExceptionFactory" class="com.myproject.ExceptionFactory" />
+</spring:beans>
+
+<validation:config name="validation">
+  <validation:exception-factory ref="customExceptionFactory" />
+</validation:config>
+----
+
+=====
+
+=== At Individual Validator Level
+
+On any of the validators described above, you can customize the type of exception thrown by providing the canonical name of an exception type. If that exception type does not override the constructor Exception(String) an `IllegalArgumentException` will be thrown. You can also customize the message of the exception thrown.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+Click on the `Customize` tab, then set the message and the exception type for your validator.
+
+The above setting overrides the global ExceptionFactory configured in the validation config. `NotAnAdultException` is expected to have a constructor taking one String argument, otherwise it will fail (that will be validated at start time).
+
+[NOTE]
+You don’t have to customize both the exception type and the message, you could just customize one of them.
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:is-true expression="#[payload.age &gt; 21]" exceptionClass="com.myproject.NotAnAdultException" message="#[payload.name] #[payload.lastname] is not an adult" />
+----
+
+The above setting overrides the global ExceptionFactory configured in the validation config. `NotAnAdultException` is expected to have a constructor taking one String argument, otherwise it will fail (that will be validated at start time).
+
+[NOTE]
+You don’t have to customize both the exception type and the message, you could just customize one of them.
+
+=====
+
+== Internationalization
+
+Since validators provide a message upon failure, another common concern is how to apply I18N. By default, the common validators provide their messages in American English. Those message are not hardcoded, they exist in a resource file. If you want to provide your own internationalized messages, you can do so by specifying your own resources file at a config level:
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+Open the global element that is referenced by your validator and set the corresponding fields:
+
+image::validator-internationalization.png[validator]
+
+The i18n settings are optional, but if you specify anything in it then the bundle Path field is mandatory. The locale field is optional and defaults to the system locale. However, it is most useful when used with an expression that returns the locale to be applied on the given event, such as `#[tenantLocale]`. This value assumes that at the time the validator is executed, there will be a flowVar called `tenantLocale` that specifies what locale to use.
+
+
+
+
+
+[discrete.view]
+=== Studio XML Editor
+
+
+
+[source,xml,linenums]
+----
+<validation:config name="italian">
+  <validation:i18n bundlePath="myResources.properties" locale="it" />
+</validation:config>
+----
+
+The i18n is optional, but if you specify it then the bundle Path attribute is mandatory. The locale attribute is optional and defaults to the system locale. However, it is most useful when used with an expression that returns the locale to be applied on the given event:
+
+[source,xml,linenums]
+----
+<validation:config name="validation">
+  <validation:i18n bundlePath="myResources.properties" locale="#[tenantLocale]" />
+</validation:config>
+----
+
+The example above assumes that at the time the validator is executed, there will be a flowVar called `tenantLocale` that specifies what locale to use (local is optional, if not present it defaults to the current locale).
+
+=====
+
+
+
+== Validating Many Conditions at Once
+
+There are scenarios in which you may want to evaluate several conditions, out of which more than one could fail simultaneously. In these cases, it’s ideal to generate a single error that contains all of the descriptions.
+
+About the all validator:
+
+* All validations are executed, even if all of them fail
+* If any of the validations fail, one single exception is thrown. The exception contains a multiline message in which each line corresponds to every failing validation.
+* Validators are executed sequentially using the flow’s thread, but since validators don’t cause any side effects, the order shouldn’t matter
+* Unlike the rest of the validators, the all validator does not allow you to directly customize the exception type or the message through validation:exception or exception factory elements (you can however customize the message of the inner validators).
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+In Studio, you can drop a validation component into your flow and select the “All” validator. You’ll get a table below in which you can add/edit/remove your custom validators:
+
+image::validator-all.png[validator]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:is-true expression="#[age &gt; 21]" />
+  <validation:is-url url="#[url]" />
+  <validation:is-not-empty value=#[name] />
+</validation:all>
+----
+
+=====
+
+=== Example
+
+Here's an example of how to use the All Validator:
+
+Suppose that someone is posting the following JSON through a http listener:
+
+[source,json,linenums]
+----
+<validation:all>
+  <validation:is-true expression="#[age &gt; 21]" />
+  <validation:is-url url="#[url]" />
+  <validation:is-not-empty value=#[name] />
+</validation:all>
+----
+
+Now consider the following config:
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="validationsFlow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/user" allowedMethods="POST" doc:name="HTTP"/>
+  <!-- transform to Map to simplify MEL expressions -->
+  <json:json-to-object-transformer returnClass="java.util.HashMap" doc:name="JSON to Object"/>
+  <validation:all doc:name="Validation">
+    <validation:validations>
+      <validation:is-not-empty doc:name="Validation" value="#[payload.firstName]" message="Firstname cannot be empty"/>
+      <validation:is-not-empty doc:name="Validation" value="#[payload.lastName]" message="Lastname cannot be empty"/>
+      <validation:is-number message="Not an adult" value="#[payload.age]" minValue="18" numberType="INTEGER"/>
+      <validation:is-email email="#[payload.email]" />
+      <validation:matches-regex message="Invalid SSN" value="#[payload.ssn]" regex="^(?!000|666)[0-8][0-9]{2}-(?!00)[0-9]{2}-(?!0000)[0-9]{4}$"/>
+      <validation:validate-size value="#[payload.ssn]" min="11" max="11" message="SSN too short"/>
+    </validation:validations>
+  </validation:all>
+  <set-payload value="OK" doc:name="Set Payload"/>
+</flow>
+----
+
+The example above includes an `all` validator that simultaneously validates the following things:
+
+* First and last name are not empty strings
+* That the age is a valid integer number above 18
+* That the email address is valid
+* That the social security number has the correct size and matches a regular expression
+
+== Building with Maven
+When building an application with Maven, the following dependency needs to be added to the application's pom.xml file:
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-module-validation</artifactId>
+    <version>${mule.version}</version>
+</dependency>
+----
+
+This page assumes that you have `<mule.version></mule.version>` property defined in your `pom.xml`. If not, you can replace `${mule.version}` with the Mule runtime version that is being used.
+
+
+== See Also
+
+* http://blogs.mulesoft.com/dev/tech-ramblings/introducing-the-validations-module/[Blogpost]
+* xref:filters.adoc[Filters]

@@ -4,26 +4,50 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: deploy, deploying, jboss
 
-The recommended approach for integrating with enterprise application deployed in JBoss is to deploy Mule as a standalone application and to then use the Mule xref:ejb-transport-reference.adoc[EJB Transport Reference] ( or components configured using spring EJB proxies http://static.springframework.org/spring/docs/2.5.x/reference/ejb.html ) to integrate with your EJB's in JBoss. If you need to deploy Mule in the JBoss application server for other reasons (e.g., to use JBoss clustering), use the instructions on this page. Note that if you are using JBoss clustering, you cannot use stateful routers.
+The recommended approach for integrating with an enterprise application deployed in JBoss is to deploy Mule as a standalone application and to then use the Mule xref:ejb-transport-reference.adoc[EJB Transport Reference] (or components configured using http://docs.spring.io/spring/docs/4.1.6.RELEASE/spring-framework-reference/html/ejb.html[Spring EJB proxies]) to integrate with your EJB's in JBoss. If you need to deploy Mule in the JBoss application server for other reasons (such as to use JBoss clustering), use the instructions on this page. Note that if you are using JBoss clustering, you cannot use stateful routers.
 
-There are two main approaches you can take to deploying Mule to JBoss:
+NOTE: As of Mule 3.7, Spring 4.1.6 is supported.
 
-. Simple WAR deployment: in this approach, you simply xref:embedding-mule-in-a-java-application-or-webapp.adoc[embed Mule in your application] and build the WAR. Your custom implementation classes are part of the WAR.
+There are two main approaches you can take to deploy Mule to JBoss:
 
-. EAR application: you can embed the WAR inside the EAR file and include additional files such as EJBs.
+. Simple WAR deployment - In this approach, you simply xref:embedding-mule-in-a-java-application-or-webapp.adoc[embed Mule in your application] and build the WAR. Your custom implementation classes are part of the WAR.
+. EAR application - You can embed the WAR inside the EAR file and include additional files such as EJBs.
 
 == Classloader Isolation
 
-When JBoss comes to classloading, unless classloader isolation is specified, JBoss will first try to use its own classes for deployment and only when these are not found will it look for them in the libraries of the deployment file. Since the versions of the libraries used to load Mule are not the same as the ones used by JBoss, various errors such as ClassCastExceptions can appear, so classloading isolation is important. Therefore, for best results, you should use classloader isolation in your JBoss configuration. For more information, see https://community.jboss.org/wiki/ClassLoadingConfiguration[ClassLoadingConfiguration].
+When JBoss comes to classloading, unless classloader isolation is specified, JBoss first tries to use its own classes for deployment and only when these are not found, it looks for them in the libraries of the deployment file. Since the versions of the libraries used to load Mule are not the same as the ones used by JBoss, various errors such as ClassCastExceptions can appear, so classloading isolation is important. Therefore, for best results, you should use classloader isolation in your JBoss configuration. For more information, see https://community.jboss.org/wiki/ClassLoadingConfiguration[ClassLoadingConfiguration].
 
 == JBoss MQ Configuration
 
-For information on configuring a JBoss JMS connector, see JBoss Jms Integration.
+For information on configuring a JBoss JMS connector, see link:/mule-user-guide/v/3.3/jboss-jms-integration[JBoss JMS Integration] and <<Using JBoss with AS 7>>.
 
 == Scenarios your User Application with Mule in JBoss
 
-For this scenario, the deployment is very simple: you simply add your own JAR and WAR archives to you EAR file. Because everything will be deployed in the same EAR, all the classes required by both the user application and Mule share the same classloader. However sometimes other classes may be required that are not deployed within your EAR..
+For this scenario, the deployment is very simple: you simply add your own JAR and WAR archives to you EAR file. Because everything is deployed in the same EAR, all the classes required by both the user application and Mule share the same classloader. However sometimes other classes may be required that are not deployed within your EAR.
 
-=== Resolving Cross-dependencies
+=== Resolving Cross-Dependencies
 
 The situation becomes more complex when you want to deploy Mule-dependent code in a separate EAR file (for example, you have a custom transformer that extends Mule's `AbstractTransformer` class). The user EAR depends on the Mule libraries to be loaded to be able to load the custom transformer library, while Mule expects the user EAR to be loaded to be able to use the transformer class that is found in the user EAR. To solve these cross-dependencies, you can create a shared library (in another EAR file, perhaps) and specify the library in the `<loader-repository>` element of the `jboss-app.xml` file in both the Mule EAR and the user EAR. Mule Enterprise Edition users can see an example of this in the Knowledge Base article titled "Embedding in JBoss: How to Share Classes Between Your Mule EE EAR and Another Application".
+
+== Using JBoss with AS 7
+
+JBoss Application Server (AS) 7 provides a new way for connecting to JBoss JMS,
+The following is a sample configuration that works with out of the box JBoss AS 7:
+
+[source,xml,linenums]
+----
+<spring:bean id="jndiProps" class="org.springframework.beans.factory.config.MapFactoryBean">
+<spring:property name="sourceMap">
+<spring:map>
+<spring:entry key="java.naming.security.principal" value="jmsuser"/>
+<spring:entry key="java.naming.security.credentials" value="jmspassword"/>
+</spring:map>
+</spring:property>
+</spring:bean>
+<jms:connector name="jms-connector" jndiInitialFactory="org.jboss.naming.remote.client.InitialContextFactory"
+jndiProviderUrl="remote://localhost:4447"
+connectionFactoryJndiName="jms/RemoteConnectionFactory" jndiDestinations="false"
+forceJndiDestinations="false" createMultipleTransactedReceivers="true" username="jmsuser" password="jmspassword"
+numberOfConcurrentTransactedReceivers="10" disableTemporaryReplyToDestinations="true" jndiProviderProperties-ref="jndiProps">
+</jms:connector>
+----

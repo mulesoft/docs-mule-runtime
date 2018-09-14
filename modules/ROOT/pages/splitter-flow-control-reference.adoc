@@ -8,6 +8,9 @@ The Splitter Flow Control splits a message into separate fragments, then sends t
 
 Splitting and aggregating the message is especially useful when you intend to process the split parts in asynchronous flows running on separate servers. Together, the splitter and aggregator flow controls allow you to share the workload among several servers and still be able to reassemble the message after it's processed.
 
+[NOTE]
+Weigh the pros and cons of using a splitter and aggregator in your flow, versus using a "Foreach" scope xref:foreach.adoc#using-foreach-versus-splitter-and-aggregator-pairs[here].
+
 == Splitter Configuration
 
 [.ex]
@@ -17,20 +20,20 @@ Splitting and aggregating the message is especially useful when you intend to pr
 
 image::splitter.png[Splitter]
 
-[%header,cols="4*"]
+[%header%autowidth.spread]
 |===
 |Field |Description |Default Value |Example XML
 |*Display Name* |Customize to display a unique name for the splitter in your application. |`Splitter` |`doc:name="Splitter"`
 |*Enable Correlation* a|
 Specifies whether Mule should give outgoing messages a correlation ID. Options are:
 
-** `IF_NOT_SET `(existing correlation IDs are maintained)
-** `ALWAYS `(existing correlation IDs are overridden)
-** `NEVER `(no action)
+* `IF_NOT_SET`(existing correlation IDs are maintained)
+* `ALWAYS` (existing correlation IDs are overridden)
+* `NEVER` (no action)
 
  |`IF_NOT_SET` |`enableCorrelation="IF_NOT_SET"`
-|*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Maps attributes from incoming data to construct Correlation ID and Message ID on outgoing messages. |  |`<expression-message-info-mapping messageIdExpression=""#[java.util.UUID.randomUUID().toString()]``" `correlationIdExpression="#[xpath3('//order/@id')]"`/>`
-|*Expression* |Expression to define how to split the message. This is a required field. |  |`expression="#[xpath3('//item')]" `
+|*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Maps attributes from incoming data to construct Correlation ID and Message ID on outgoing messages. |  |`<expression-message-info-mapping messageIdExpression="&#x0023;[java.util.UUID.randomUUID().toString()]" correlationIdExpression="&#x0023;[xpath3('//order/@id')]"/>`
+|*Expression* |Expression to define how to split the message. This is a required field. |  |`expression="&#x0023;[xpath3('//item')]"`
 |===
 
 [discrete.view]
@@ -77,7 +80,7 @@ Note that this example includes the optional child element, `expression-message-
 [source,xml,linenums]
 ----
 <splitter expression="#[xpath3('//item')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET">
-            <expression-message-info-mapping messageIdExpression="#[java.util.UUID.randomUUID().toString()]" correlationIdExpression="#[xpath3('//order/@id')]"/>
+   <expression-message-info-mapping messageIdExpression="#[java.util.UUID.randomUUID().toString()]" correlationIdExpression="#[xpath3('//order/@id')]"/>
 </splitter>
 ----
 
@@ -102,13 +105,12 @@ In this simple example, Mule splits an XML payload it into several items.
 [.ex]
 =====
 [discrete.view]
-=== STUDIO Visual Editor
+=== Studio Visual Editor
 
 . Create a new Anypoint Studio project and drag an HTTP connector onto an empty canvas.
-. Create a new Conector Configuration element for it by clicking the green plus sign next to the Connector Configuration field. Set `localhost` as the *host* and leave the default value `8081` as the *port*.
+. Create a new Connector Configuration element for it by clicking the green plus sign next to the Connector Configuration field. Set `localhost` as the *host* and leave the default value `8081` as the *port*.
 . Drag a *Splitter Flow Control* into the flow, to receive messages from the HTTP connector.
-. Configure the Splitter as shown. In the *Expression* parameter, provide the http://www.freeformatter.com/xpath-tester.html#ad-output[XPath] expression `//actor`, wrapped inside a MEL expression. This XPath expression selects every XML element named 'actor'. The splitter will make each of these (together with its children) into a new message. +
-
+. Configure the Splitter as shown. In the *Expression* parameter, provide the expression `//*:actor/text()`, wrapped inside a MEL expression. This XPath expression selects every XML element named 'actor'. The splitter  makes each of these (together with its children) into a new message.
 +
 image::splitter-example.png[splitter_example]
 +
@@ -117,17 +119,17 @@ image::splitter-example.png[splitter_example]
 |Parameter |Value
 |*Display Name* |Splitter
 |*Enable Correlation* |IF_NOT_SET
-|*Expression* |`&#x0023;[xpath3('//actor')]`
+|*Expression* |`&#x0023;[xpath3('//*:actor/text()'`
 |===
 . Add a *Logger* after the Splitter and set its message to `&#x0023;[message.payload]` so that it logs the entire payload of each message that it receives. +
 
 +
 image::splitter-flow.png[splitter+flow]
 +
-. Run the Mule project.
-. You must now send the HTTP Listener an HTTP request that includes a body with an attached XML file. You can use a browser extension such as Postman (Google Chrome), or the Curl command line utility.
-+
-Send a `POST` request to `http://localhost:8081/` and attach XML to the body of the message. Sample XML is provided below.
+
+ . Run the Mule project.
+. Send the HTTP Listener an HTTP request that includes a body with an attached XML file. You can use a browser extension such as Postman (Google Chrome), or the http://curl.haxx.se/[curl] command line utility.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 
 [source,xml,linenums]
@@ -148,17 +150,12 @@ Send a `POST` request to `http://localhost:8081/` and attach XML to the body of 
 
 [TIP]
 ====
- How to send the XML file as attachment with the curl utility
+How to send the XML file as an attachment with the curl utility:
 
 Save the XML code provided above to a file on your local drive.
 
 Open a terminal and run the following command:
-====
-
-[source,text,linenums]
-----
-curl -X POST --data @<your file> http://localhost:8081
-----
+`curl -X POST --data @<your file> http://localhost:8081`
 
 If everything worked well, you should see three messages logged into the console, one for every "actor" XML element.
 
@@ -183,7 +180,6 @@ If everything worked well, you should see three messages logged into the console
 +
 . For this element to work, you must include a *Connector Configuration*. The attribute in the connector named *config-ref* references this connector configuration element.
 +
-
 [source,xml,linenums]
 ----
 <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
@@ -198,16 +194,13 @@ If everything worked well, you should see three messages logged into the console
 |`doc:name` |`HTTP`
 |===
 +
-. Add a Splitter below, to receive messages from the HTTP connector. In the *Expression* parameter provide the http://www.freeformatter.com/xpath-tester.html#ad-output[XPath] expression `//actor` , wrapped inside a MEL expression. This XPath expression selects every XML element named 'actor'. The splitter will make each of these (together with its children) into a new message.
+. Add a Splitter below, to receive messages from the HTTP connector. In the *Expression* parameter provide the expression `//*:actor/text()` , wrapped inside a MEL expression. This XPath expression selects every XML element named 'actor'. The splitter makes each of these (together with its children) into a new message.
 +
-
 [source,xml,linenums]
 ----
-<splitter expression="#[xpath3('//actor')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET"/>
+<splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET"/>
 ----
-
 +
-
 [%header,cols="20a,80a"]
 |===
 |Attribute |Value
@@ -218,7 +211,7 @@ If everything worked well, you should see three messages logged into the console
 +
 . Include a logger after the splitter to log the entire payload of each message received.
 +
-[source,xml,linenums]
+[source,xml]
 ----
 <logger message="#[message.payload]" level="INFO" doc:name="Logger"/>
 ----
@@ -236,17 +229,17 @@ If everything worked well, you should see three messages logged into the console
 [source,xml,linenums]
 ----
 <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
-    <flow name="SplitterExampleFlow1" doc:name="SplitterExampleFlow1">
-        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
-          <splitter expression="#[xpath3('//actor')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET"/>
-        <logger message="#[message.payload]" level="INFO" doc:name="Logger"/>
-    </flow>
+  <flow name="SplitterExampleFlow1" doc:name="SplitterExampleFlow1">
+     <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET"/>
+     <logger message="#[message.payload]" level="INFO" doc:name="Logger"/>
+  </flow>
 ----
 +
-. Run the Mule project
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. MuleSoft recommends using a browser extension such as Postman (Google Chrome). +
-Send a Post request to http://localhost:8081/ attaching an XML to the body of the message. Sample XML is provided below.
-
+. Run the Mule project.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file. MuleSoft recommends using a browser extension such as Postman (Google Chrome).
+. Send a Post request to http://localhost:8081/ attaching an XML to the body of the message. Sample XML is provided below.
++
 [source,xml,linenums]
 ----
 <root xmlns:foo="http://www.foo.org/" xmlns:bar="http://www.bar.org">
@@ -262,8 +255,8 @@ Send a Post request to http://localhost:8081/ attaching an XML to the body of th
     </foo:singers>
 </root>
 ----
-
-If everything worked well, you should see three messages logged into the console, one for every "actor" XML element.
++
+If everything worked well, you should see three messages logged into the console, one for each "actor" XML element.
 =====
 
 === Full Example Code
@@ -272,14 +265,14 @@ If everything worked well, you should see three messages logged into the console
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 
     <flow name="SplitterExampleFlow1" doc:name="SplitterExampleFlow1">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
-        <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+        <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
         <logger message="#[message.payload]" level="INFO" doc:name="Logger"/>
     </flow>
 </mule>
@@ -314,18 +307,17 @@ image::diagram-ag-2.png[diagram+ag+2]
 
 image::collection-agg.png[collection_agg]
 
-[%header,cols="4*"]
+[%header%autowidth.spread]
 |===
 |Field |Description |Default Value |Example XML
 |*Display Name* |Customize to display a unique name for the splitter in your application. |`Collection Aggregator` |`doc:name="Collection Aggregator"`
 |*Timeout* a|
-Defines a timeout in milliseconds to wait for events to be aggregated. By default the aggregator will throw an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities. +
-
- |`` |`timeout="60000"`
-|*Fail On Timeout* |If set, your app will fail if the aggregator times out. |false |`failOnTimeout="true"`
+Defines a timeout in milliseconds to wait for events to be aggregated. By default the aggregator throws an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities.
+|none |`timeout="60000"`
+|*Fail On Timeout* |If set, your app fails if the aggregator times out. |`false` |`failOnTimeout="true"`
 |*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Defines where to obtain Correlation ID and Message ID in incoming messages. |  |`<expression-message-info-mapping messageIdExpression="&#x0023;[java.util.UUID.randomUUID().toString()]" correlationIdExpression="&#x0023;[xpath3('//order/@id')]"/>`
 |*Store Prefix* +
- |Defines the prefix of the ObjectStore names |  |`storePrefix="split_"`
+|Defines the prefix of the ObjectStore names |none  |`storePrefix="split_"`
 |===
 
 [discrete.view]
@@ -354,9 +346,9 @@ Customize to display a unique name for the splitter in your application.
 Note: Attribute not required in Mule Standalone configuration.
 
 |*Timeout* a|
-Defines a timeout in milliseconds to wait for events to be aggregated. By default the aggregator will throw an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities. +
+Defines a timeout in milliseconds to wait for events to be aggregated. By default the aggregator throws an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities. +
 
-|*Fail On Timeout* |If set, your app will fail if the aggregator times out.
+|*Fail On Timeout* |If set, your app fails if the aggregator times out.
 |*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Defines where to obtain Correlation ID and Message ID in incoming messages.
 |Prefix +
 |Defines the prefix of the ObjectStore names
@@ -410,12 +402,13 @@ image::splitter-flow-2.png[splitter+flow+2]
 +
 image::splitter-flow-3.png[splitter+flow+3]
 +
+
 . Configure the two VM connectors. Change both their *Queue Path* to `step2`.
 +
 image::vm4.png[]
 +
-Once both VMs have the same *Queue Path* configured, they will be linked. Messages that arrive to the first VM will continue their path out of the second VM.
-+
+
+Once both VMs have the same *Queue Path* configured, they will be linked. Messages that arrive to the first VM will continue their path out of the second VM. +
 What you have at this point appears to work identically to what you built in the first example. There is, however, one key difference: each fraction of the message will be processed simultaneously rather than in sequence. If you deploy your app to a cluster of servers this will have a big effect on performance.
 +
 . Add a Collection aggregator in the second flow, after the Logger.
@@ -424,8 +417,8 @@ What you have at this point appears to work identically to what you built in the
 image::splitter-flow-4.png[splitter+flow+4]
 +
 . Run the Mule project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. +
-Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome) or the http://curl.haxx.se/[curl] command line utility.
@@ -464,7 +457,7 @@ You should see four messages logged into the console: the first three should be 
 <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="splitterFlow1" doc:name="splitterFlow1">
      <http:listener config-ref="HTTP_Listener_Configuration" path="gettweets" doc:name="HTTP"/>
-     <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+     <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
      <logger level="INFO" doc:name="Logger" message="#[payload]"/>
 </flow>
 
@@ -473,16 +466,14 @@ You should see four messages logged into the console: the first three should be 
 </flow>
 ----
 +
-
 .. Remove the logger in the first flow, add an identical one inside the second flow.
 +
-
 [source,xml,linenums]
 ----
 <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="splitterFlow1" doc:name="splitterFlow1">
      <http:listener config-ref="HTTP_Listener_Configuration" path="gettweets" doc:name="HTTP"/>
-     <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+     <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
 
 </flow>
 
@@ -493,13 +484,12 @@ You should see four messages logged into the console: the first three should be 
 +
 . Link both flows through a couple of VM connectors, an outbound connector in the first flow and an inbound connector in the second flow.
 +
-
 [source,xml,linenums]
 ----
 <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
 <flow name="splitterFlow1" doc:name="splitterFlow1">
      <http:listener config-ref="HTTP_Listener_Configuration" path="gettweets" doc:name="HTTP"/>
-     <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+     <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
 
      <vm:outbound-endpoint exchange-pattern="one-way" path="step2" doc:name="VM"/>
 </flow>
@@ -519,13 +509,12 @@ Provide these same attributes for both VM connectors:
 |`doc:name` |`VM`
 |===
 +
-Once both VMs share the same *Queue Path*, they will be linked. Messages that arrive to the first VM will continue their path out of the second VM.
-What you have at this point appears to work identically to what you built in the first example. There is, however, one key difference: each fraction of the message will be processed simultaneously rather than in sequence. If you deploy your app to a cluster of servers this will have a big effect on performance.
+Once both VMs share the same *Queue Path*, they are linked. Messages that arrive to the first VM continue their path out of the second VM.
+What you have at this point appears to work identically to what you built in the first example. There is, however, one key difference: each fraction of the message processes simultaneously rather than in sequence. If you deploy your app to a cluster of servers this has a big effect on performance.
 +
 . Add a Collection aggregator in the second flow, after the logger.
 +
-
-[source,xml,linenums]
+[source,xml]
 ----
 <collection-aggregator failOnTimeout="false" doc:name="Collection Aggregator"/>
 ----
@@ -538,7 +527,8 @@ What you have at this point appears to work identically to what you built in the
 |===
 +
 . Run the Mule project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome), or using the http://curl.haxx.se/[curl] command-line utility.
@@ -580,7 +570,7 @@ http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/cu
     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
     <flow name="splitterFlow1" doc:name="splitterFlow1">
         <http:listener config-ref="HTTP_Listener_Configuration" path="gettweets" doc:name="HTTP"/>
-        <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+        <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
         <vm:outbound-endpoint exchange-pattern="one-way" path="step2" doc:name="VM"/>
     </flow>
     <flow name="splitterFlow2" doc:name="splitterFlow2">
@@ -599,9 +589,9 @@ If fractions of the message are being processed in parallel in different servers
 
 Follow the steps below to:
 
-* run message fragments in asynchronous flows
-* arrange them back into the original sequence
-* aggregate them back into a single message that follows the original sequence
+* Run message fragments in asynchronous flows
+* Arrange them back into the original sequence
+* Aggregate them back into a single message that follows the original sequence
 
 [.ex]
 =====
@@ -612,16 +602,17 @@ Follow the steps below to:
 +
 image::splitter-flow-5.png[splitter+flow+5]
 +
-The Resequencer will wait for all of the messages in the group to arrive (keeping track of MULE_CORRELATION_ID and MULE_CORRELATION_GROUP_SIZE ) and then reorder them according to their MULE_CORRELATION_SEQUENCE index.
+The Resequencer  waits for all of the messages in the group to arrive (keeping track of MULE_CORRELATION_ID and MULE_CORRELATION_GROUP_SIZE) and then reorders them according to their MULE_CORRELATION_SEQUENCE index.
 +
 The Resequencer outputs three distinct messages, so the Aggregator is still needed to merge them into one.
++
 . Run the Mule project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome), or the http://curl.haxx.se/[curl] command-line utility.
 +
-
 [source,xml,linenums]
 ----
 <root xmlns:foo="http://www.foo.org/" xmlns:bar="http://www.bar.org">
@@ -640,7 +631,7 @@ The easiest way to do this is sending posts via a browser extension such as Post
 
 With the Resequencer in place, messages now reach the aggregator in the correct order and are assembled accordingly.
 
- Try out this demonstration
+Try this demonstration:
 
 To really take advantage of splitting the message, you should deploy your app to a cluster of servers. By following the steps below, you can simulate the random delays of a cluster of servers.
 
@@ -661,18 +652,15 @@ Thread.sleep(randomInt)
 return payload
 ----
 +
-
 This snippet of code simply introduces a random delay of up to 10 seconds. As each message is running asynchronously, this delay can potentially alter the order in which messages move on to the next step, simulating what could happen in a real implementation with parallel servers processing each fraction of the message.
 +
 . Run the project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file.
-+
-Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome), or the http://curl.haxx.se/[curl] command-line utility.
 +
-
 [source,xml,linenums]
 ----
 <root xmlns:foo="http://www.foo.org/" xmlns:bar="http://www.bar.org">
@@ -698,6 +686,7 @@ Below these, you will see a fourth longer message where these indexes are put ba
 
 . Add a *Resequencer* Flow Control before the aggregator.
 +
+
 [source,xml,linenums]
 ----
 <resequencer failOnTimeout="true" doc:name="Resequencer"/>
@@ -707,14 +696,15 @@ Below these, you will see a fourth longer message where these indexes are put ba
 |===
 |Attribute |Value
 |`failOnTimeout` |`true`
-|`doc:name` |`Collection Aggregator`
+|`doc:name` |`Resequencer`
 |===
 +
-The Resequencer will wait for all of the messages in the group to arrive (keeping track of MULE_CORRELATION_ID and MULE_CORRELATION_GROUP_SIZE ) and then reorder them according to their MULE_CORRELATION_SEQUENCE index. +
-The Resequencer will output three distinct messages, so the Aggregator is still needed to merge them into one.
-
+The Resequencer waits for all of the messages in the group to arrive (keeping track of MULE_CORRELATION_ID and MULE_CORRELATION_GROUP_SIZE) and then reorders them according to their MULE_CORRELATION_SEQUENCE index. +
+The Resequencer  outputs three distinct messages, so the Aggregator is still needed to merge them into one.
++
 . Run the Mule project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome) or the  http://curl.haxx.se/[curl] command-line utility.
@@ -737,7 +727,7 @@ The easiest way to do this is sending posts via a browser extension such as Post
 
 With the Resequencer in place, messages now reach the aggregator in the correct order and are assembled accordingly.
 
- Try out this demonstration
+Try this demonstration:
 
 To really take advantage of splitting the message, you should deploy your app to a cluster of servers. By following the steps below, you can simulate the random delays of a cluster of servers.
 
@@ -761,11 +751,10 @@ The following is not an implementable solution but rather a proof of concept tha
 </scripting:component>
 ----
 +
-
 This snippet of code simply introduces a random delay of up to 10 seconds. As each message is running asynchronously, this delay can potentially alter the order in which messages move on to the next step, simulating what could happen in a real implementation with parallel servers processing each fraction of the message.
 . Run the project.
-. You must now send the HTTP connector an HTTP request that includes a body with an attached XML file. +
-Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
+. Send the HTTP connector an HTTP request that includes a body with an attached XML file.
+. Send a Post request to http://localhost:8081/ attaching XML to the body of the message. Sample XML is provided below.
 +
 [TIP]
 The easiest way to do this is sending posts via a browser extension such as Postman (for Google Chrome) or the http://curl.haxx.se/[curl] command-line utility.
@@ -796,7 +785,7 @@ Below these, you should see a fourth longer message where these indexes are in o
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
@@ -806,7 +795,7 @@ http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/cu
 
     <flow name="splitterFlow1" doc:name="splitterFlow1">
         <http:listener config-ref="HTTP_Listener_Configuration" path="gettweets" doc:name="HTTP"/>
-        <splitter expression="#[xpath3('//actor')]" doc:name="Splitter"/>
+        <splitter expression="#[xpath3('//*:actor/text()')]" doc:name="Splitter"/>
         <vm:outbound-endpoint exchange-pattern="one-way" path="step2" doc:name="VM"/>
     </flow>
     <flow name="splitterFlow2" doc:name="splitterFlow2">

@@ -1,0 +1,669 @@
+= Object Store Module Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, object store, persist data
+
+The Object Store Module allows you to manipulate object stores within Mule. It can access custom object stores, or the defaults in-memory and persistent object stores. It allows you to store, retrieve and remove objects from the store.
+Components in your XML flows can be used with the Mule default implementations or they can reference a custom global configuration element via a `ref` attribute.
+
+[NOTE]
+====
+To use the object Store module in Anypoint Studio, you must first download the https://www.anypoint.mulesoft.com/exchange/org.mule.modules/mule-module-objectstore/[Object Store Connector] from  Anypoint Exchange.
+====
+
+[%header,cols="25a,75a"]
+|===
+|Item |Description
+|Namespace |+http://www.mulesoft.org/schema/mule/objectstore+
+|Schema Location |	+http://www.mulesoft.org/schema/mule/objectstore/current/mule-objectstore.xsd+
+|Schema Version	| 1.0
+|Minimum Mule Version |3.6
+|===
+
+== Configuration
+
+To use this module within a flow, the namespace must include the module as a dependency. The resulting flow will look similar to the following:
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:objectstore="http://www.mulesoft.org/schema/mule/objectstore"
+  xsi:schemaLocation="
+     http://www.mulesoft.org/schema/mule/core
+     http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+     http://www.mulesoft.org/schema/mule/objectstore
+     http://www.mulesoft.org/schema/mule/objectstore/current/mule-objectstore.xsd">
+
+  <!-- Your flows and configuration elements -->
+
+</mule>
+----
+
+When using Anypoint Studio, the necessary elements are added to your namespace automatically when dragging in an Object Store Connector from the palette into your canvas.
+
+== XML Components in the Object Store Module
+
+[%header,cols="25a,75a"]
+|===
+| Component |Description
+|`<objectstore:config>` |
+Configure an instance of the object store module. Various attributes determine the type of object store to be created, and the object store's behavior.
+
+|`<objectstore:all-keys>` |
+Set the message payload to a list of all the keys in the object store.
+
+Throws an `UnsupportedOperationException` if the object store implementation does not support listing all keys.
+|`<objectstore:contains>` |
+Checks whether the object store contains the given key.
+
+Sets the payload to true if the key exists in the object store, otherwise the payload is set to false.
+|`<objectstore:dual-store>` |
+Stores the value object using the supplied key, and also stores the key object using the supplied value. This is equivalent to calling `Store(key,value)` and `Store(value,key)` in a single operation.
+
+This allows you to later retrieve the key object by supplying the value object, instead of only retrieving the value object by supplying the key object.
+
+See the Store operation for more details.
+|`<objectstore:remove>` |
+Locks the object store and removes the object for the respective key. Throws an `ObjectDoesNotExistException` if the key does not exist in the object store.
+
+Sets the message payload to the object that was previously stored for the given key. If the key does not exist and ignoreNotExists is true, the operation returns a null object.
+
+Throws an `ObjectStoreException` if the given key is `null`,  if the store is not available, or if any other implementation-specific error occurs.
+|`<objectstore:retrieve>` |
+Retrieves an object from the object store and copies the retrieved value into the specified property scope of a Mule Message. The default target property scope is `INVOCATION`.
+
+Throws an `ObjectDoesNotExistException` exception if the key does not exist in the object store.
+|`<objectstore:retrieve-store>` |Retrieves and stores in the same operation.
+|`<objectstore:retrieve-with-lock>` |
+Locks the object store and retrieves the given value object for the supplied key object. The retrieved value is then copied into the specified property scope of a Mule Message. The object store lock is released after the object is retrieved from the object store.
+|`<objectstore:store>` |
+Stores an object in the object store.
+
+Locks the object store and then writes the value object in the object store using the supplied key object.
+
+This operation does not change the current message payload.
+
+Throws an `ObjectAlreadyExistsException` if the overwrite property is set to false (the default) and the key already exists in the object store.
+|===
+
+=== <objectstore:config>
+
+This component is a global element, and goes outside any of your flows. It must then be referenced by the other elements in the object store module.
+
+By default, Mule includes three default object stores that are initiated every time you run Mule both on premises and on CloudHub.
+
+Each Mule runtime includes these 3 Spring Bean instances:
+
+* _defaultInMemoryObjectStore
+* _defaultUserObjectStore
+* _defaultTransientUserObjectStore
+
+You can also code your own object store Java class, then include an instance in your application as a Spring bean. You can then reference you custom object store when you define a new Object Store module element.
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|name |The identifier of the object store configuration. Other components must reference this configuration via this name.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|doc:name |The string displayed in Anypoint Studio.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|partition |Name of the partition. If set, and an object store is specified in the objectstore-ref attribute, the given Object Store must be partitionable.
+
+This means that:
+
+* If you define an objectstore-ref and the object store is partitionable, the connector uses the partition name.
+* If you define an objectstore-ref and the object store is NOT partitionable, the connector ignores the partition name.
+* If you don't define an objectstore-ref, but supply a partition name, the connector applies the partition name to the default object store.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|objectStore-ref |Optional. Reference to an object store bean. If not specified, one of the defaults is used depending on the context (stand-alone Mule runtime, Mule runtime cluster, or CloudHub cluster). You can also specify one of the default object stores by name `_defaultInMemoryObjectStore`, `_defaultUserObjectStore`, or `_defaultTransientUserObjectStore`.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* none +
+*Encoding:* none
+|entryTtl |Time To Live for stored values in milliseconds. If using this parameter, maxEntries and expirationInterval are mandatory.
+
+*Default:* none +
+*Java Type:* Int +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|expirationInterval |Specifies the expiration check interval in milliseconds.
+
+*Default:* none +
+*Java Type:* Int +
+*MIME Type:* */* +
+*Encoding:* none
+|maxEntries |Specifies the maximum number of entries.
+
+*Default:* none +
+*Java Type:* Int +
+*MIME Type:* */* +
+*Encoding:* none
+|persistent |Specifies if the required store needs to be
+persistent or not (this argument is ignored if the
+object store is passed by ref using the objectStore-ref attribute,
+or if no partition name is defined).
+If persistent is `false`, then data may be lost when a
+Mule runtime restarts.
+
+*Default:* `false` +
+*Java Type:* boolean +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+The following is an example objectstore configuration that specifies a partition named `customers` within the defaultUserObjectStore, and specifying that the object store should be persistent.
+
+[source,xml]
+----
+<objectstore:config name="ObjectStore__Configuration" partition="customer"  persistent="true"/>
+----
+
+If you do not specify a value for the objectstore-ref, the _defaultUserObjectStore is used, which is equivalent to this configuration:
+
+[source,xml]
+----
+<objectstore:config name="ObjectStore__Configuration" objectstore-ref="_defaultUserObjectStore"  persistent="true"/>
+----
+
+If you don't want to use one of the default object stores, you can define your own Java bean and reference it instead in the objectstore-ref attribute.
+
+=== <objectstore:all-keys>
+
+Returns a list of all the keys in the object store.
+
+NOTE: Not all stores support this method. If the method is not supported, a `java.lang.UnsupportedOperationException` is thrown.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:retrieve-all-keys config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which objectstore configuration to use. Otherwise the default objectstore configuration is used.
+|===
+
+==== Returned Message Payload
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|List<String> |A java.util.List with all the keys in the store.
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException | If an exception occurs while collecting the list of all keys.
+|java.lang.UnsupportedOperationException | *IMPORTANT:* Not all stores support this method. This exception type is thrown if the allKeys() method is  not supported by the current object store implementation type.
+|===
+
+=== <objectstore:contains>
+
+Checks whether the object store contains the given key.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:contains key="mykey" config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier key object to validate in the object store.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|===
+
+==== Returned Message Payload
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|boolean |`true` if the object store contains the key, `false` if it doesn't.
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|*Exception Type*	| *Description*
+|org.mule.api.store.ObjectStoreException | If the provided key is `null`.
+|===
+
+=== <objectstore:dual-store>
+
+Stores a value using a key, and also stores a key using a value. This is equivalent to calling store(key,value) and then store(value,key).
+
+This allows you to later search for this key/value pair using either the key or the value object.
+
+If an exception is thrown, it rolls back both operations.
+
+There is also an option to indicate if the key would be overwritten or not.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:dual-store key="mykey" value-ref="#[payload]" config-ref="config-name"/>
+----
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object store in the first store operation, but also the value to store in the second store operation.
+You can use a MEL expression to set this object, such as: +
+`&#x0023;['new value']`
+
+If you want this to be the payload, then use: +
+`value-ref="&#x0023;[message.payload]"`.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|value-ref |The object to store in the first store operation, but also the key to use for the second store operation. You can use a MEL expression to set this object, such as: +
+`&#x0023;['new value']`
+
+If you want this to be the payload, then use: +
+`value-ref="&#x0023;[message.payload]"`.
+
+*Default:* none +
+*Java Type:* Serializable +
+*MIME Type:* */* +
+*Encoding:* none
+|overwrite |True if you want to overwrite the existing object. This choice applies to both store operations. If either the key and/or value object's already exist as keys in the object store, then that key is overwritten with the new value.
+
+*Default:* `false` +
+*Java Type:* boolean +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type| Description
+|org.mule.api.store.ObjectStoreException |If the given key cannot be stored or is `null`.
+|org.mule.api.store.ObjectStoreNotAvaliableException |If the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectAlreadyExistsException |If an attempt is made to store an object for a key that already has an object associated. Only thrown if overwrite is false.
+|===
+
+=== <objectstore:remove>
+
+Remove the object for the respective key. This operation can fail silently based on the value passed in ignoreNotExists.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:remove key="mykey" config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which objectstore configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object to remove.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|ignoreNotExists |`false` | Indicates if the operation ignores `NotExistsException` from the ObjectStore.
+
+*Default:* `false` +
+*Java Type:* boolean +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Returned Message Payload
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|Object |The object that was previously stored for the given key. If the key does not exist and `ignoreNotExists` is true, the operation returns a null object.
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException | If the given key is `null` or if the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectDoesNotExistException |If no value for the given key was previously stored.
+|===
+
+=== <objectstore:retrieve>
+
+Retrieve an object from the object store and make it available in the specified property scope of a Mule Message.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:retrieve key="mykey" defaultValue-ref="#[string:myValue]" config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object to retrieve.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|defaultValue |Optional. The default value if the key does not exist.
+
+*Default:* none +
+*Java Type:* Object +
+*MIME Type:* */* +
+*Encoding:* none
+|targetProperty |Optional. The Mule Message property where the retrieved value is stored.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|targetScope |The Mule Message property scope, only used when `targetProperty` is specified.
+
+*Default:* INVOCATION +
+*Java Type:* MulePropertyScope +
+*MIME Type:* */* +
+*Encoding:* none
+|muleMessage |Injected Mule Message
+
+*Default:* none +
+*Java Type:* MuleMessage +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Returns
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|Object |The object associated with the given key. If no object for the given key was found this method throws an `org.mule.api.store.ObjectDoesNotExistException`.
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException |If the given key is `null`.
+|org.mule.api.store.ObjectStoreNotAvaliableException |If  the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectDoesNotExistException |If no value for the given key was previously stored.|
+|===
+
+
+=== <objectstore:retrieve-store>
+
+Retrieve and Store in one single operation.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:retrieve-store key="mykey" defaultValue-ref="#[string:myValue]" storeValue-ref="#[string:myValue]" config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object to retrieve.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|defaultValue |Optional. The default value if the key does not exist.
+
+*Default:* none +
+*Java Type:* Object +
+*MIME Type:* */* +
+*Encoding:* none
+|storeValue |The object to store. If you want this to be the payload then use: +
+`value-ref="&#x0023;[payload]"`.
+
+*Default:* none +
+*Java Type:* Serializable +
+*MIME Type:* */* +
+*Encoding:* none
+|targetProperty |Optional. The Mule Message property where the retrieved value is stored.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|targetScope |The Mule Message property scope, only used when targetProperty is specified.
+
+*Default:* INVOCATION +
+*Java Type:* MulePropertyScope +
+*MIME Type:* */* +
+*Encoding:* none
+|muleMessage |Injected Mule Message
+
+*Default:* none +
+*Java Type:* MuleMessage +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Returned Message Payload
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|Object |The object associated with the given key. If no object for the given key was found this method returns the defaultValue
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException |If the given key is `null`.
+|org.mule.api.store.ObjectStoreNotAvaliableException |If the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectDoesNotExistException |If no value for the given key was previously stored.
+|===
+
+=== <objectstore:retrieve-with-lock>
+
+Retrieve the given object with lock from the object store and make it available in the specified property scope of a Mule Message.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:retrieve-with-lock key="mykey" defaultValue-ref="#[string:myValue]" config-ref="config-name"/>
+----
+
+==== Attributes
+
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object to retrieve.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|defaultValue |Optional. The default value if the key does not exist.
+
+*Default:* none +
+*Java Type:* Object +
+*MIME Type:* */* +
+*Encoding:* none
+|targetProperty |Optional. The Mule Message property where the retrieved value is stored.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|targetScope |The Mule Message property scope, only used when targetProperty is specified.
+
+*Default:* INVOCATION +
+*Java Type:* MulePropertyScope +
+*MIME Type:* */* +
+*Encoding:* none
+|muleMessage |Injected Mule Message
+
+*Default:* none +
+*Java Type:* MuleMessage +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Returns
+
+[%header,cols="25a,75a"]
+|===
+|Return Type |Description
+|Object |The object associated with the given key. If no object for the given key was found this method throws an `org.mule.api.store.ObjectDoesNotExistException`.
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException |If the given key is `null`.
+|org.mule.api.store.ObjectStoreNotAvaliableException |If  the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectDoesNotExistException |If no value for the given key was previously stored.
+|===
+
+=== <objectstore:store>
+
+Stores an object in the object store. This allows an option to indicate if key would be overwritten or not.
+
+==== XML Sample
+
+[source,xml]
+----
+<objectstore:store key="mykey" value-ref="#[payload]" config-ref="config-name"/>
+----
+
+==== Attributes
+
+[%header,cols="25a,75a"]
+|===
+|Name |Description
+|config-ref |Optional. Specify which configuration to use.
+
+*Default:* none +
+*Java Type:* none +
+*MIME Type:* none +
+*Encoding:* none
+|key |The identifier of the object to store.
+
+*Default:* none +
+*Java Type:* String +
+*MIME Type:* */* +
+*Encoding:* UTF-8
+|value |The object to store. If you want this to be the payload then use: +
+`value-ref="&#x0023;[payload]"`.
+
+*Default:* none +
+*Java Type:* Serializable +
+*MIME Type:* */* +
+*Encoding:* none
+|overwrite|True if you want to overwrite the existing object.
+
+*Default:* `False` +
+*Java Type:* Boolean +
+*MIME Type:* */* +
+*Encoding:* none
+|===
+
+==== Throws
+
+[%header,cols="60a,40a"]
+|===
+|Exception Type |Description
+|org.mule.api.store.ObjectStoreException | If the given key cannot be stored, or is `null`.
+|org.mule.api.store.ObjectStoreNotAvaliableException | If  the store is not available or any other implementation-specific error occurred.
+|org.mule.api.store.ObjectAlreadyExistsException | If the key already exists in the object store, and that key already has an associated value object. Only thrown if overwrite is false.
+|===
+
+== See Also
+
+* xref:mule-object-stores.adoc[Mule Object Stores]
+* xref:runtime-manager::managing-application-data-with-object-stores.adoc[Managing Application Data Storage with Object Stores]

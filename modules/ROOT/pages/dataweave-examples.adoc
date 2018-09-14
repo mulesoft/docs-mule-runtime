@@ -1,0 +1,1688 @@
+= DataWeave Examples
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+*_Enterprise_*
+
+== XML to JSON
+
+This example converts an XML input to a JSON output that is structured differently and that cointains URL links that are built from concatenating input content with a few constants that are defined in the header. The transform also creates a few fields that are conditional and are only present in the output when they exist in the input.
+
+*Input*
+
+[source,xml,linenums]
+----
+<ns0:getItemsResponse xmlns:ns0="http://www.alainn.com/SOA/message/1.0">
+    <ns0:PageInfo>
+        <pageIndex>0</pageIndex>
+        <pageSize>20</pageSize>
+    </ns0:PageInfo>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0015BYNRO</id>
+        <type>Oils</type>
+        <name>Now Foods LANOLIN PURE</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/11Qoe774Q4L._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B002K8AD02</id>
+        <type>Bubble Bath</type>
+        <name>Deep Steep Honey Bubble Bath</name>
+        <summary>Disclaimer: This website is for informational purposes only.
+            Always check the actual product label in your possession for the most
+            accurate ingredient information due to product changes or upgrades
+            that may not yet be reflected on our web site. These statements made
+            in this website have not been evaluated by the Food and Drug
+            Administration. The products offered are not intended to diagnose,
+            treat
+        </summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/216ytnMOeXL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B000I206JK</id>
+        <type>Oils</type>
+        <name>Now Foods Castor Oil</name>
+        <summary>One of the finest natural skin emollients available</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21Yz8q-yQoL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B003Y5XF2S</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Manic Panic Semi-Permanent Color Cream</name>
+        <summary>Ready to use, no mixing required</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/51A2FuX27dL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0016BELU2</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Herbatint Herbatint Permanent Chestnut (4n)</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21woUiM0BdL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+</ns0:getItemsResponse>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%input payload application/xml
+%var baseUrl="http://alainn-cosmetics.cloudhub.io/api/v1.0/"
+%var urlPage="http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+%var pageIndex=0
+%var requestedPageSize=4
+%var fullUrl="http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+---
+using (pageSize = payload.getItemsResponse.PageInfo.pageSize) {
+     links: [
+        {
+            href: fullUrl,
+            rel : "self"
+        },
+        {
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex + pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "next"
+        },
+        ({
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex - pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "prev"
+        }) when (pageIndex > 0)
+     ],
+     collection: {
+        size: pageSize,
+        items: payload.getItemsResponse.*Item map {
+            id: $.id,
+            type: $.type,
+            name: $.name,
+            (summary: $.summary) when $.summary?,
+            (brand: $.brand) when $.brand?,
+            links: ($.images.*image map {
+                href: trim $,
+                rel: $.@type
+            }) + {
+                href: baseUrl ++ "/" ++ $.id,
+                rel: "self"
+            }
+        }
+     }
+}
+----
+
+*Output*
+
+[source,json,linenums]
+----
+{
+  "links": [
+    {
+      "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/items",
+      "rel": "self"
+    },
+    {
+      "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/items?pageIndex=20&pageSize=4",
+      "rel": "next"
+    }
+  ],
+  "collection": {
+    "size": "20",
+    "items": [
+      {
+        "id": "B0015BYNRO",
+        "type": "Oils",
+        "name": "Now Foods LANOLIN PURE",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/11Qoe774Q4L._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B0015BYNRO",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B002K8AD02",
+        "type": "Bubble Bath",
+        "name": "Deep Steep Honey Bubble Bath",
+        "summary": "Disclaimer: This website is for informational purposes only.\n            Always check the actual product label in your possession for the most\n            accurate ingredient information due to product changes or upgrades\n            that may not yet be reflected on our web site. These statements made\n            in this website have not been evaluated by the Food and Drug\n            Administration. The products offered are not intended to diagnose,\n            treat\n        ",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/216ytnMOeXL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B002K8AD02",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B000I206JK",
+        "type": "Oils",
+        "name": "Now Foods Castor Oil",
+        "summary": "One of the finest natural skin emollients available",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/21Yz8q-yQoL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B000I206JK",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B003Y5XF2S",
+        "type": "Chemical Hair Dyes",
+        "name": "Manic Panic Semi-Permanent Color Cream",
+        "summary": "Ready to use, no mixing required",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/51A2FuX27dL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B003Y5XF2S",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B0016BELU2",
+        "type": "Chemical Hair Dyes",
+        "name": "Herbatint Herbatint Permanent Chestnut (4n)",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/21woUiM0BdL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B0016BELU2",
+            "rel": "self"
+          }
+        ]
+      }
+    ]
+  }
+}
+----
+
+== XML to JSON 2
+
+This example takes an XML list of books and outputs a JSON version of the same. As JSON can't have duplicate keys, for elements that may be duplicate in the inbound XML, only the first is selected to be put into the output. Values that are numeric are defined as numbers to avoid having them being treated as strings.
+
+*Input*
+
+[source,xml,linenums]
+----
+<bookstore>
+    <book category="cooking">
+        <title lang="en">Everyday Italian</title>
+        <author>Giada De Laurentiis</author>
+        <year>2005</year>
+        <price>30.00</price>
+    </book>
+    <book category="children">
+        <title lang="en">Harry Potter</title>
+        <author>J K. Rowling</author>
+        <year>2005</year>
+        <price>29.99</price>
+    </book>
+    <book category="web">
+        <title lang="en">XQuery Kick Start</title>
+        <author>James McGovern</author>
+        <author>Per Bothner</author>
+        <author>Kurt Cagle</author>
+        <author>James Linn</author>
+        <author>Vaidyanathan Nagarajan</author>
+        <year>2003</year>
+        <price>49.99</price>
+    </book>
+    <book category="web" cover="paperback">
+        <title lang="en">Learning XML</title>
+        <author>Erik T. Ray</author>
+        <year>2003</year>
+        <price>39.95</price>
+    </book>
+</bookstore>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/xml
+%output application/json
+---
+payload.bookstore map {
+    item: {
+      type: "book",
+      price: $.price[0] as :number,
+      properties: {
+        title: $.title[0],
+        author: $.author,
+        year: $.year[0] as :number
+      }
+    }
+}
+----
+
+*Output*
+
+[source,json,linenums]
+----
+[
+  {
+    "item": {
+      "type": "book",
+      "price": 30,
+      "properties": {
+        "title": "Everyday Italian",
+        "author": [
+          "Giada De Laurentiis"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": "Harry Potter",
+        "author": [
+          "J K. Rowling"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": "XQuery Kick Start",
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": "Learning XML",
+        "author": [
+          "Erik T. Ray"
+        ],
+        "year": 2003
+      }
+    }
+  }
+]
+----
+
+== JSON to XML
+
+This example transforms a JSON array of objects, each representing a book, into XML. The *map* operation carries out the same steps for each element in the input array. Through the use of @, attributes are added into the XML tags.
+
+*Input*
+
+[source,json,linenums]
+----
+[
+  {
+    "item": {
+      "type": "book",
+      "price": 30,
+      "properties": {
+        "title": "Everyday Italian",
+        "author": [
+          "Giada De Laurentiis"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": "Harry Potter",
+        "author": [
+          "J K. Rowling"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": "XQuery Kick Start",
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": "Learning XML",
+        "author": [
+          "Erik T. Ray"
+        ],
+        "year": 2003
+      }
+    }
+  }
+]
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/json
+%output application/xml
+---
+{
+  bookstore: { (payload map {
+      book : {
+      title @(lang: "en"): $.item.properties.title,
+      year: $.item.properties.year,
+      price: $.item.price,
+      ($.item.properties.author map
+      author @(loc: "US"): $)
+    }
+  }) }
+}
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<bookstore>
+  <book>
+    <title lang="en">Everyday Italian</title>
+    <year>2005</year>
+    <price>30</price>
+    <author loc="US">Giada De Laurentiis</author>
+  </book>
+  <book>
+    <title lang="en">Harry Potter</title>
+    <year>2005</year>
+    <price>29.99</price>
+    <author loc="US">J K. Rowling</author>
+  </book>
+  <book>
+    <title lang="en">XQuery Kick Start</title>
+    <year>2003</year>
+    <price>49.99</price>
+    <author loc="US">James McGovern</author>
+    <author loc="US">Per Bothner</author>
+    <author loc="US">Kurt Cagle</author>
+    <author loc="US">James Linn</author>
+    <author loc="US">Vaidyanathan Nagarajan</author>
+  </book>
+  <book>
+    <title lang="en">Learning XML</title>
+    <year>2003</year>
+    <price>39.95</price>
+    <author loc="US">Erik T. Ray</author>
+  </book>
+</bookstore>
+----
+
+== Multiple Inputs
+
+In this example, there are three different input JSON files. One of them contains an array of book objects, another a set of currency exchange rates, and the other one a querry. The transform filters the first input using the conditions passed in the third input, then performs a map operation to deal with each remaining object separately. Within this map, it defines two variables: *it* and *props*. Through the use of @, attributes are added into the XML tags. A second map operation inside the first one calculates the price of each book for each of the currencies provided in the second input. Another map operation displays each element in the "author" array as a separate <author></author> tag.
+
+[WARNING]
+====
+Note that for this example to run in Anypoint Studio, you must rename the inputs to recognized elements of the Mule Message.
+
+Following the example below, you could have `in0` sent as a payload of a POST request, and have `in1` and `in2` defined as two variables within the Mule message.
+
+====
+
+*Input*
+
+*in0:*
+
+[source,json]
+----
+[
+  {
+    "item": {
+      "type": "book",
+      "price": 30,
+      "properties": {
+        "title": "Everyday Italian",
+        "author": [
+          "Giada De Laurentiis"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": "Harry Potter",
+        "author": [
+          "J K. Rowling"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": "XQuery Kick Start",
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Kurt Cagle",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": "Learning XML",
+        "author": [
+          "Erik T. Ray"
+        ],
+        "year": 2003
+      }
+    }
+  }
+]
+----
+
+*in1:*
+
+[source,json,linenums]
+----
+{
+  "USD": [
+    {"currency": "EUR", "ratio":0.92},
+    {"currency": "ARS", "ratio":8.76},
+    {"currency": "GBP", "ratio":0.66}
+  ]
+}
+----
+
+*in2:*
+
+[source,json]
+----
+{
+  "publishedAfter": 2004
+}
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input in0 application/json
+%input in1 application/json
+%input in2 application/json
+%output application/xml
+---
+books: {
+  (in0 filter $.item.properties.year > in2.publishedAfter map using (it = $.item, props = $.item.properties) {
+    book @(year: props.year): {
+      (in1.USD map {
+        price @(currency: $.currency): $.ratio * it.price
+      }),
+      title: props.title,
+      authors: { (props.author map {
+        author: $
+      }) }
+    }
+  })
+}
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<books>
+  <book year="2005">
+    <price currency="EUR">27.6</price>
+    <price currency="ARS">262.8</price>
+    <price currency="GBP">19.8</price>
+    <title>Everyday Italian</title>
+    <authors>
+      <author>Giada De Laurentiis</author>
+    </authors>
+  </book>
+  <book year="2005">
+    <price currency="EUR">27.5908</price>
+    <price currency="ARS">262.7124</price>
+    <price currency="GBP">19.7934</price>
+    <title>Harry Potter</title>
+    <authors>
+      <author>J K. Rowling</author>
+    </authors>
+  </book>
+</books>
+----
+
+== Create Mule Config
+
+This example does not take any input in, it simply creates an XML output out of hard-coded instructions. It references several external sources through namespace directives. It creates a set of XML tags that replicate the structure of a Mule configuration XML file, including attributes that go inside these tags through the use of @.
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml encoding="UTF-8"
+%namespace http http://www.mulesoft.org/schema/mule/http
+%namespace as2 http://www.mulesoft.org/schema/mule/as2
+%namespace spring http://www.springframework.org/schema/beans
+%namespace doc http://www.mulesoft.org/schema/mule/documentation
+%namespace sftp http://www.mulesoft.org/schema/mule/sftp
+---
+
+mule: {
+
+  http#connector @(name:"HTTP_HTTPS",
+                                  cookieSpec:"netscape",
+                                  validateConnections:"true",
+                                sendBufferSize:"0",
+                                receiveBufferSize:"0",
+                                receiveBacklog:"0",
+                                clientSoTimeout:"10000",
+                                serverSoTimeout:"10000",
+                                    socketSoLinger:"0",
+                                doc#name:"HTTP-HTTPS"
+  ): {},
+
+  http#endpoint @(exchange-pattern:"request-response",
+                                host:"localhost",
+                                    port:"\${http.port}",
+                                connector-ref:"HTTP_HTTPS",
+                                method:"POST",
+                                    name:"http-receive-endpoint",
+                                doc#name:"HTTP"
+  ): {},
+
+  http#endpoint @(exchange-pattern:"request-response",
+                                host:"btsci-dev.cloudapp.net",
+                                    port:"80",
+                                connector-ref:"HTTP_HTTPS",
+                                method:"POST",
+                                name:"http-send-endpoint",
+                                    doc#name:"HTTP",
+                                path:"as2tests/scenario1/BTSHTTPReceive.dll"
+  ): {},
+
+  as2#config @(name:"receive-as2-config",
+                                 httpEndpointRef:"http-receive-endpoint",
+                                     doc#name:"AS2"
+  ): {},
+
+  as2#config @(name:"send-as2-config",
+                                httpEndpointRef:"http-send-endpoint",
+                                    doc#name:"AS2"
+  ): {},
+
+
+  flow @(name:"receive-flow"): {
+
+            as2#receive @(config-ref:"receive-as2-config",
+                                  doc#name:"Receive EDI over AS2",
+                                            keyStorePassword:"passw0rd",
+                                  keyStorePath:"myPartner.p12"): {},
+            sftp#outbound-endpoint @(exchange-pattern:"one-way",
+                                            host:"dev.modusintegration.com",
+                                  port:"22",
+                                  responseTimeout:"10000",
+                                            doc#name:"Save EDI doc",
+                                  password:"pa\$\$w0rd",
+                                  path:"/mule/inbox",
+                                            user:"guest"): {}
+  },
+
+  flow @(name:"send-flow"):{
+          sftp#inbound-endpoint @(host:"dev.modusintegration.com",
+                            port:"22",
+                    responseTimeout:"10000",
+                    doc#name:"Read EDI doc",
+                    password:"\$pa\$\$w0rd",
+                            path:"/mule/outbox",
+                    user:"guest"  ):{},
+
+    as2#send @(config-ref:"send-as2-config",
+                      as2From:"myPartner",
+                            as2To:"myCompany",
+                      doc#name:"Send EDI over AS2",
+                      encrypt:"true",
+                            keyStorePassword:"passw0rd",
+                      keyStorePath:"myPartner.p12",
+                      sign:"true"):{}
+  }
+
+}
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:as2="http://www.mulesoft.org/schema/mule/as2"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp">
+    <http:connector name="HTTP_HTTPS" cookieSpec="netscape" validateConnections="true" sendBufferSize="0" receiveBufferSize="0" receiveBacklog="0" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0" doc:name="HTTP-HTTPS"></http:connector>
+    <http:endpoint exchange-pattern="request-response" host="localhost" port="${http.port}" connector-ref="HTTP_HTTPS" method="POST" name="http-receive-endpoint" doc:name="HTTP"></http:endpoint>
+    <http:endpoint exchange-pattern="request-response" host="btsci-dev.cloudapp.net" port="80" connector-ref="HTTP_HTTPS" method="POST" name="http-send-endpoint" doc:name="HTTP" path="as2tests/scenario1/BTSHTTPReceive.dll"></http:endpoint>
+    <as2:config name="receive-as2-config" httpEndpointRef="http-receive-endpoint" doc:name="AS2"></as2:config>
+    <as2:config name="send-as2-config" httpEndpointRef="http-send-endpoint" doc:name="AS2"></as2:config>
+    <flow name="receive-flow">
+        <as2:receive config-ref="receive-as2-config" doc:name="Receive EDI over AS2" keyStorePassword="passw0rd" keyStorePath="myPartner.p12"></as2:receive>
+        <sftp:outbound-endpoint exchange-pattern="one-way" host="dev.modusintegration.com" port="22" responseTimeout="10000" doc:name="Save EDI doc" password="pa$$w0rd" path="/mule/inbox" user="guest"></sftp:outbound-endpoint>
+    </flow>
+    <flow name="send-flow">
+        <sftp:inbound-endpoint host="dev.modusintegration.com" port="22" responseTimeout="10000" doc:name="Read EDI doc" password="$pa$$w0rd" path="/mule/outbox" user="guest"></sftp:inbound-endpoint>
+        <as2:send config-ref="send-as2-config" as2From="myPartner" as2To="myCompany" doc:name="Send EDI over AS2" encrypt="true" keyStorePassword="passw0rd" keyStorePath="myPartner.p12" sign="true"></as2:send>
+    </flow>
+</mule>
+----
+
+== Create Mule POM
+
+This example does not take any input in, it simply creates an XML output out of hard-coded instruction. It references several external sources through namespace directives and defines a version as a constant in the header, that is then referenced in the body. It creates a set of XML tags that replicate the structure of a Mule POM file, including attributes inside these tags that are added through the use of @ and references to a variable.
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+%namespace xsi http://www.w3.org/2001/XMLSchema-instance
+%var modelVersion = "4.0.0"
+---
+{
+    project: {
+
+      modelVersion: modelVersion,
+    groupId: "com.mycompany",
+    version: "1.0.0-SNAPSHOT",
+    packaging: "mule",
+    name: "Mavenito",
+
+    properties: {
+        "project.build.sourceEncoding": "UTF-8",
+      "project.reporting.outputEncoding": "UTF-8",
+      "mule.version": "3.6.0",
+      "mule.tools.version": "1.0"
+    },
+
+    build: {
+        plugins: {
+          plugin: {
+            groupId: "org.mule.tools.maven",
+          artifactId: "mule-app-maven-plugin",
+          version: "\${mule.tools.version}",
+          extensions: true,
+          configuration: {
+                        copyToAppsDirectory: true
+          }
+        },
+        plugin: {
+          artifactId: "maven-assembly-plugin",
+                    version: "2.2.1",
+                  configuration: {
+                            descriptorRefs: {
+                                descriptorRef: "project"
+                }
+             }
+        },
+        plugin: {
+          groupId: "org.codehaus.mojo",
+                     artifactId: "build-helper-maven-plugin",
+                    version:1.7,
+                    executions: {
+                            execution: {
+                                id: "add-resource",
+                                phase: "generate-resources",
+                                goals: {
+                                    goal: "add-resource"
+                                },
+                                configuration: {
+                                        resources: {
+                                            resource: {
+                                                directory: "src/main/app/"
+                                            },
+                                            resource: {
+                                                directory: "mappings/"
+                      }
+                                    }
+                                }
+                            },
+                    configuration: {
+                            resources: {
+                 resource: {
+                         directory: "src/main/api/"
+                                    }
+              }
+          }
+        }
+      },
+      plugin: {
+          groupId: "org.apache.maven.plugins",
+        artifcatId: "maven-dependency-plugin",
+        version: "2.4",
+        executions: {
+              execution: {
+                  id: "copy-clover-plugins",
+              phase: "validate",
+              goals: {
+                  goal: "copy"
+              },
+              configuration: {
+                 overWriteReleases: true,
+                 overWriteSnapshots: true,
+                 overWriteIfNewer: true,
+                 stripVersion: true,
+                 outputDirectory: "\${project.build.testOutputDirectory}"
+              },
+              artifactItems: {
+                                artifactItem: {
+                           groupId: "com.cloveretl",
+                        artifactId: "cloveretl-engine",
+                                        version: "\${mule.version}",
+                                        type: "zip"
+                    }
+                 }
+              }
+        }
+      },
+      plugin: {
+          artifactId: "maven-antrun-plugin",
+                version: "1.7",
+        executions: {
+               execution: {
+                        phase: "compile",
+                        configuration: {
+                            tasks: {
+                                    unzip @(dest: "\${project.build.testOutputDirectory}",
+                          src: "\${project.build.testOutputDirectory}/cloveretl-engine.zip"): {}
+                        }
+           },
+           goals: {
+                            goal: "run"
+           }
+         }
+           }
+      }
+    }
+  },
+
+  dependencies: {
+    dependency: {
+        groupId: "com.mulesoft.muleesb",
+      artifactId: "mule-core-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.modules",
+      artifactId: "mule-module-spring-config-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-file",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-http",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.transports",
+      artifactId: "mule-transport-jdbc-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.transports",
+      artifactId: "mule-transport-jms-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-vm",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.modules",
+      artifactId: "mule-module-scripting",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.modules",
+      artifactId: "mule-module-xml",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.tests",
+      artifactId: "mule-tests-functional",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.cloveretl",
+      artifactId: "cloveretl-engine",
+      version: "\${mule.version}",
+      scope: "provided"
+    }
+    },
+
+  repositories: {
+      repository: {
+        id: "Central",
+      name: "Central",
+      url: "http://repo1.maven.org/maven2/",
+      layout: "default"
+    },
+    repository: {
+        id: "mulesoft-releases",
+      name: "MuleSoft Releases Repository",
+      url: "http://repository.mulesoft.org/releases/",
+      layout: "default"
+    },
+    repository: {
+        id: "mulesoft-snapshots",
+      name: "MuleSoft Snapshots Repository",
+      url: "http://repository.mulesoft.org/snapshots/",
+      layout: "default"
+    }
+  },
+
+
+  pluginRepositories: {
+    pluginRepository: {
+                id: "mulesoft-release",
+                name: "mulesoft release repository",
+                layout: "default",
+        url: "http://repository.mulesoft.org/releases/",
+                 snapshots: {
+                enabled: false
+                }
+    }
+  }
+
+ }
+}
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.mycompany</groupId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>mule</packaging>
+  <name>Mavenito</name>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <mule.version>3.6.0</mule.version>
+    <mule.tools.version>1.0</mule.tools.version>
+  </properties>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.mule.tools.maven</groupId>
+        <artifactId>mule-app-maven-plugin</artifactId>
+        <version>${mule.tools.version}</version>
+        <extensions>true</extensions>
+        <configuration>
+          <copyToAppsDirectory>true</copyToAppsDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>2.2.1</version>
+        <configuration>
+          <descriptorRefs>
+            <descriptorRef>project</descriptorRef>
+          </descriptorRefs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>1.7</version>
+        <executions>
+          <execution>
+            <id>add-resource</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>add-resource</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>src/main/app/</directory>
+                </resource>
+                <resource>
+                  <directory>mappings/</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <configuration>
+            <resources>
+              <resource>
+                <directory>src/main/api/</directory>
+              </resource>
+            </resources>
+          </configuration>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifcatId>maven-dependency-plugin</artifcatId>
+        <version>2.4</version>
+        <executions>
+          <execution>
+            <id>copy-clover-plugins</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <overWriteReleases>true</overWriteReleases>
+              <overWriteSnapshots>true</overWriteSnapshots>
+              <overWriteIfNewer>true</overWriteIfNewer>
+              <stripVersion>true</stripVersion>
+              <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+            </configuration>
+            <artifactItems>
+              <artifactItem>
+                <groupId>com.cloveretl</groupId>
+                <artifactId>cloveretl-engine</artifactId>
+                <version>${mule.version}</version>
+                <type>zip</type>
+              </artifactItem>
+            </artifactItems>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>1.7</version>
+        <executions>
+          <execution>
+            <phase>compile</phase>
+            <configuration>
+              <tasks>
+                <unzip dest="${project.build.testOutputDirectory}" src="${project.build.testOutputDirectory}/cloveretl-engine.zip"></unzip>
+              </tasks>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+    <dependency>
+      <groupId>com.mulesoft.muleesb</groupId>
+      <artifactId>mule-core-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.modules</groupId>
+      <artifactId>mule-module-spring-config-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-file</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-http</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.transports</groupId>
+      <artifactId>mule-transport-jdbc-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.transports</groupId>
+      <artifactId>mule-transport-jms-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-vm</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.modules</groupId>
+      <artifactId>mule-module-scripting</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.modules</groupId>
+      <artifactId>mule-module-xml</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.tests</groupId>
+      <artifactId>mule-tests-functional</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.cloveretl</groupId>
+      <artifactId>cloveretl-engine</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+  <repositories>
+    <repository>
+      <id>Central</id>
+      <name>Central</name>
+      <url>http://repo1.maven.org/maven2/</url>
+      <layout>default</layout>
+    </repository>
+    <repository>
+      <id>mulesoft-releases</id>
+      <name>MuleSoft Releases Repository</name>
+      <url>http://repository.mulesoft.org/releases/</url>
+      <layout>default</layout>
+    </repository>
+    <repository>
+      <id>mulesoft-snapshots</id>
+      <name>MuleSoft Snapshots Repository</name>
+      <url>http://repository.mulesoft.org/snapshots/</url>
+      <layout>default</layout>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>mulesoft-release</id>
+      <name>mulesoft release repository</name>
+      <layout>default</layout>
+      <url>http://repository.mulesoft.org/releases/</url>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </pluginRepository>
+  </pluginRepositories>
+</project>
+----
+
+== XML Basic
+
+This example takes an XML input and parses it into a different XML arrangement. After a single header element is copied, a *map* operation carries out the same steps for each item: several fields are passed on without any changes, then the discount and subtotal fields are calculated with references to constants defined in the header directives of the transform. A single set of subtotal, tax and total elements are created by performing a *reduce* operation over all of the items in the "items" array, performing calculations that sometimes involve constants defined in the header.
+
+*Input*
+
+[source,xml,linenums]
+----
+<invoice>
+    <header>
+        <customer_name>ACME, Inc.</customer_name>
+        <customer_state>CA</customer_state>
+    </header>
+    <items>
+        <item>
+            <description>Product 1</description>
+            <quantity>2</quantity>
+            <unit_price>10</unit_price>
+        </item>
+        <item>
+            <description>Product 2</description>
+            <quantity>1</quantity>
+            <unit_price>30</unit_price>
+        </item>
+    </items>
+</invoice>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/xml
+%output application/xml
+%var tax=0.085
+%var discount=0.05
+---
+invoice: {
+    header: payload.invoice.header,
+    items: { (payload.invoice.items.*item map {
+        item @(index: $$ + 1): {
+            description: $.description,
+            quantity: $.quantity,
+            unit_price: $.unit_price,
+            discount: (discount * 100) as :number { format: "##" } ++ "%",
+            subtotal: $.unit_price * $.quantity * (1 - discount)
+        }
+    }) },
+    totals: using (subtotal = payload.invoice.items.*item reduce ((item, sum1 = 0) -> sum1 + (item.unit_price * item.quantity * (1 - discount)))) {
+        subtotal: subtotal,
+        tax: (tax * 100) as :number { format: "##.#" } ++ "%",
+        total: subtotal * (1 + tax)
+    }
+}
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<invoice>
+  <header>
+    <customer_name>ACME, Inc.</customer_name>
+    <customer_state>CA</customer_state>
+  </header>
+  <items>
+    <item index="1">
+      <description>Product 1</description>
+      <quantity>2</quantity>
+      <unit_price>10</unit_price>
+      <discount>5%</discount>
+      <subtotal>20</subtotal>
+    </item>
+    <item index="2">
+      <description>Product 2</description>
+      <quantity>1</quantity>
+      <unit_price>30</unit_price>
+      <discount>5%</discount>
+      <subtotal>30</subtotal>
+    </item>
+  </items>
+  <totals>
+    <subtotal>47.5</subtotal>
+    <tax>8.5%</tax>
+    <total>51.5375</total>
+  </totals>
+</invoice>
+----
+
+== XML Removal
+
+In this example, the input contains sensitive information that should be removed. The transform replicates the inbound structure but uses a simple *remove* operation to take away specific key:value pairs.
+
+*Input*
+
+[source,xml,linenums]
+----
+<users>
+    <user>
+        <personal_information>
+            <first_name>Emiliano</first_name>
+            <middle_name>Romoaldo</middle_name>
+            <last_name>Lesende</last_name>
+            <ssn>001-08-84382</ssn>
+        </personal_information>
+        <login_information>
+            <username>3miliano</username>
+            <password>mypassword1234</password>
+        </login_information>
+    </user>
+    <user>
+        <personal_information>
+            <first_name>Mariano</first_name>
+            <middle_name>Toribio</middle_name>
+            <last_name>de Achaval</last_name>
+            <ssn>002-05-34738</ssn>
+        </personal_information>
+        <login_information>
+            <username>machaval</username>
+            <password>mypassword4321</password>
+        </login_information>
+    </user>
+</users>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/xml
+%output application/xml
+---
+users: { (payload.users map {
+     user: {
+        personal_information: $.personal_information - "ssn",
+        login_information: $.login_information - "password"
+      }
+ }) }
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user>
+    <personal_information>
+      <first_name>Emiliano</first_name>
+      <middle_name>Romoaldo</middle_name>
+      <last_name>Lesende</last_name>
+    </personal_information>
+    <login_information>
+      <username>3miliano</username>
+    </login_information>
+  </user>
+  <user>
+    <personal_information>
+      <first_name>Mariano</first_name>
+      <middle_name>Toribio</middle_name>
+      <last_name>de Achaval</last_name>
+    </personal_information>
+    <login_information>
+      <username>machaval</username>
+    </login_information>
+  </user>
+</users>
+----
+
+== XML Replacement
+
+In this example, the input contains the same sensitive information as in the previous case, but instead of entirely removing the key:value pairs that contain it, the values are replaced with the string **. The transform replicates the inbound structure but uses a simple *when* operation to replace values when specific keys occur.
+
+*Input*
+
+[source,xml,linenums]
+----
+<users>
+    <user>
+        <personal_information>
+            <first_name>Emiliano</first_name>
+            <middle_name>Romoaldo</middle_name>
+            <last_name>Lesende</last_name>
+            <ssn>001-08-84382</ssn>
+        </personal_information>
+        <login_information>
+            <username>3miliano</username>
+            <password>mypassword1234</password>
+        </login_information>
+    </user>
+    <user>
+        <personal_information>
+            <first_name>Mariano</first_name>
+            <middle_name>Toribio</middle_name>
+            <last_name>de Achaval</last_name>
+            <ssn>002-05-34738</ssn>
+        </personal_information>
+        <login_information>
+            <username>machaval</username>
+            <password>mypassword4321</password>
+        </login_information>
+    </user>
+</users>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/xml
+%output application/xml
+---
+users: { (payload.users map {
+    user: {
+       personal_information: $.personal_information mapObject {
+            ($$): $ unless $$ ~= "ssn" otherwise "****"
+       },
+       login_information: $.login_information mapObject {
+          ($$): $ unless $$ ~= "password" otherwise "****"
+       }
+     }
+}) }
+----
+
+*Output*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user>
+    <personal_information>
+      <first_name>Emiliano</first_name>
+      <middle_name>Romoaldo</middle_name>
+      <last_name>Lesende</last_name>
+      <ssn>****</ssn>
+    </personal_information>
+    <login_information>
+      <username>3miliano</username>
+      <password>****</password>
+    </login_information>
+  </user>
+  <user>
+    <personal_information>
+      <first_name>Mariano</first_name>
+      <middle_name>Toribio</middle_name>
+      <last_name>de Achaval</last_name>
+      <ssn>****</ssn>
+    </personal_information>
+    <login_information>
+      <username>machaval</username>
+      <password>****</password>
+    </login_information>
+  </user>
+</users>
+----
+
+== XML Group By
+
+This example takes in an XML file that is grouped separating two types of elements: teachers and students, the transform uses the *groupBy* operation to make it into an XML where the top level grouping is "class". Within each class, the students and teachers that are registered in it are listed.
+
+*Input*
+
+[source,xml,linenums]
+----
+<school>
+    <teachers>
+        <teacher>
+            <name>Mariano</name>
+            <lastName>De Achaval</lastName>
+            <subject>DW</subject>
+        </teacher>
+        <teacher>
+            <name>Emiliano</name>
+            <lastName>Lesende</lastName>
+            <subject>DW</subject>
+        </teacher>
+        <teacher>
+            <name>Leandro</name>
+            <lastName>Shokida</lastName>
+            <subject>Scala</subject>
+        </teacher>
+    </teachers>
+    <students>
+        <student>
+            <name>Peter</name>
+            <lastName>Parker</lastName>
+            <hobby>DW</hobby>
+            <hobby>Scala</hobby>
+        </student>
+        <student>
+            <name>Homer</name>
+            <lastName>Simpson</lastName>
+            <hobby>Scala</hobby>
+        </student>
+    </students>
+</school>
+----
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%input payload application/xml
+%output application/dw
+---
+classrooms: payload.school.teachers groupBy $.subject mapObject ((teacherGroup, subject) -> {
+    class: {
+      name: subject,
+      teachers: { (teacherGroup map {
+        teacher:{
+            name: $.name,
+            lastName: $.lastName
+        }
+      }) },
+      attendees: { (payload.school.students filter ($.*hobby contains subject) map {
+        attendee: {
+          name: $.name,
+          lastName: $.lastName
+        }
+      }) }
+    }
+})
+----
+
+*Output*
+
+[source,json,linenums]
+----
+{
+  classrooms: {
+    class: {
+      name: DW,
+      teachers: [
+        {
+          teacher: {
+            name: [
+              Mariano
+            ],
+            lastName: [
+              De Achaval
+            ]
+          }
+        },
+        {
+          teacher: {
+            name: [
+              Emiliano
+            ],
+            lastName: [
+              Lesende
+            ]
+          }
+        }
+      ],
+      attendees: [
+        {
+          attendee: {
+            name: [
+              Peter
+            ],
+            lastName: [
+              Parker
+            ]
+          }
+        }
+      ]
+    },
+    class: {
+      name: Scala,
+      teachers: [
+        {
+          teacher: {
+            name: [
+              Leandro
+            ],
+            lastName: [
+              Shokida
+            ]
+          }
+        }
+      ],
+      attendees: [
+        {
+          attendee: {
+            name: [
+              Peter
+            ],
+            lastName: [
+              Parker
+            ]
+          }
+        },
+        {
+          attendee: {
+            name: [
+              Homer
+            ],
+            lastName: [
+              Simpson
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
+----
+
+
+
+== Rename Some Keys and Replicate the Rest
+
+This example takes in a JSON object that contains several fields. Most of them must be kept identical, except for a couple that should be renamed. Instead of referencing each field individually, this example renames two fields in particular and handles the rest without any changes.
+
+
+*Input*
+
+[source,json,linenums]
+----
+{
+"flight":{
+  "availableSeats":45,
+  "airlineName":"Ryan Air",
+  "aircraftBrand":"Boeing",
+  "aircraftType":"737",
+  "departureDate":"12/14/2015",
+  "origin":"BCN",
+  "destination":"FCO"
+  }
+}
+----
+
+
+*Transform*
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload map {
+($ mapObject {
+    (emptySeats: $) when $$ as :string == 'availableSeats',
+    (airline: $) when $$ as :string == 'airlineName',
+    (($$):$) when ($$ as :string !='availableSeats') and ($$ as :string != 'airlineName')
+  }
+)
+}
+----
+
+
+*Output*
+
+[source,json,linenums]
+----
+[
+  {
+    "emptySeats": 45,
+    "airline": "Ryan Air",
+    "aircraftBrand": "Boeing",
+    "aircraftType": "737",
+    "departureDate": "12/14/2015",
+    "origin": "BCN",
+    "destination": "FCO"
+  }
+]
+----
+
+== See Also
+
+* Read about DataWeave in the http://blogs.mulesoft.com/dev/anypoint-studio-dev/getting-started-with-dataweave-part-1/[MuleSoft Blog]
+* See how to use DataWeave to reference an external flow that encrypts your message http://blogs.mulesoft.com/dev/training-dev/encrypt-specific-xml-tags-with-the-power-of-dataweave/[MuleSoft Blog]
