@@ -1,0 +1,222 @@
+= Flow and Subflow Components
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: component, Mule 4
+:toc:
+:toc-title:
+
+toc::[]
+
+//Anypoint Studio, Design Center connector
+[[short_description]]
+Flow and Subflow components are scopes for grouping together a sequence of
+Mule components and operations provided by connectors and modules to help
+automate integration processes. The Flow component is fundamental to a
+Mule app. Because all Mule apps must contain at least one flow, Anypoint
+Studio and Flow Designer automatically provide the first Flow component in
+your Mule app.
+
+A Mule app can contain additional flows and subflows, as this example shows:
+
+.Example: Flow with Subflows
+image::component-flow-subflow.png[Example of Flow with Subflows]
+
+For a more in-depth discussion of uses, capabilities, and limits of flows and
+subflows, see xref:about-flows.adoc[About Flows and Subflows].
+
+Note that flows always function synchronously. If you need to achieve
+asynchronous patterns, such as Fire-and-Forget, you can use the
+xref:async-scope-reference.adoc[Async Scope] (`<async/>`).
+
+== Flow Configuration
+
+Flows are configurable. For example, you can set them to start or remained
+stopped when the Mule app starts, place limits on the allowed concurrency, or set
+up business events. You can also set up error handling for a component
+(see <<error_handling>>).
+
+//TODO: NEED BETTER BUSINESS EVENTS DOCS (SEE DOCS-2146).
+[%header,cols="1,4"]
+|===
+| Field | Description
+| Name (`name`) | Name for the flow. Flows automatically receive an editable name that matches (or partially matches) the project name.
+| Initial State (`initialState`) a| Values: Started, Stopped. These are Mule runtime settings for the flow. The default, Started (`initialState="started"`, also called Empty in Studio), indicates that the flow is active when you start the app. So it can be triggered by an internal or external event source within the flow (such as an HTTP listener or Scheduler), by a Flow Reference from another flow or subflow, or through a call to the DataWeave xref:dataweave-lookup.adoc[lookup] function.
+
+If you set the initial state to Stopped (`initialState="stopped"`), you need to use xref:runtime-manager::flow-management.adoc[Runtime Manager] to activate the flow, or you can simply reset the Flow configuration to `Started`. Note that the console
+output for this state looks something like this: `Flow flow_component_ex has not been started (initial state = 'stopped')`
+| Max Concurrency (`maxConcurrency`) a| Optional. The default is limited only by the availability of threads. The container thread pool determines the maximum level of parallelism that the flow can use to optimize the performance when processing messages.
+
+Example: `1` (XML example: `maxConcurrency="1"`) .
+
+You might set it to `1` to produce the same behavior as the synchronous processing strategy in Mule 3. You can also use it to stop accepting new work while the given number of requests are getting processed. Note that in Mule 3, some people use notifications and error handlers to stop the flow at some point and then restart it later, but in Mule 4, you can produce this same effect by using Max Concurrency.
+| Business Events  a| Optional: Defaults to `false`. For Mule apps that you deploy to CloudHub, you can enable business events (XML example: `tracking:enable-default-event="true"`) and add a Transaction ID (XML example: `<tracking:transaction id=12345`/>). See link::business-events[About Business Events].
+| Metadata  | As with many other components, you can set metadata for this component. For more on this topic, see the Studio document link:/anypoint-studio/v/7/metadata-editor-concept[About the Metadata Editor].
+|===
+
+== Subflow Configuration
+
+Subflow components provide a way to edit the name of the subflow and to add metadata. Unlike flows, subflows lack a built-in mechanism for setting up error handling, though you can use error handling provided by the xref:try-scope-concept.adoc[Try scope] within a subflow if you need to perform error handling.
+
+[%header,cols="1,4"]
+|===
+| Field | Description
+| Name (`name`) | Name for the subflow. Subflows automatically receive an editable name that matches (or partially matches) the project name.
+| Metadata  | As with many other components, you can set up metadata for this component. For more on this topic, see the Studio document link:/anypoint-studio/v/7/metadata-editor-concept[About the Metadata Editor].
+|===
+
+== XML for Flows and Subflows
+
+This example shows the XML for a simple flow  (`<flow/>`) that uses a Scheduler as a source to trigger execution of
+the flow every 10 seconds, and it connects to a subflow (`<sub-flow/>`) through a Flow Ref (`<flow-ref/>`) component. That
+subflow then connects to another subflow, also using a Flow Ref component. Note
+that when you configure components through the Studio UI, Studio automatically adds the XML to the Configuration XML for your Mule app.
+
+.Example: XML for a Flow and Subflows
+[source,xml,linenums]
+----
+<flow name="flow_component_ex">
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="10" timeUnit="SECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <ee:transform doc:name="Transform Message">
+    <ee:message >
+      <ee:set-payload ><![CDATA[
+ %dw 2.0
+ var myXml =  read('<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+  </prices>', 'application/xml')
+ output application/xml
+ ---
+ myXml
+]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <flow-ref name="subflow_ex1"/>
+</flow>
+<sub-flow name="subflow_ex1">
+  <ee:transform doc:name="Transform Message">
+    <ee:message>
+      <ee:set-payload><![CDATA[%dw 2.0
+import * from dw::util::Timer
+output application/json
+var conversionRate=13
+---
+priceList: payload.prices mapObject(value, key, index) -> {
+  (key) : {
+       dollars: value,
+       localCurrency: value * conversionRate,
+       index_plus_1: index + 1,
+       timer : currentMilliseconds()
+   }
+}]]>
+      </ee:set-payload>
+   </ee:message>
+ </ee:transform>
+ <flow-ref name="subflow_ex2"/>
+</sub-flow>
+<sub-flow name="subflow_ex2">
+  <logger level="INFO" doc:name="Logger" message="#[payload]" />
+</sub-flow>
+----
+
+The example produces the following output:
+
+.Output
+[source,json,linenums]
+----
+{
+  "priceList": {
+    "basic": {
+      "dollars": "9.99",
+      "localCurrency": 129.87,
+      "index_plus_1": 1,
+      "timer": 1533024312658
+    },
+    "premium": {
+      "dollars": "53",
+      "localCurrency": 689,
+      "index_plus_1": 2,
+      "timer": 1533024312659
+    },
+    "vip": {
+      "dollars": "398.99",
+      "localCurrency": 5186.87,
+      "index_plus_1": 3,
+      "timer": 1533024312659
+    }
+  }
+}
+----
+
+[[error_handling]]
+== Error Handling
+
+You can add xref:error-handling.adoc[error handlers] to the Flow components (but not to subflows).
+
+In Studio, you can simply expand the Error Handling area at the bottom of the Flow component and drag the error components into the flow. Note that this process automatically places the component into the Error Handler component, so there is no need to add the Error Handler component first.
+
+Near the end of this XML example, the flow shows an On Error Continue configuration (`<on-error-continue/>`):
+
+.Example: XML for Flow with On Error Continue Configuration
+[source,xml,linenums]
+----
+<flow name="flow_subflowFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="10" timeUnit="SECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[
+ %dw 2.0
+ var myXml =  read('<prices></prices>', 'application/xml')
+ output application/xml
+ ---
+ myXml
+]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <logger level="INFO" doc:name="Logger" message='#[payload.prices]'/>
+  <error-handler >
+    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="EXPRESSION" when="#[isEmpty(payload.prices)]">
+      <logger level="ERROR" doc:name="Logger" message='"An Error Occurred"'/>
+    </on-error-continue>
+  </error-handler>
+</flow>
+----
+
+The preceding example produces an error. Notice the following:
+
+. The variable `var myXml` in `<set-payload/>` configures an empty `<prices></prices>` tag as the payload.
+. The Logger beside the `<set-payload/>` component returns `null` because it is set to log the value of the empty tag.
+. The `<on-error-continue/>` component returns an error because the DataWeave condition `isEmpty(payload.prices)` returns `true`.
+. The Logger (`<logger/>`) within `<on-error-continue/>` configures an error message to print to the console when an error occurs. The resulting error message looks something like this:
+
+[source,text,linenums]
+----
+ERROR 2018-07-30 23:58:45,293 [[MuleRuntime].cpuLight.06:
+ [flow_subflow].flow_subflowFlow.CPU_LITE @1b1529b2]
+ [event: 0-2aba3280-948f-11e8-82d0-f45c898f2549]
+ org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
+ "An Error Occurred"
+----
+
+//TODO: WOULD BETTER TO HAVE AN EXAMPLE OF A FLOW THAT USES THE ERROR SCOPES.
+For details about these components, see xref:on-error-scope-concept.adoc[About On-Error Scopes].
+
+
+== See Also
+
+xref:about-flows.adoc[About Flows and Subflows]
+
+////
+MAYBE: RE-EVALUATE THESE IMAGES:
+image::about-flows-ef7ca.png[]
+image:about-flows-98a17.png[]
+////

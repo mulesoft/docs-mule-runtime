@@ -1,0 +1,68 @@
+= Dynamic Evaluate Component
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: mule, ee, esb, studio, dynamic, evaluate, expression
+
+*Available since 4.1*
+
+This component evaluates an expression that should result in another script, then evaluates that script for a final result. Such behavior allows you to dynamically select the script, instead of hardcoding it through the xref:transform-component-about.adoc[Transform Component].
+
+The script can use any of the usual xref:dataweave-variables-context.adoc[context variables], such as `message`, `payload`,`vars`, or `attributes`, but you can also add custom ones by providing a set of key-value pairs.
+
+The following example selects a script from a database through a `userId` query parameter and stores that script in a `userScript` variable. The `dynamic-evaluate` component then accesses the variable to invoke the script so  it can add a `name` variable from a `userName` query parameter.
+
+.Example: XML Configuration of the Flow
+[source,xml,linenums]
+----
+<flow name="raise-error-example-flow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <db:select config-ref="dbConfig" target="userScript">
+    <db:sql>#["SELECT script FROM SCRIPTS WHERE ID = $(attributes.queryParams.userId)"]</db:sql>
+  </db:select>
+  <ee:dynamic-evaluate expression="#[vars.userScript]">
+    <ee:parameters>#[{name: attributes.queryParams.userName}]</ee:parameters>
+  </ee:dynamic-evaluate>
+</flow>
+----
+
+Imagine the following scripts stored in the database for entries `lsalander` and
+`mblomkvist`, respectively:
+
+.Example: lsalander script
+----
+output application/json
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+.Example: mblomkvist script
+----
+output application/x-www-form-urlencoded
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+Sending `lsalander` as the `userId` would result in a JSON response, while
+sending `mblomkvist` would result in a `x-www-form-urlencoded` response, essentially
+allowing the response type to be parameterized per user. In fact, the entire response could
+be parameterized to each users needs.
+
+== Dynamic Evaluate Configuration
+
+[%header,cols="1,1,2,2"]
+|===
+| Field | Value | Description | Example
+
+| Expression | DataWeave expression | Specifies the expression to be evaluated into the final script. |
+`expression="#[vars.generateOrderScript]"`
+| Parameters | DataWeave expression | Specifies key-value pairs that should be bound to evaluate the final script. |
+`#[{joiner: ' and ', id: payload.user.id}]`
+
+|===

@@ -1,0 +1,274 @@
+= Secure Configuration Properties
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Secure properties can encrypt properties and store the encrypted text in secure properties files.
+
+== Adding the Secure Configuration Properties Module
+The Mule Secure Configuration Property Extension module is available from https://anypoint.mulesoft.com/exchange/com.mulesoft.modules/mule-secure-configuration-property-module/[Exchange].
+
+You can configure a secure properties file with this module (`<secure-properties:config>`), for example:
+
+.Example: Secure Configuration Properties with Default Values
+[source,xml,linenums]
+----
+<secure-properties:config key="${runtime.property}"
+  file="file1.yaml" name="test">
+    <secure-properties:encrypt/> <!--1-->
+</secure-properties:config>
+
+<global-property name="prop" value="my-${secure::property.key1}"/> <!--2-->
+----
+<1> The `<secure-properties:encrypt>` tag is required even when using the default values.
+<2> The prefix `secure::` is required for loading the key.
+
+In the example above:
+
+* A decryption key is passed into the Mule runtime at deployment time as a system environment variable `runtime.property`. This property must be the exact key used to encrypt the values stored in the `file1.yaml` file.
+* The default encryption algorithm and mode is used.
+* If the actual (decrypted) value of the property `property.key1` is, for example, `"property"`, the value of the property `prop` will be `"my-property"`.
+
+You can also change the encryption algorithm and crypto mode by setting additional attributes of the `<secure-properties:encrypt>` tag, for example:
+
+.Example: Secure Configuration Properties with Custom Values
+[source,xml,linenums]
+----
+<secure-properties:config key="${runtime.property}"
+  file="file1.properties" name="test">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/> <!--1-->
+</secure-properties:config>
+----
+<1> This uses the `AES` algorithm with `CBC` mode.
+
+== Attributes
+
+[cols="1,3", options="header"]
+|===
+| Secure Configuration Properties Attributes |
+
+| Name
+| A unique name for your global secure configuration properties.
+
+| Key
+| The word or phrase to unlock the properties value according to the system property that you define in this field. For example, `${production.myproperty}` instructs the Mule runtime to demand the key at runtime.
+
+| File
+| The location of the file that the key unlocks. See <<supported_files>>.
+|===
+
+[cols="1,3", options="header"]
+|===
+| Secure Configuration Properties Encrypting Attributes |
+
+| Algorithm
+| The type of algorithm you use to encrypt the content of the property. See <<supported_algorithms>> for a complete list.
+
+| Mode
+| The procedure that allows the Mule runtime to repeatedly use a block cipher with a single key. See <<supported_modes>> for a full list.
+|===
+
+[[supported_files]]
+== Supported Files
+
+The Secure Configuration Properties module supports both YAML configuration files and Spring-formatted properties files, as shown in the examples above. The recommended approach is to use a YAML configuration files, because it allows the addition of type validations and autocompletion.
+
+=== Configuration Files content
+
+Both encrypted and non-encrypted values can be used anywhere in the Mule app. Encrypted values should be defined between the sequence `![value]`, as shown in the example below. The `file1.yaml` file can also contain non-encrypted values, for example:
+
+.Example: file1.yaml
+----
+encrypted:
+    key: "![nHWo5JhNAYM+TzxqeHdRDXx15Q5R56YVGiQgXCoBJew=]"
+
+testPropertyA: "testValueA"
+testPropertyB: "testValueB"
+----
+
+[NOTE]
+The encrypted value must be enclosed in quotes so that it is read as a String.
+
+Here is the same configuration as above using a Spring-formatted properties file:
+
+.Example: file1.properties
+----
+encrypted.key=![nHWo5JhNAYM+TzxqeHdRDXx15Q5R56YVGiQgXCoBJew=]
+
+testPropertyA=testValueA
+testPropertyB=testValueB
+----
+
+== Usage
+
+Here is a flow that uses the encrypted `encrypted.key` value to set the payload:
+
+.Example: Use of Secure Property
+[source,xml,linenums]
+----
+<flow name="main">
+    <set-payload value="${secure::encrypted.key}"/>
+</flow>
+----
+At runtime, the decryption algorithm is used to store the decrypted value of `encrypted.key` into memory.
+
+Here is a flow that uses a non-encrypted value from the same secure properties file:
+
+.Example: Use of Non-encrypted Properties
+[source,xml,linenums]
+----
+<flow name="mainNonEncrypted">
+    <set-payload value="${secure::testPropertyA}"/>
+</flow>
+----
+
+Notice that you have to use the `secure::` prefix to access all values inside a secure properties file, even if the values are non-encrypted. This behavior allows you to switch between files (or environments) without changing the entire configuration.
+
+=== Setting the Properties File Dynamically
+
+A common configuration use case is to set the file to depend on a property (for example, `env`) to determine which file to use. For example, to use a `development-properties` file in development stage (which could not be encrypted) or a production file (with encrypted values).
+
+.Example: Secure Configuration Properties with Environment File Defined
+[source,xml,linenums]
+----
+<secure-properties:config key="${runtime.property}" file="${env}-properties.yaml" name="test"/>
+----
+
+This way, the value of the property `env` determines which file to use to load the secure configuration properties. That `env` property could be set by a `global property`, system property, or environment property.
+
+.Example: Secure Configuration Properties with Environment File Defined
+[source,xml,linenums]
+----
+<global-property name="env" value="dev"/>
+
+<secure-properties:config key="${runtime.property}" file="${env}-properties.yaml" name="test"/>
+----
+
+This way, the default value for the `env` property will be `"dev"`, which can still be overriden with a system or environment property. Please note that this is *required* for metadata resolution in Anypoint Studio. If you do not define devault values for the properties that are passed through the command line you will receive an error while creating application model for all message processors that depend on them.
+
+=== Working with More than One Configuration File
+
+You can define more than one secure configuration properties file to read properties from. To do so, simply define a `<secure-properties:config />` tag for each file you want to load. Each secure configuration properties file is independently configured with an encryption algorithm, cipher mode, and encryption/decryption key. None of these settings needs to be the same between secure configuration properties files.
+
+.Using More Than One Config File
+[source,xml,linenums]
+----
+<secure-properties:config key="${runtime.property}" file="file1.yaml" name="test">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+</secure-properties:config>
+
+<secure-properties:config key="${runtime.property}" file="file2.yaml" name="otherConfig">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+</secure-properties:config>
+----
+
+[[qanda]]
+=== Frequently Asked Questions
+
+*What if a property is defined in multiple files?*
+
+In that case, the actual property's value will be the one in which is first defined.
+
+*What if I want to define a secure property to depend on a previously defined secure property?*
+
+It is possible to define a property to depend on a previously defined one, just using the same syntax: `property=My dependent ${secure::dependent.property} value`.
+
+Note that Secure Configuration Properties can depend on other Secure Configuration Properties, but not on configuration properties defined by the xref:configuring-properties.adoc[Configuration Properties Component].
+
+== Warning
+
+When using encrypted properties, it is especially important to **secure access to the operating system**. Anyone who can run a `ps` command or view a Java console will be able to see the decrypted values that are stored in the Mule app's memory.
+
+
+[[supported_crypto]]
+== Supported Algorithms and Modes
+
+[[supported_algorithms]]
+=== Supported Algorithms
+
+* AES (default)
+* Blowfish
+* DES
+* DESede
+* Camellia
+* CAST5
+* CAST6
+* Noekeon
+* Rijndael
+* SEED
+* Serpent
+* Skipjack
+* TEA
+* Twofish
+* XTEA
+* RC2
+* RC5
+* RC6
+* RCA
+
+[[supported_modes]]
+=== Supported Modes
+
+* CBC (default)
+* CFB
+* ECB
+* OFB
+
+== Using the Extension in Anypoint Studio 7
+
+You can use this extension by adding it as a dependency in your Mule app.
+
+=== Installing the Extension
+
+. Open your Mule project in Anypoint Studio.
+
+. Go to the Mule Palette.
+
+. Select *Search in Exchange*, and search for the *Mule Secure Configuration Property Extension*.
+
+. Add the extension.
+
+=== Adding Secure Configuration Properties to your App
+
+. Go to your Mule app configuration file.
+
+. Select the `Global Elements` tab.
+
+. Click the `Create` button.
+
+. From the search bar, select `Secure Properties Config`.
+
+. Configure the global element with a `File` location, `Key`, `Algorithm`, and `Mode`:
+
+image::secure-configuration-properties-studio.png[config extension]
+
+== Secure Properties Tool
+
+You can link:{attachmentsdir}/secure-properties-tool.jar[download the JAR file] for this tool so you can encrypt or decrypt single values, and complete files (both, YAML and Properties files). You can run it in the command line like this:
+
+.Using the Secure Properties Tool
+----
+java -jar secure-properties-tool.jar string <encrypt|decrypt> <algorithm> <mode> <key> <value>
+or
+java -jar secure-properties-tool.jar file <encrypt|decrypt> <algorithm> <mode> <key> <input file> <output file>
+----
+
+In the case of using the `file` mode, the output is a file with the same properties, but its values are encrypted. For example, assume that this is the input file:
+
+.example_in.yaml
+----
+properties:
+  example1:
+    value: "Muleman is here"
+  example2: "Max the mule"
+----
+
+If you run `java -jar secure-properties-tool.jar file encrypt Blowfish CBC mulesoft example_in.yaml example_out.yaml`, the output file will be:
+
+.example_out.yaml
+----
+properties:
+  example1:
+    value: "![qCReIPK3jcqD7WR84ISSIQ==]"
+  example2: "![En8lII21ZHrdIaINw0+mSA==]"
+----

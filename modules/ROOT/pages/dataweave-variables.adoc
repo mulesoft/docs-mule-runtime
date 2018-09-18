@@ -1,0 +1,305 @@
+= About DataWeave Variables
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave is a functional programming language where variables behave just like functions. A variable is assigned a value, which is either a constant (such as `var msg = "hello"`) or a lambda expression such as `() -> "hello"`.
+
+When a variable is assigned a lambda expression, it behaves just like a function.
+
+Like a function, the lambda expression for a variable assignment can include parameters that can be used in the right-hand side expression, such as `(string) -> upper(string)`, which will convert any string to uppercase.
+
+Other variables can also be passed as arguments to another variable's lambda expression. This example shows how the `toUpper` variable's lambda expression can be passed by name into the `addSuffix` variable's lambda expression.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var toUpper = (aString) -> upper(aString)
+
+var addSuffix = (msg, aFunction, suffix) -> aFunction(msg ++ suffix)
+---
+addSuffix("hello", toUpper, " world") //result is "HELLO WORLD"
+----
+
+Here are some example of DataWeave variable assignments:
+
+.Example: Variable Assignment in a DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var msg = "Hello"
+
+var msg2 = (x = "ignore") -> "hello"
+
+var toUpper = (aString) -> upper(aString)
+
+var combined = (function, msg="universe") -> function(msg ++ " WORLD")
+---
+[
+   msg: msg,
+   msg2: msg2(),
+   toUpper: toUpper(msg),
+   combined: combined(toUpper, "hello"),
+   combined2: combined(((x) -> lower(x) ++ " Today")), msg)
+]
+----
+
+The script above results in this output:
+
+.Example: Output
+[source,json,linenums]
+----
+[
+  {
+    "msg": "Hello"
+  },
+  {
+    "msg2": "hello"
+  },
+  {
+    "toUpper": "HELLO"
+  },
+  {
+    "combined": "HELLO WORLD"
+  },
+  {
+    "combined2": "hello world Today"
+  }
+]
+----
+
+In these examples:
+
+
+* The `msg` var is assigned to a constant.
+* `msg2` is assigned to an expression that maps to a constant, so `msg2()` behaves the same way as `msg`, without the `()`.
+* The `toUpper` variable maps an input parameter to the DataWeave `upper` function. So it is used like a more traditional function in other languages as `toUpper(aString)`.
+* The `combined` variable accepts a function as an input parameter, then applies that function name to the second `msg` argument. The second `msg` argument is optional because a default value `universe` is specified.
+
+The result of the expression `combined(toUpper, " world")` is to apply the `toUpper` function defined earlier in the header to the `msg` parameter value `world`. The supplied second argument `world` overrides the `msg="universe"` default value, so the result is `HELLO WORLD`. The expression `combined(toUpper)`, which omits the second argument, uses the default `msg` value to return `"combined": "UNIVERSE WORLD"`.
+
+The `combined2: combined(((x) -> lower(x) ++ " Today")), msg)`  defines the lambda expression that you can reuse in different contexts. In the example, `combined2` key defines the expression “in place” at the time the function is called.
+
+Note that these types of “in place” expressions are called closures in languages like JavaScript.
+
+DataWeave includes syntactic sugar to make it easier to access lambda expressions that are assigned to a variable as functions. To do this, you replace the `var` directive with the `fun` directive, and replace the arrow `->` in the lambda expression with an equal  sign (`=`). You also move the lambda expression arguments next to the function name so the syntax looks like a function declaration in other procedural programming languages. This allows you to use variables as if they were functions. So the previous example can be equivalently written as:
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var msg = "Hello"
+
+var toUpper = (aString) -> upper(aString)
+var toLower = (aString) -> lower(aString)
+
+fun msg2(optParm = "ignore") = "hello"
+
+fun toTitle(text: String) = toLower(text[0]) ++ toUpper(text[1 to -1])
+
+fun combined(function, msg="universe") = function(msg ++ " world")
+---
+[
+   msg: msg,
+   msg2: msg2(),
+   toUpper: toTitle(msg),
+   combined: combined(toUpper, msg),
+   combined2: combined((x) -> lower(x) ++ " today", msg)
+]
+----
+
+This example produces the same result:
+
+
+[source,json,linenums]
+----
+[
+  {
+    "msg": "Hello"
+  },
+  {
+    "msg2": "hello"
+  },
+  {
+    "toUpper": "hELLO"
+  },
+  {
+    "combined": "HELLO WORLD"
+  },
+  {
+    "combined2": "hello world today"
+  }
+]
+----
+
+The important distinction in DataWeave is that functions are variables, and every function is just a syntactical renaming of the underlying `var` syntax, which allows you to pass function names or lambda expressions as arguments to other functions. The `fun` syntax allows you to access the powerful functional programming aspects of DataWeave while also being able to write simpler expressions as function calls you might be more familiar with.
+
+Also notice that DataWeave variables (and functions) can specify any number of optional arguments by providing default values, so long as all those optional arguments are last in the argument list.
+
+== Variable Scopes
+
+You can initialize and use both global and local variables in DataWeave scripts.
+
+* Global variables are initialized in the header of the DataWeave script and can be referenced by name from anywhere in the body of a DataWeave script.
++
+The header of a DataWeave script accepts a `var` directive that initializes a variable, for example: `var language='Español'`. You can declare multiple global variables on separate lines in the header.
++
+* Local variables are initialized in the body of the DataWeave script and can be referenced by name only from within the scope of the expression where they are initialized.
++
+The syntax for initializing a local variable looks like this:
+`using (<variable-name> = <expression>)`
++
+It must use the keyword `using`, and it must use the `var` syntax, rather than the `fun` syntax.
++
+
+Note that DataWeave variables cannot be reassigned. They are also distinct from variables that are part of the Mule message (such as target variables). DataWeave variables do not persist beyond the scope of the script in which they are initialized.
+
+You can combine several local variable definitions as a comma separated list inside the using function. For example: `using (firstName='Annie', lastName='Point')`
+
+[[example_global_variable]]
+== Example: Global DataWeave Variables
+
+This example initializes the `language` variable in the header and inserts the constant value `Español` in the output `language` element.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+var language='Español'
+---
+{
+  document: {
+    language: language,
+    text: "Hola mundo"
+  }
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <language>Español</language>
+  <text>Hola Mundo</text>
+</document>
+----
+
+[[example_local_variable]]
+== Examples: Local DataWeave Variables
+
+To initialize local variables, you can use either literal expressions, variable reference expressions, or functional expressions. These expressions can reference any other local variables within their scope or any input or global variables.
+
+You can only reference a local variable by name from within the scope of the expression that initializes it. The declaration can be prepended to any literal expression. The literal delimits the scope of the variable, so you cannot reference any variable outside of its scope.
+
+The examples that follow show initialization of local variables used in literal expressions. The syntax is the same
+
+.Example: Scoped to Simple Value
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+using (x = 2) 3 + x
+----
+
+The result is `5`.
+
+.Example: Scoped to an Array Literal
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+using (x = 2) [1, x, 3]
+----
+
+The result is `[ 1, 2, 3]`
+
+.Example: Scoped to Object literal
+Here, the reference to `user` is valid because it is within the object `person`.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  person: using (user='Greg', gender='male') {
+    name: user,
+    gender: gender
+  }
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<person>
+  <name>Greg</name>
+  <gender>male</gender>
+</person>
+----
+
+.Example: Invalid Reference that is Outside the Scope
+This example produces an error because `gender` is referenced from outside the scope of `person`, where `gender` is initialized.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+entry: using (firstName = "Annie", lastName = "Point") {
+  person: using (user = firstName, gender = "male") {
+    name: user,
+    gender: gender
+  },
+  sn: lastName,
+  gen: gender
+}
+----
+
+The invalid example returns this error:
+`Unable to resolve reference of gender.`
+
+.Example: Scoped to a Global Variable and to a Function
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var myGlobalVar = 2
+---
+{
+  examples: {
+    // x is a global variable that is referenced by a literal expression.
+    'ex_a': using (x = myGlobalVar) 3 + x,
+    // y is an expression that coerces a Boolean into a string,  then referenced by the upper function.
+    'ex_b': using (y = true as String) upper(y ++ ' as a string'),
+    // z is a function expression that is referenced by a literal object.
+    'ex_c': using (z = ["a", "b", "c"] map upper($)) {mapping : z}
+  }
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "examples": {
+    "ex_a": 5,
+    "ex_b": "TRUE AS A STRING",
+    "ex_c": {
+      "mapping": [
+        "A",
+        "B",
+        "C"
+      ]
+    }
+  }
+}
+----

@@ -1,0 +1,103 @@
+= PGP Cryptography
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: cryptography, module, sign, encrypt, pgp, AES
+:toc:
+:toc-title:
+
+Mule can encrypt all or part of a message using Pretty Good Privacy (PGP). PGP combines data compression and data encryption to secure messages. The compression reduces the size of the payload to help reduce the transmission time later on your application.
+
+Due to its increased complexity, PGP encryption is a heavy-load task when compared to JCE or XML encryption.
+
+This section addresses these scenarios:
+
+* Encryption: Using another party's public key to encrypt an outgoing message in a Mule app.
+* Decryption: Using your own private key to decrypt an incoming message in a Mule app.
+
+== Prerequisites
+
+This document assumes that you are reasonably familiar with PGP encryption, as well as the concepts of public and private keys and asymmetric cryptography.
+
+== Encrypting
+
+When using PGP encryption, the sender of the message must encrypt its content using the receiver's public key. So, whenever you want to encrypt messages
+in your Mule app using someone else's public key, you must add the public key to your key ring. When adding a new PGP configuration to your Mule app, you need to provide your key ring file so the encryption module can get the public key from it to encrypt the message.
+
+. Use a tool such as GPG Suite to import the other party's public key. See below for details.
+. Using the same tool, export the public key, selecting `binary` as the output format. This produces a key ring file with a `.gpg` extension.
+. Ensure that the key ring (`.gpg`) file is stored where the Mule app can access it during runtime.
+
+.Example: PGP Configuration
+[source,xml,linenums]
+----
+<crypto:pgp-config name="encrypt-conf" publicKeyring="pgp/pubring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="myself" fingerprint="DE3F10F1B6B7F221"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
+
+The next example returns an ASCII-armored encrypted payload, which is suitable for sending over plain-text channels.
+
+.Example: Using the Encrypt Operation
+[source,xml,linenums]
+----
+<crypto:pgp-encrypt config-ref="encrypt-conf" keyId="myself"/>
+----
+
+If you want to return a binary output instead, you can use the `pgp-encrypt-binary` operation:
+
+----
+<crypto:pgp-encrypt-binary config-ref="pgpConfig" keyId="recipient"/>
+----
+Producing a binary output is faster that using ASCII-armored. However, the output is not standard and might not be ideal to send to other systems for decryption.
+
+If you later need to send such a payload to another system, you can transform it to ASCII-armored:
+
+----
+<crypto:pgp-binary-to-armored/>
+----
+The operation above has a single input parameter, the message payload to transform.
+
+== Decrypting
+
+When using PGP decryption, the receiver of the message must use its private key to decrypt the contents of a message that was encrypted using a public key.
+Therefore, the receiver must distribute its public key to those who will use it to send encrypted messages.
+
+.Example: PGP Configuration
+[source,xml,linenums]
+----
+<crypto:pgp-config name="decrypt-conf" privateKeyring="pgp/secring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="myself" fingerprint="DE3F10F1B6B7F221" passphrase="mule1234"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
+In the example above, notice that you need to provide at least three parameters to be able to use the private key ring in the decrypt operation:
+
+* Key ID (`keyId`): the internal ID that will allow you to reference this key from an operation.
+* Key Fingerprint (`fingerprint`): The last 16 characters of your key fingerprint, which can be obtained from your external GPG tool (such as GPG Keychain).
+* Passphrase (`passphrase`): The passphrase of the private key.
+
+.Example: Using the Decrypt Operation
+[source,xml,linenums]
+----
+<crypto:pgp-decrypt config-ref="decrypt-conf"/>
+----
+
+== Signing
+
+.Example: Using the Sign Operation
+[source,xml,linenums]
+----
+<crypto:pgp-sign config-ref="sign-conf" keyId="myself"/>
+----
+
+== Validating a Signature
+
+.Example: Using the Validate Operation
+[source,xml,linenums]
+----
+<crypto:pgp-validate config-ref="validate-conf" value="#[payload]" expected="#[vars.expected]"/>
+----

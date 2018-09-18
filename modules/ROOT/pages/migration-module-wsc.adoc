@@ -1,0 +1,268 @@
+= Migrating WSC
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Here we are going to cover a couple of common cases using the Web Service Consumer how they were done in Mule 3 and how are they made now in
+the new Mule 4 release.
+
+== Connecting with a web service
+
+Mule 4 introduces the concept of connection parameters, separating them from the other config parameters, that's why you now are going to see a new <wsc:connection>
+tag in the configuration. Since all the parameters required for the web service consumer are used to create the connection all of them were moved to the <wsc:connection> group.
+
+=== A Simple web service configuration
+
+The parameters are the same ones, the only difference is that we added a new parameter `mtomEnabled` to the configuration that used to
+live in the operation.
+
+In mule 3.x we defined all the elements in the configuration like this.
+
+[source,xml,linenums]
+----
+<ws:consumer-config name="config" serviceAddress="http://company.com/Service" wsdlLocation="http://company.com/Service?wsdl" service="Service" port="Port"/>
+----
+
+Now all of the parameters are defined in the connection.
+
+[source,xml,linenums]
+----
+<wsc:config name="config">
+    <wsc:connection wsdlLocation="http://company.com/Service?wsdl" service="Service" port="Port" soapVersion="SOAP_11" address="http://company.com/Service/endpoint"/>
+</wsc:config>
+----
+
+==== Defining a custom http configuration to send the messages
+
+It was very common in Mule 3 to define a custom <http:requester> configuration that the web service consumer can use to send the messages through the HTTP protocol
+with a custom configuration (TLS, different HTTP Authentications types, etc), of course you can still do this in Mule 4.
+
+The `connector-ref` configuration parameter was used before to set the connector configuration we wanted to send the messages (this only worked for HTTP and JMS).
+
+[source,xml,linenums]
+----
+  <!-- this is the http configuration used to send the messages -->
+  <http:connector name="http-config"/>
+
+  <ws:consumer-config name="config" wsdlLocation="local.wsdl" service="Service" port="Port" connector-ref="http-config"/>
+----
+
+To do the same in the new WSC you will need to add a `<wsc:custom-transport-configuration>` parameter the connection and specify the http configuration desired.
+This will *only* work with HTTP requester configurations and will fail at runtime if not configured properly.
+
+[source,xml,linenums]
+----
+<wsc:config name="config">
+   <wsc:connection wsdlLocation="local.wsdl" service="Service" port="Port">
+     <wsc:custom-transport-configuration>
+       <wsc:http-transport-configuration requesterConfig="http-config"/>
+     </wsc:custom-transport-configuration>
+   </wsc:connection>
+ </wsc:config>
+
+ <!-- this is the http configuration used to send the messages -->
+ <http:request-config name="http-config">
+----
+
+== Consuming a Web Service
+
+In Mule 3 the WSC expected that the payload was an already created XML body, so in most of the cases
+the WSC component was used after a Transform component.
+
+[source,xml,linenums]
+----
+<flow name="Mule3">
+  ...
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ---
+        con#echo: {
+           text: "Hello!"
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="echo" />
+  ...
+</flow>
+----
+
+Now you don't need that extra component the consume operation enables you to build
+the body XML directly as an operation parameter using DataWeave, take a look
+at the example below.
+
+[source,xml,linenums]
+----
+<flow name="Mule4">
+  ...
+  <wsc:consume config-ref="config" operation="echo">
+    <wsc:message>
+        <wsc:body>
+        #[
+          %dw 2.0
+          output application/xml
+          ns con http://service.soap.service.mule.org/
+          ---
+          con#echo: {
+             text: "Hello!"
+          }
+        ]
+        </wsc:body>
+    </wsc:message>
+  </wsc:consume>
+...
+</flow>
+----
+
+=== Sending Headers
+
+The way the WSC works with attachments in Mule 3 is by collecting all the outboundProperties
+that starts with the `soap.` prefix, for example: if we added a variable `soap.CrazyHeader`
+when the WSC executes it will get the content of the variable and put the variable content
+in the SoapHeaders element of the envelope. That's not a pretty behavior, that's why in Mule 4, the Headers
+are just another parameter (and of course you have metadata for those also).
+
+Let's look a sample XML of Mule 3
+
+[source,xml,linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-property propertyName="soap.aHeader" value="#[vars.headerContent]"/>
+  <ws:consumer operation="withHeaders" mtomEnabled="true"/>
+</flow>
+----
+
+And now, in Mule 4
+
+[source,xml,linenums]
+----
+<flow name="Mule4">
+  <wsc:consume config-ref="config" operation="echoWithHeaders">
+    <wsc:message>
+      <!-- here we assume there is not required body parameters -->
+      <wsc:headers>
+        #[
+        %dw 2.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ---
+        "headers": {
+            con#aHeader: {
+              text: "Hello!"
+            },
+            con#anotherHeader: "Hello! says another header"
+        }]
+      </wsc:headers>
+    </wsc:message>
+  </wsc:consume>
+</flow>
+----
+
+The headers can be constructed directly inside the operation with a DataWeave script, and since
+you have metadata for this, is super easy to do.
+
+=== Adding Attachments
+
+Adding attachments is much more easier now, in Mule 3 when working with *MTOM attachments*
+the `set-attachment` component was used to create a new outbound attachment and
+the envelope body should be constructed adding a reference an XOP reference to that
+added attachment.
+
+NOTE: the mtomEnabled parameter was moved from the operation to the connection.
+
+[source,xml,linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-attachment attachmentName="attach" value="Hello!" contentType="text/plain"/>
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ns xop http://www.w3.org/2004/08/xop/include
+        ---
+        con#echo: {
+           attachment: {
+            xop: "cid:attach"
+           }
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="uploadAttachment" mtomEnabled="true"/>
+  ...
+</flow>
+----
+
+If working with *Soap With Attachments* instead of MTOM, it was responsibility of
+the mule developer to build the body with the inner attachment encoded in Base64
+(DataWeave provided a function to do this)
+
+[source,xml,linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-attachment attachmentName="attach" value="Hello!" contentType="text/plain"/>
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ns xop http://www.w3.org/2004/08/xop/include
+        ---
+        con#echo: {
+           attachment: {
+            xop: "cid:attach"
+           }
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="uploadAttachment" mtomEnabled="true"/>
+  ...
+</flow>
+----
+
+In Mule 4 it doesn't matter if it's MTOM or SWA, the dev always works the same way
+with attachments, he just creates a new attachment and assigns the content to it
+(the mimetype used is the one that is associated to content).
+
+For example, here we read a JSON file using the file connector and then create a new
+attachment passing the content returned by the file:read operation in the payload.
+
+[source,xml,linenums]
+----
+<flow name="Mule4">
+  ...
+  <file:read config-ref="file" path="#[vars.pathToAJsonFile]"/>
+  <wsc:consume config-ref="config" operation="uploadAttachment">
+    <wsc:message>
+      <!-- here we assume there is not required body parameters -->
+      <wsc:attachments>
+        #[{ attach: payload } ]
+      </wsc:attachments>
+    </wsc:message>
+  </wsc:consume>
+  ...
+</flow>
+----
+
+To use the Web Service Consumer, simply add it to your application using the Studio palette or add the following dependency in your `pom.xml` file:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.connectors</groupId>
+  <artifactId>mule-wsc-connector</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----

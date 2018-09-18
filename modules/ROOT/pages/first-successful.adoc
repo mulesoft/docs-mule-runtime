@@ -1,0 +1,56 @@
+= First Successful Router
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: routers, flows, processor chain, async, aggregator, resequencer
+
+The First Successful router iterates through its list of child routes, each containing a set of components, until the first successful execution. If none succeed, an exception is thrown.
+
+[source,xml,linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                            http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+                            http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+                            http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+                            http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="b026579b-5a59-444f-8f91-ff209bed8342" >
+		<http:request-connection >
+			<http:client-socket-properties >
+				<sockets:tcp-client-socket-properties connectionTimeout="500" clientTimeout="500" />
+			</http:client-socket-properties>
+		</http:request-connection>
+	</http:request-config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="4631e4fd-571f-41c8-831d-d908b1763ef2" >
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<flow name="testFlow" doc:id="79cd7fcd-d355-418b-898b-5d7e3a1cbcab" >
+		<scheduler doc:name="Scheduler" doc:id="6dc5dcc7-ce33-4d18-9de9-2c665f713508" >
+			<scheduling-strategy >
+				<fixed-frequency />
+			</scheduling-strategy>
+		</scheduler>
+		<first-successful doc:name="First Successful" doc:id="6ae009e7-ebe5-47cf-b860-db6d51a31251" >
+			<route>
+				<file:read doc:name="Read non existent file" doc:id="199cdb01-cb43-404e-acfd-211fe5a9167e" path="nonExistentFile"/>
+				<set-variable value="1" doc:name="Set successfulRoute var to route 1" doc:id="c740b39e-a1c4-41d6-8a28-0766ca815ec6" variableName="successfulRoute"/>
+			</route>
+			<route>
+				<set-payload value="#[vars.nonExistentVar!]" doc:name="Set Payload with non existent variable" doc:id="0cc9ac4d-5622-4e10-971c-99073cb58df0" />
+				<set-variable value="2" doc:name="Set successfulRoute var to route 2" doc:id="88f15c26-d242-4b11-af49-492c35625b84" variableName="successfulRoute" />
+			</route>
+			<route>
+				<set-variable value="3" doc:name="Set successfulRoute var to route 3" doc:id="446afb25-0181-45e5-b04a-68ecb98b57b7" variableName="successfulRoute" />
+			</route>
+            <route >
+				<logger level="INFO" doc:name="Logger" doc:id="b94b905a-3a68-4c88-b753-464bc3d0cfeb" message="This route is never going to be executed"/>
+			</route>
+		</first-successful>
+		<logger level="ERROR" doc:name="Logger" doc:id="9ffe328d-2595-4f28-81e8-ae731fc6cb89" message="#['Successful route was $(vars.successfulRoute)']"/>
+	</flow>
+</mule>
+----
+
+The first two routes will fail because the first is trying to read a file that does not exist, and the second is trying to access a variable that does not exist. The third route, which sets a variable `successfulRoute` to a value of `3`, will execute successfully. First Successful completes its execution upon success, so the fourth route will not be executed.

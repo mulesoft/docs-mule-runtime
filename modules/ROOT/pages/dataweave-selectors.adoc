@@ -1,49 +1,50 @@
-= Selectors
+= DataWeave Selectors
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
 
-The complex structure of Objects and Arrays can be navigated using Selector Expressions. Each selector expression returns either an object, an array, or a simple type.
+The structures of Objects and Arrays can be navigated using Selector Expressions. Each selector expression returns either an object, an array, or a simple type.
+
 A selector always operates within a given context, which can be a reference to a variable, an object literal, an array literal, or the invocation of a function. As DataWeave processes a selector, a new context is set for further selectors, so you can navigate through the complex structures of arrays and objects by using chains of selectors, who's depth is limited only by the depth of the current context.
 
-There are 5 types of selector expression:
+[%header,cols="30,30,40"]
+|===
+|Selector Type |Syntax |Return Type
 
-* *Single Value selector* .<key-name>
-* *Multi Value selector* .*<key-name>
-* *Descendants Selector* ..<key-name>
-* *Indexed Selector* [<index>]
-* *Attribute Selector* .@<attribute-name>
+|Single Value selector | `.<key-name>` |Value of a key:value pair
+|Multi Value selector | `.*<key-name>` |Array with values of key:value pairs
+|Descendants selector | `..<key-name>` | Array with values of key:value pairs
+|Key-Value Pair selector| `.&<key-name>`| Object with key:value pairs
+|Indexed selector| `[<index>]` |Value at selected array index
+|Range selector| `[<index> to <index>]`| Array with values from selected indexes
+|XML Attribute selector| `.@<key-name>` |Value for selected attribute
+|All XML Attributes| `.@` |Object with attributes as key:value pairs
+|Namespace selector| `.#` |String of the namespace used at the current key|
+|===
 
+Note that these selectors return a key:value pair that matches the expression:
 
-Applying the *Single level Explicit Selector*, the *Descendants Selector*, or the *Indexed Selector* returns the value of the key:value pair that matches the expression.
+* Single level Explicit selector
+* Descendants selector
+* Indexed selector
 
-*Note*: Each of these selector expressions supports having a '?' appended at the end of the chain. This changes the expression into a query that checks upon the existence of the key. The return type in this case is a boolean true or false.
-
-This document also details how you can <<Reference Elements From an Incoming Mule Message, access different elements>> of the incoming Mule Message and environment:
-
-* <<The Payload of a Mule Message>>
-* <<Inbound Properties from a Mule Message>>
-* <<Outbound Properties from a Mule Message>>
-* <<Flow Variables from a Mule Message>>
-* <<Accessing System and Spring Properties>>
-
-
+`?` operator: Changes the selector expression that returns a Boolean `true` or `false` value to indicate on whether the key exists or not.
 
 
 == Single Value selector
 
-Value selectors may be applied over an `:object` or an `:array`.
+Value selectors may be applied over an `Object` or an `Array`.
 
-=== Over :object
+=== Over Object
 
 This selector returns the first value whose key matches the expression, that is, *payload.name*, which returns the value whose key matches *name*.
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
 {
   address: payload.people.person.address
@@ -51,10 +52,6 @@ This selector returns the first value whose key matches the expression, that is,
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,json,linenums]
@@ -79,9 +76,6 @@ This selector returns the first value whose key matches the expression, that is,
 }
 ----
 
-[discrete.view]
-=== Output: XML
-
 .Output
 [source,xml,linenums]
 ----
@@ -97,33 +91,29 @@ This selector returns the first value whose key matches the expression, that is,
   </area>
 </address>
 ----
-=====
 
 
-=== Over :array
 
-This selector is applied on each of the elements of the array that are of type `:object` and returns an array with all the selected values
+=== Over Array
+
+This selector is applied on each of the elements of the array that are of type `Object` and returns an array with all the selected values
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 payload.people.person.address.street
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,dataweave,linenums]
 ----
 {
-  "people": [ <1>
+  "people": [ # //<1>
     {
       "person": {
         "name": "Nial",
@@ -157,15 +147,12 @@ payload.people.person.address.street
   ]
 }
 ----
-<1> As 'people' is an array, this sets the context for searching across both 'person' instances. The result from this is always an array.
-
-[discrete.view]
-=== Output: JSON
+<1> As 'people' is an array, this sets the context for searching across both 'person' elements. The result from this selection is always an array.
 
 .Output
 [source,json,linenums]
 ----
-[ <1>
+[ # <1>
   {
     "name": "Italia",
     "number": 2164
@@ -177,54 +164,25 @@ payload.people.person.address.street
 ]
 ----
 
-<1> As the context is an array, the output is always an array. An array is returned even if there's a single matching value.
-=====
-
-=== Alternative syntax
-
-You can also select a single value through the alternate syntax `["<key-name>"]`. For example *payload["price"]* returns the value whose key matches *price*. This is valid for both arrays and objects.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-payload["people"]
-----
-
-The main advantage of this syntax is that you can easily replace the name of a key with a variable to create a more dynamic expression.
+<1> The output is always an array. An array is returned even if there's a single matching value.
 
 
-
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-payload.items[flowVars.item]
-----
-
-The above example receives a payload that contains a list of items, and a flow variable that indicates which of these items to take from the payload.
 
 
 
 == Multi Value selector
 
-Multi value selector can either be applied over an `:object` or an `:array`.
+Multi value selector can either be applied over an `Object` or an `Array`.
 
-=== Over :object
+=== Over Object
 
 This selector returns an array with all the values whose key matches the expression.
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   users: payload.users.*user
@@ -232,10 +190,6 @@ This selector returns an array with all the values whose key matches the express
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
 
 .Input
 [source,xml,linenums]
@@ -246,9 +200,6 @@ This selector returns an array with all the values whose key matches the express
   <user>Leandro</user>
 </users>
 ----
-
-[discrete.view]
-=== Output: JSON
 
 .Output
 [source,json,linenums]
@@ -261,37 +212,225 @@ This selector returns an array with all the values whose key matches the express
   ]
 }
 ----
-=====
 
 
-=== Over :array
 
-The selector is applied on each of the elements of the array that are of type `:object` and returns an array with all the selected values.
+=== Over Array
 
-=== Alternative syntax
+The selector is applied on each of the elements of the array that are of type `Object` and returns an array with all the selected values.
 
-You can also select multiple values through the alternate syntax `[*"<key-name>"]`. For example *payload[*"price"]* returns all the values whose key matches *price*. This is valid for both arrays and objects.
+
+== Descendants Selector
+
+This selector is applied to the context using the form *..<field-name>* and retrieves the values of all matching key:value pairs in the sub-tree under the current context. Regardless of the hierarchical structure these fields are organized in, they are all placed at the same level in the output.
+
+
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
-payload.items[*item]
+{
+  names: payload.people..name <1>
+}
 ----
 
 
 
+.Input
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "names": [
+    "Nial",
+    "Italia",
+    "Martinez"
+  ]
+}
+----
+<1> In this example, all of the fields that match the key "name" are placed in a list called "names" regardless of their cardinality in the tree of the input data.
+
+
+
+== Key-Value Pair Selector
+
+
+This selector retrieves both the keys and the values of all matching keys pairs in the current context. These are returned as an object, containing these retrieved keys and values.
+
+
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  users: payload.users.&user
+}
+----
+
+
+.Input
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+  <admin>Admin</admin>
+  <admin>org_owner</admin>
+</users>
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+Note that unlike the multi-value selector, the output of this selector is an object, where the original keys for each value are also extracted.
+
+=== Selecting all the Descendant Key Value Pairs
+
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  names: payload.people..&name
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.Output
+----
+{
+  names: [
+    {
+      name: "Nial"
+    },
+    {
+      name: "Italia"
+    },
+    {
+      name: "Martinez"
+    }
+  ]
+}
+----
+
+==== Converting the array of objects into an object of objects
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  names: (payload.people..&name) reduce (value, aggregator) -> aggregator ++ value
+  //Alternative methods
+  //names: payload.people..&name reduce ($$ ++ $)
+  //names: {(payload.people..&name)}
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<names>
+  <name>Nial</name>
+  <name>Italia</name>
+  <name>Martinez</name>
+</names>
+----
 
 
 == Indexed Selector
 
-The index selector returns the element at the specified position, it can be applied over an `:array`, an  `:object` or a `:string`
+The index selector returns the element at the specified position, it can be applied over an `Array`, an `Object` or a `String`
 
-=== Over :array
+=== Over Array
 
-This selector can be applied to String literals, Arrays and Objects. In the case of Objects, the value of the key:value pair found at the index is returned. The index is zero based.
+This selector can be applied to String literals, Arrays and Objects. In the case of Objects, the value of the key:value pair found at the index is returned. In the case of Arrays, the value of the element is returned. The index is zero-based.
 
 . If the index is bigger or equal to 0, it starts counting from the beginning.
 . If the index is negative, it starts counting from the end where -1 is the last element.
@@ -299,17 +438,12 @@ This selector can be applied to String literals, Arrays and Objects. In the case
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 payload.people[1]
 ----
 
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,json,linenums]
@@ -317,29 +451,26 @@ payload.people[1]
 {
   "people": [
         {
-          "name": "Nial",
-          "address": "Martinez"
+          "nameFirst": "Nial",
+          "nameLast": "Martinez"
         },
         {
-          "name": "Coty",
-          "address": "Belgrano"
+          "nameFirst": "Coty",
+          "nameLast": "Belgrano"
         }
     ]
 }
 ----
 
-[discrete.view]
-=== Output: JSON
-
 .Output
 [source,json,linenums]
 ----
 {
-  "name": "Coty",
-  "address": "Belgrano"
+  "nameFirst": "Coty",
+  "nameLast": "Belgrano"
 }
 ----
-=====
+
 
 
 When using the Index Selector with a String, the string is broken down into an array, where each character is an index.
@@ -347,7 +478,7 @@ When using the Index Selector with a String, the string is broken down into an a
 .Transform
 [source,dataweave,linenums]
 ----
-%output application/json
+output application/json
 ---
 {
   name: "MuleSoft"[0]
@@ -362,7 +493,7 @@ When using the Index Selector with a String, the string is broken down into an a
 }
 ----
 
-=== Over :string
+=== Over String
 
 The selector picks the character at a given position, treating the string as an array of characters.
 
@@ -372,8 +503,8 @@ The selector picks the character at a given position, treating the string as an 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   name: "Emiliano"[0]
@@ -388,21 +519,46 @@ The selector picks the character at a given position, treating the string as an 
 }
 ----
 
-== Over :object
+=== Over Object
 
-The selector returns the value of the key : value pair at the specified position.
+The selector returns the value of the key:value pair at the specified position.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload[1]
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "nameFirst": "Mark",
+  "nameLast": "Nguyen"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+"Nguyen"
+----
+
 
 == Range selector
 
-=== Over :array
+=== Over Array
 
 Range selectors limit the output to only the elements specified by the range on that specific order. This selector allows you to slice an array or even invert it.
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   slice: [0,1,2][0 to 1],
@@ -426,15 +582,15 @@ Range selectors limit the output to only the elements specified by the range on 
 }
 ----
 
-=== Over :string
+=== Over String
 
 The Range selector limits the output to only the elements specified by the range on that specific order, treating the string as an array of characters. This selector allows you to slice a string or even invert it.
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   slice: "DataWeave"[0 to 1],
@@ -453,16 +609,16 @@ The Range selector limits the output to only the elements specified by the range
 ----
 
 
-== Attribute Selector Expressions
+== XML Attribute Selector
 
-In order to query for the attributes on an Object, the syntax *.@<key-name>* is used. If you just use *.@* (without <key-name>) it returns an object containing each key:value pair in it.
+In order to query for the attributes on an XML element, the syntax *.@<key-name>* is used. If you just use *.@* (without <key-name>) it returns an object containing all attributes as key:value pairs.
 
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   item: {
@@ -475,13 +631,8 @@ In order to query for the attributes on an Object, the syntax *.@<key-name>* is 
 
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
 
 .Input
-
 [source,xml,linenums]
 ----
 <product id="1" type="tv">
@@ -489,19 +640,16 @@ In order to query for the attributes on an Object, the syntax *.@<key-name>* is 
 </product>
 ----
 
-[discrete.view]
-=== Output: JSON
-
 .Output
 [source,json,linenums]
 ----
 {
-  "item:" {
+  "item": {
     "type": "tv",
     "name": "Samsung",
-    "attributes": { # <1>
+    "attributes": { <1>
       "id": 1,
-      "type": tv
+      "type": "tv"
     }
   }
 }
@@ -509,7 +657,6 @@ In order to query for the attributes on an Object, the syntax *.@<key-name>* is 
 
 <1> The third element in this output retrieves an object with all of the attributes in it, in this case both the id and the type.
 
-=====
 
 
 
@@ -517,8 +664,8 @@ In order to query for the attributes on an Object, the syntax *.@<key-name>* is 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   item: {
@@ -551,176 +698,73 @@ As selectors only return the value of a key:value pair, in order to get both the
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
-user: payload.name as :object <1>
+user: payload.nameFirst as Object <1>
 ----
 
-<1> Using the *as :object* transforms the value into an object that contains the key as well as the value. Without this conversion to object, the returned XML body would simply be <user>Mariano</user>.
+<1> Using the *as Object* transforms the value into an object that contains the key as well as the value. Without this conversion to object, the returned XML body would simply be <user>Mariano</user>.
 
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,json,linenums]
 ----
 {
-  "name": "Mariano",
-  "lastName" : "Doe"
+  "nameFirst": "Mariano",
+  "nameLast" : "Doe"
 }
 ----
-
-[discrete.view]
-=== Output: XML
 
 .Output
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 <user>
-  <name>Mariano</name>
+  <nameFirst>Mariano</nameFirst>
 </user>
 ----
-=====
 
 
+== Namespace Selector
 
-== Descendants Selector
-
-This selector is applied to the context using the form *..<field-name>* and retrieves the values of all matching key:value pairs in the sub-tree under the current context. Regardless of the hierarchical structure these fields are organized in, they are all placed at the same level in the output.
-
-
+The Namespace selector returns the namespace of the current key that it is queried against.
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
-{
-  names: payload.people..name <1>
-}
+payload.order.#
 ----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
-[source,json,linenums]
-----
-{
-  "people": {
-    "person": {
-      "name": "Nial",
-      "address": {
-        "street": {
-          "name": "Italia",
-          "number": 2164
-        },
-        "area": {
-          "zone": "San Isidro",
-          "name": "Martinez"
-        }
-      }
-    }
-  }
-}
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "names": [
-    "Nial",
-    "Italia",
-    "Martinez"
-  ]
-}
-----
-<1> In this example, all of the fields that match the key "name" are placed in a list called "names" regardless of their cardinality in the tree of the input data.
-=====
-
-
-
-
-=== Selecting all the Descendant Key Value Pairs
-
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  names: payload.people..name as :object<1>
-}
-----
-<1> The *as: object* makes the expression return an object rather than an array (which would be returned by default). This implies that each value has a key. Without this conversion, in XML the returned array would be a single long string of characters comprised of all three names merged into one.
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
-----
-{
-  "people": {
-    "person": {
-      "name": "Nial",
-      "address": {
-        "street": {
-          "name": "Italia",
-          "number": 2164
-        },
-        "area": {
-          "zone": "San Isidro",
-          "name": "Martinez"
-        }
-      }
-    }
-  }
-}
-----
-
-[discrete.view]
-=== Output: XML
-
-.Output
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<names>
-  <name>Nial</name>
-  <name>Italia</name>
-  <name>Martinez</name>
-</names>
+<ns0:order xmlns:ns0=http://orders.company.com>
+  <name>Mark</name>
+  <items>42</items>
+  <orderdate>2017-01-04</orderdate>
+</ns0:order>
 ----
-=====
 
+.Output
+[source,json,linenums]
+----
+"http://orders.company.com"
+----
 
 
 == Selectors modifiers
 
 There are two selectors modifiers: ? and !.
-The question mark returns true or false whether the keys are present on the structures.
-The exclamation mark evaluates the selection and fails if any key is not present.
+
+* The question mark returns true or false whether the keys are present on the structures.
+* The exclamation mark evaluates the selection and fails if any key is not present.
 
 === Key Present
 
@@ -731,17 +775,13 @@ Returns true if the specified key is present in the object.
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
 present: payload.name?
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,json,linenums]
@@ -751,31 +791,26 @@ present: payload.name?
 }
 ----
 
-[discrete.view]
-=== Output: XML
-
 .Output:
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 <present>true</present>
 ----
-=====
-
 
 
 
 In the example above, if a 'name' key does exist in the input, it returns *true*.
 
-This operation also works with attributes:
+This operation also works with XML attributes:
 
 
 
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/json
 ---
 {
   item: {
@@ -785,10 +820,6 @@ This operation also works with attributes:
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
 
 .Input
 [source,xml,linenums]
@@ -797,9 +828,6 @@ This operation also works with attributes:
   <brand>Samsung</brand>
 </product>
 ----
-
-[discrete.view]
-=== Output: JSON
 
 .Output
 [source,json,linenums]
@@ -810,7 +838,6 @@ This operation also works with attributes:
   }
 }
 ----
-=====
 
 
 
@@ -821,17 +848,13 @@ You can also use this validation operation as part of a filter:
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
 users: payload.users.*name[?($ == "Mariano")]
 ----
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
 
 .Input
 [source,xml,linenums]
@@ -843,9 +866,6 @@ users: payload.users.*name[?($ == "Mariano")]
 </users>
 ----
 
-[discrete.view]
-=== Output: XML
-
 .Output
 [source,xml,linenums]
 ----
@@ -855,7 +875,7 @@ users: payload.users.*name[?($ == "Mariano")]
   <name>Mariano</name>
 </users>
 ----
-=====
+
 
 
 The example above selects key:value pairs with value "Mariano" => {name: Mariano, name: Mariano}
@@ -868,18 +888,14 @@ Returns an exception if any of the specified keys are not found.
 .Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
 present: payload.lastName!<1>
 ----
 <1> Throws the exception "There is no key named 'lastName'".
 
 
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
 
 .Input
 [source,json,linenums]
@@ -889,175 +905,54 @@ present: payload.lastName!<1>
 }
 ----
 
-[discrete.view]
-=== Output: XML
-
 Exception: "There is no key named 'lastName'"
-=====
 
+////
+=== Selectors
 
+A selector allows for the navigation and querying the multiple levels of a data-structure to reference a certain value or set of values. See xref:dataweave-selectors.adoc[DataWeave Selectors] for a full reference.
 
-== Reference Elements From an Incoming Mule Message
-
-Often, you want to use the different elements from the Mule Message that arrive at the DataWeave Transformer in your transform. The following sections show you how to reference each of these.
-
-
-=== The Payload of a Mule Message
-
-You can take the *Payload* of the Mule message that reaches the DataWeave transformer and use it in your transform body.
-
+.Transform
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/json
 ---
 {
-  a: payload
-}
-----
-
-You can also refer to sub elements of the payload through the dot syntax `payload.user`.
-
-[TIP]
-If the metadata for the payload's inner contents are known to Studio, an autocomplete function  helps you out.
-
-You can optionally also define the payload as an input directive in the header, although this isn't required.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%input payload application/xml
-%output application/xml
----
-{
-  a: payload
-}
-----
-
-=== Inbound Properties from a Mule Message
-
-You can take *Inbound Properties* from the Mule message that arrives to the DataWeave transformer and use them in your transform body. To refer to one of these, simply call it through the matching
-xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)] expression.
-
-In MEL, there are two supported syntaxes to call for an inbound property:
-
-* `inboundProperties.name`
-* `inboundProperties['name']`
-
-[IMPORTANT]
-The first method only works if the variable name doesn't include any periods or spaces.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  a: inboundProperties.userName
-}
-----
-
-[TIP]
-If the metadata about these inbound properties is known to Studio, an autocomplete function  helps you out.
-
-You can optionally also define the inbound property as a constant directive in the header, although this isn't required as you can directly call the property as shown above.
-
-[source,dataweave]
-----
-%var inUname = inboundProperties['userName']
-----
-
-=== Outbound Properties from a Mule Message
-
-You can take any *Outbound Properties* in the Mule message that arrives to the DataWeave transformer and use it in your transform body. To refer to it, simply call it through the matching xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)] expression.
-
-In MEL, there are two supported syntaxes to call an outbound property:
-
-* `outboundProperties.name`
-* `outboundProperties['name']`
-
-[IMPORTANT]
-The first method only works if the variable name doesn't include any periods or spaces.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  a: outboundProperties.userName
-}
-----
-
-[TIP]
-If the metadata about these outbound properties is known to Studio, an autocomplete function  helps you out.
-
-You can optionally also define the outbound property as a constant directive in the header, although this isn't required as you can directly call the property as shown above.
-
-[source,dataweave]
-----
-%var outUname = outboundProperties['userName']
-----
-
-
-=== Flow Variables from a Mule Message
-
-You can take any *Flow Variable* in the Mule message that arrives at the DataWeave transformer and use it in your transform body. To refer to it, simply call it through the matching
-xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)]  expression.
-
-In MEL, there are two supported syntaxes to call a flow variable:
-
-* `flowVars.name`
-* `flowVars['name']`
-
-[IMPORTANT]
-The first method only works if the variable name doesn't include any periods or spaces.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  a: flowVars.userName
-}
-----
-
-[TIP]
-If the metadata about these flow variables is known to Studio, an autocomplete function helps you out.
-
-You can optionally also define the flow variable as a constant directive in the header, although this isn't required as you can directly call the variable as shown above.
-
-[source,dataweave]
-----
-%var uname = flowVars['userName']
-----
-
-=== Accessing System and Spring Properties
-
-You can reference any *Property* (System or Spring) that exists in the server while DataWeave is processing your transformation, to do so use the *p('prop_name')* function.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  a: p('userName')
+  users: payload.users.*user
 }
 ----
 
 
+.Input
+[source,xml,linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+
+
+////
 
 
 
 == See Also
 
-* xref:dataweave-quickstart.adoc[DataWeave quickstart guide]
-* xref:6@studio::transform-message-component-concept-studio.adoc[About Transform Message Component]
+* xref:dataweave-cookbook-extract-data.adoc[Dataweave cookbook: Extract Data]
 * xref:dataweave-language-introduction.adoc[DataWeave Language Introduction]
-* xref:dataweave-operators.adoc[DataWeave Operators]
-* xref:dataweave-types.adoc[DataWeave Types]
-* xref:dataweave-formats.adoc[DataWeave Formats]
-* xref:dataweave-examples.adoc[DataWeave Examples]
-* xref:mel-dataweave-functions.adoc[MEL DataWeave Functions]
+// * link:dw-functions-core[DataWeave Core Functions]

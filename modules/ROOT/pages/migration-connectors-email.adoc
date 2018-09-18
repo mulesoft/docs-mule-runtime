@@ -1,0 +1,175 @@
+= Migrating to the Email connector
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The POP3, IMAP and SMTP transports were completely rewritten. They evolved away from the Mule 3 transport
+model into a single operation based connector.
+
+This enables many new capabilities:
+
+* The ability to list emails contents on demand, unlike the old IMAP and POP3 transports, which only provided a polling inbound endpoint.
+* Simplified experience to send emails.
+* Simplified experience to get the data of incoming emails.
+* Consistency between all mule connectors.
+* Advanced email matching functionality.
+
+They were merged to a bring similar experience either you want to receive or send and
+
+== Migrating IMAP, POP3 or SMTP server Configurations
+
+Here you can see examples on how to migrate each one of the email transports configurations that
+were in mule 3 to the new mule 4 email connector.
+
+In the following Mule 4 configuration examples you'll see that most of the parameters that were
+declared in the `inbound-endpoint` or `outbound-endpoint` such as `user`, `password`, `host`, `port` between others
+have been moved to the `connection` element.
+
+=== Migrating a POP3 inbound endpoint
+
+.Mule 3 Example: POP3 Inbound Configuration with Polling
+
+[source,xml,linenums]
+----
+<pop3:connector name="pop3"/>
+
+<flow name="list">
+    <pop3:inbound-endpoint checkFrequency="100" user="bob" password="password" host="pop.example.com" port="995"/>
+    ...
+</flow>
+----
+
+.Mule 4 Example: POP3 Configuration
+[source,xml,linenums]
+----
+<email:pop3-config name="pop3">
+  <email:pop3-connection connector-ref="pop3" host="pop.example.com" port="995" user="bob" password="password"/>
+</email:pop3-config>
+
+<flow name="list">
+  <scheduler>
+    <scheduling-strategy><fixed-frequency frequency="100"></scheduling-strategy>
+  </scheduler>
+  <email:list-pop3 config-ref="pop3"/>
+  ...
+</flow>
+----
+
+NOTE: the list-pop3 operation does not perform the polling, an scheduler is in charge to trigger the flow.
+
+=== Migrating an IMAP inbound endpoint
+
+.Mule 3 Example: IMAP Inbound Configuration with Polling
+[source,xml,linenums]
+----
+<imap:connector name="imap" checkFrequency="100"/>
+
+<flow name="retrieve-emails">
+  <imap:inbound-endpoint user="bob" password="password" host="pop.example.com" port="995"/>
+  ...
+</flow>
+----
+
+.Mule 4 Example: POP3 Configuration
+[source,xml,linenums]
+----
+<email:imap-config name="imap">
+  <email:imap-connection connector-ref="imap" host="pop.example.com" port="995" user="bob" password="password"/>
+</email:imap-config>
+
+<flow name="list">
+  <scheduler>
+    <scheduling-strategy><fixed-frequency frequency="100"></scheduling-strategy>
+  </scheduler>
+  <email:list-imap config-ref="imap"/>
+  ...
+</flow>
+----
+
+NOTE: the list-imap operation does not perform the polling, an scheduler is in charge to trigger the flow.
+
+=== Migrating an SMTP outbound endpoint
+
+.Mule 3 Example: SMTP Outbound Configuration.
+[source,xml,linenums]
+----
+<smtp:connector name="smtp"/>
+
+<flow name="send-email">
+  ...
+  <smtp:outbound-endpoint connector-ref="smtp" host="smtp.example.com" user="bob" password="password"
+                          port="587" subject="Hello Ale!" from="bob@mulesoft.com" to="ale@mulesoft.com" />
+</flow>
+----
+
+.Mule 4 Example: SMTP Configuration
+[source,xml,linenums]
+----
+<email:smtp-config name="smtp">
+    <email:smtp-connection host="smtp.example.com" port="587" user="bob" password="password"/>
+</email:smtp-config>
+
+<flow name="send">
+    <email:send config-ref="smtp" subject="Hello Ale!" from="bob@mulesoft.com">
+        <email:to-addresses>
+            <email:to-address value="ale@mulesoft.com"/>
+        </email:to-addresses>
+        <email:body>
+            <email:content>#[payload]</email:content>
+        </email:body>
+    </email:send>
+</flow>
+----
+
+=== Migrating SSL/TLS secured connections
+
+In mule 3 each transport/connector had their own TLS element, since mule 4
+the TLS context is the common element for configuring TLS across modules.
+In the next example we can see a Mule 3 example and how can it be migrated to
+Mule 4.
+
+NOTE: the example uses an SMTP configuration but is the same for the
+IMAP and POP3 configurations.
+
+.Mule 3 Example
+[source,xml,linenums]
+----
+<smtps:connector name="tls">
+    <smtps:tls-client path="aKeystore" storePassword="password"/>
+    <smtps:tls-trust-store path="aTruststore" storePassword="changeit"/>
+</smtps:connector>
+----
+
+.Mule 4 Example
+[source,xml,linenums]
+----
+<email:smtp-config name="tls">
+    <email:smtps-connection host="${port}" port="${port}">
+        <tls:context enabledProtocols="TLSv1.2,SSLv3">
+            <tls:key-store path="aKeystore" password="password"/>
+            <tls:trust-store path="aTruststore.jks" password="changeit"/>
+        </tls:context>
+    </email:smtps-connection>
+</email:smtp-config>
+----
+
+== Adding the Mule 4 connector to a project
+
+Now that the transport are not bounded with mule you'll need to add it
+to your application using the Studio palette or add the following dependency in your `pom.xml` file
+in order to use it
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-email-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== See also
+
+* xref:connectors::email/email-connector.adoc[Email Connector]
+* xref:connectors::email/email-gmail.adoc[Connecting with Gmail in Mule 4 Using the Email Connector]

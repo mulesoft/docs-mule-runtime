@@ -1,0 +1,137 @@
+= Introduction to Mule 4: Java Integration
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Expressions versus Code
+Experienced Mule users will notice that Mule 4 takes a more opinionated approach about how to structure apps, which limits what can be done through the expression language. The intention is to provide a clear separation between the flow logic and the business logic that should be extracted through code.
+
+If you want to extract, query, transform, or otherwise work with data in your flows, DataWeave expressions and transforms are the recommended tool. If you want to write custom logic, instantiate Java objects, or call arbitrary methods, MuleSoft recommends that you encapsulate this code into scripts or classes that can be injected and tested easily.
+
+This is why MuleSoft removed the Expression component and Expression transformer in favor of encouraging you to cleanly separate your logic into scripts or Java classes, instead.
+
+== Calling Static Java Methods from DataWeave
+
+When you want to call out to Java logic to help format or parse data, DataWeave now allows you to call out to static methods. Consider this Java method:
+[source,java,linenums]
+----
+package org.acme;
+public class MyCompanyUtils {
+  public static String reformat(String input) {
+    return …;
+  }
+}
+----
+You can call it through the following DataWeave code:
+[source,dataweave,linenums]
+----
+import java!org::acme::MyCompanyUtils
+---
+{
+  date: MyCompanyUtils::reformat(payload.input)
+}
+----
+
+== Scripting Module
+
+The Scripting module replaces the Mule 3 Scripting component. The Mule 4 module enables you to embed your Groovy, Ruby, Python, or JavaScript scripts inside Mule flows. You can inject data from the Mule message into your code using the new `parameters` configuration attribute.
+
+[source,xml,linenums]
+----
+<script:execute engine="groovy">
+    <script:code>
+         return "$payload $prop1 $prop2"
+    </script:code>
+    <script:parameters>
+         #[{prop1: "Received", prop2: payload.body}]
+    </script:parameters>
+</script:execute>
+----
+
+To use the scripting module, simply add it to your app using the Studio palette, or add the following dependency in your `pom.xml` file:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-scripting-module</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+For more detail on this module, see xref:connectors::scripting/scripting-module.adoc[Scripting Module Documentation].
+
+== Java Module
+
+While the Scripting module is a very powerful tool that allows for interoperation with Java by executing any random set of instructions, often you simply need to just instantiate a class or execute a single method. While Mule 3 usually relies on MEL for this, the Java module was introduced in Mule 4 to allow for these use cases. Other advantages of the Java module over the Scripting module are:
+
+* Support for xref:7.1@studio::datasense-explorer.adoc[DataSense]: Each time you execute a method, you will get DataSense for the output type and the method's input arguments.
+* UI Support: You get visual aids in terms of methods available for each class, autocompletion, and so on.
+
+=== To Create a New Java Instance
+
+In Mule 3:
+
+[source,xml,linenums]
+----
+<set-payload value="#[new com.foo.AppleEater()]" />
+<set-payload value="#[new com.foo.AppleEater('some string arg', flowVars.apple)]" />
+----
+
+In Mule 4:
+
+[source,xml,linenums]
+----
+<java:new class="com.foo.AppleEater" constructor="MyClass()"/>
+
+<java:new class="com.foo.AppleEater" constructor="MyClass(String, Apple)">
+  <java:args>#[{name: 'some string arg', apple: vars.apple}]</java:args>
+</java:new>
+----
+
+=== To Invoke an Instance Method
+
+In Mule 3:
+
+[source,xml,linenums]
+----
+<expression-component>
+  flowVars.appleEater.chew(500)
+</expression-component>
+----
+
+In Mule 4:
+
+[source,xml,linenums]
+----
+<java:invoke class="com.foo.AppleEater" method="chew(Integer)" instance="#[vars.appleEater]">
+  <java:args>
+    #[{chewingTime: 500}]
+  </java:args>
+</java:invoke>
+----
+
+The `invoke` functionality can also be used through DataWeave functions:
+
+[source,xml,linenums]
+----
+<set-payload value="#[Java::invoke('com.foo.AppleEater', 'chew(Integer)', vars.appleEater, {chewingTime: 500})]"/>
+----
+
+To use the Java module, simply add it to your application using the Studio palette, or add the following dependency to your `pom.xml` file:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-java-module</artifactId>
+  <version>1.0.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== See Also
+
+* xref:connectors::scripting/scripting-module.adoc[Scripting Module Documentation]
+* xref:connectors::java/java-module.adoc[Java Module Documentation]

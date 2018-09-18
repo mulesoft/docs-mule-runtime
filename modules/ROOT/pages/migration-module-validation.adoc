@@ -1,0 +1,255 @@
+= Migrating the Validation Module
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+// sme: MG, author: ndinu
+
+// Explain generally how and why things changed between Mule 3 and Mule 4.
+The Validation Module in Mule 4 is very similar to the one in Mule 3. The most
+impacted areas between these mayor versions were error handling and support in expressions.
+Error handling is different because Mule 4 Extensions have a different way to declare
+errors through error types. Regarding expressions, Mule 4 only supports MEL expressions
+within the compatibility module, all other expressions must be DataWeave expressions.
+
+What's covered in this section:
+
+* <<errors>>
+* <<functions>>
+* <<all_scope>>
+* <<custom_validator>>
+
+[[errors]]
+== Error Types
+In the Mule 3 Validation Module, any failure during a validation will throw the same exception or a
+ configured one and you are able to customize the message depending on the error. On the other
+ hand, in Mule 4, modules declare their own error types. In the case of this
+ module, validation operations have different error types which implies the type
+ of validation that have failed. In the case of the `all` scope, the type is
+ *VALIDATION:MULTIPLE* regardless of the validation or validations that failed inside
+ the `all` scope. You can still customize the error message or use a default one.
+
+The examples below show validators that will fail if the variable email is not
+ a possible valid email.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<validation:is-email email="#[flowVars.email]" message="The value is not a valid email"/>
+----
+
+If this validation fails, a *ValidationException* will be thrown.
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<validation:is-email email="#[vars.email]" message="The value is not a valid email"/>
+----
+
+If this validation fails, the error will be of type *VALIDATION:INVALID_EMAIL*.
+
+[[functions]]
+== From functions in MEL Expressions to functions in DataWeave
+
+In the same way that in Mule 3 you could execute validation in expressions, you can do that in Mule 4.
+The difference is that in Mule 4, these validations are called within DataWeave expressions instead of MEL expressions.
+This is the list of supported functions in Mule 4 : `isEmail`, `matchesRegex`, `isTime`, `isNumber`, `isIp` and `isUrl`
+
+In the examples below we can see how to execute different operations depending if the
+content on a variable named unknownVariable is: a valid email, a valid Url or neither of those.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[validator.validateEmail(flowVars.unknownVariable)]">
+    <set-payload value="#[flowVars.unknownVariable + &quot; is a valid email.&quot;]"/>
+  </when>
+  <when expression="#[validator.validateUrl(flowVars.unknownVariable)]">
+    <set-payload value="#[flowVars.unknownVariable+ &quot; is a valid URL.&quot;]"/>
+  </when>
+  <otherwise>
+    <set-payload value="#[flowVars.unknownVariable + &quot; is a not a valid email or a valid url.&quot;]"/>
+  </otherwise>
+</choice>
+----
+
+Inside the MEL expression we used validator to access to the validation methods.
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[Validation::isEmail(vars.unknownVariable)]" >
+    <set-payload value='#[vars.unknownVariable ++ " is a valid email."]'/>
+  </when>
+  <when expression="#[Validation::isUrl(vars.unknownVariable)]" >
+    <set-payload value='#[vars.unknownVariable ++ " is a valid URL."]'/>
+  </when>
+  <otherwise >
+    <set-payload value='#[vars.unknownVariable ++ " is a not a valid email or a valid url."]'/>
+  </otherwise>
+</choice>
+----
+
+In the Validation module, there are functions declared to be called from within DataWeave expressions.
+Like any other function in Mule 4, they are invoked using ExtensionName::functionName , in this case `Validation::isEmail(vars.email)`.
+
+[[all_scope]]
+== The use of the All scope
+
+In Mule 4 You can still group a set of validation the same way you did in Mule 3, only a minor part of the dsl has changed.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:validations>
+    <validation:is-email email="#[flowVars.email]"/>
+    <validation:matches-regex value="#[flowVars.email]" regex="^.*\.com$"/>
+    <validation:validate-size value="#[flowVars.email]" min="5" max="20"/>
+  </validation:validations>
+</validation:all>
+----
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:is-email email="#[vars.email]"/>
+  <validation:matches-regex value="#[vars.email]" regex="^.*\.com$"/>
+  <validation:validate-size value="#[vars.email]" min="5" max="20"/>
+</validation:all>
+----
+
+[[custom_validator]]
+== Build a custom Validator
+
+Custom Validators were replaced with the Extension Validators, these Validators are
+just like operations with the difference that they always return void. In order to signal that
+the validation have failed, the java method should throw a `ModuleException` with the
+respective error type. Through the usage of these Validators we can create our own
+error types that better explain the validation that failed and the user experience of
+using them is just like using any other operation. For more depth of what extension
+validators are, see the Extension Validators Documentation.
+//TODO: Redirect to Validators Documentation when ready
+
+*Note:* these validators can also be used inside the `all` validation scope.
+
+Let's see how to migrate a Mule 3 Custom Validator into Mule 4. In the examples below,
+we can see that we used to get the whole event, and from it we took the information that we needed for the
+validation.
+In the Mule 4 example, we give the Validator only with the desired parameters.
+
+.Mule 3 example
+
+This is how the Custom Validator used to look in the dsl.
+
+[source,xml,linenums]
+----
+<validation:custom-validator class="BalanceValidator"/>
+----
+
+This is how the Validator interface was implemented, see that the information you took for the validation
+had to be on specific parts of the message, in this case the flow variables price and balance.
+
+[source,java,linenums]
+----
+public class BalanceValidator implements Validator {
+  @Override
+  public ValidationResult validate(MuleEvent event) {
+    Integer price = new Integer((String) event.getMessage().getInvocationProperty("price"));
+    Integer balance = new Integer((String) event.getMessage().getInvocationProperty("balance"));
+    return new ValidationResult() {
+      @Override
+      public boolean isError() {
+        return price > balance;
+      }
+      @Override
+      public String getMessage() {
+        return "There is not enough money to make the transaction";
+      }
+    };
+  }
+}
+----
+
+.Mule 4 example
+
+This is how you use Extension Validators in Mule 4, we can see that the namespace and tag name
+are more descriptive to what we are validating. Also, the parameters here are part of the dsl and
+we can put the expression here instead of having to set it to a variable before.
+
+[source,xml,linenums]
+----
+<balance:has-sufficient-funds balance="#[vars.balance]" price="#[vars.price]"/>
+----
+
+To achieve this we create a simple extension named `balance`:
+
+[source,java,linenums]
+----
+@Operations({BalanceOperations.class})
+@Extension(name = "balance")
+@ErrorTypes(BalanceError.class)
+public class BalanceExtension {
+
+}
+----
+
+In the `BalanceOperations` class we add our validation method and we annotate it with `@Validator`. The
+method needs to throw an error type which comes from the generic validation error type.
+
+[source,java,linenums]
+----
+public class BalanceOperations {
+  @Validator
+  @Throws(BalanceErrorsProvider.class)
+  public void hasSufficientFunds(Integer balance, Integer price) throws Exception {
+    if (price > balance){
+      throw new ModuleException(BalanceError.INSUFFICIENT_FUNDS, new IllegalArgumentException("There is not enough money to make the transaction"));
+    }
+  }
+}
+----
+
+Here we create the error that will be thrown if the validation fails. See that is has a
+name according to the validations failure.
+
+[source,java,linenums]
+----
+public enum BalanceError implements ErrorTypeDefinition<BalanceError> {
+  INSUFFICIENT_FUNDS(MuleErrors.VALIDATION);
+
+  private ErrorTypeDefinition<? extends Enum<?>> parent;
+
+  BalanceError(ErrorTypeDefinition<? extends Enum<?>> parent) {
+    this.parent = parent;
+  }
+
+  @Override
+  public Optional<ErrorTypeDefinition<? extends Enum<?>>> getParent() {
+    return Optional.ofNullable(parent);
+  }
+}
+----
+
+The Validator method needs an `ErrorTypeProvider` that knows all the error types
+the validation can throw, in this case we create an `ErrorTypeProvider` that says that the
+only error the method can throw is of type *BALANCE:INSUFFICIENT_FUNDS*
+
+[source,java,linenums]
+----
+public class BalanceErrorsProvider implements ErrorTypeProvider {
+  @Override
+  public Set<ErrorTypeDefinition> getErrorTypes() {
+    HashSet<ErrorTypeDefinition> errors = new HashSet<>();
+    errors.add(BalanceError.INSUFFICIENT_FUNDS);
+    return errors;
+  }
+}
+----
+
+== See Also
+
+xref:migration-patterns.adoc[Migration Patterns]

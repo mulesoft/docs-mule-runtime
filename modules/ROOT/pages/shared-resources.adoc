@@ -4,63 +4,67 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: anypoint studio, shared resources, domains, multiple applications, share ports, domain project
 
-Mule supports the ability to define selected connectors as common resources and expose them to all applications deployed under a same *domain*. These resources are known as *shared resources*, to host these you must create a *Mule Domain Project* and then reference it on each of the projects that are meant to use the elements in it. Once defined, any Mule application associated with a particular domain can access resources in this file. Note that Mule applications can be associated with only one domain at a time.
+Mule can define selected connectors as common resources and expose them to all apps deployed under a same domain. These resources are known as shared resources. To host them, you must create a Mule Domain Project and then reference it from each of the projects that use the elements in it. Once defined, any Mule app associated with a particular domain can access resources in this file. Note that Mule apps can be associated with only one domain at a time.
 
 Shared resources allow multiple development teams to work in parallel using the same set of reusable connectors. Defining these connectors as shared resources at the domain level allows the team to:
 
-* Expose multiple services within the domain through the same port
-* Share the connection to persistent storage
-* Share services between applications through a well-defined interface
-* Ensure consistency between applications upon any changes, as the configuration is only set in one place
+* Expose multiple services within the domain through the same port.
+* Share the connection to persistent storage.
+* Share services between apps through a well-defined interface.
+* Ensure consistency between apps upon any changes because the configuration is only set in one place.
 
 == Prerequisites
 
-This document assumes that you are using Anypoint Studio with Mule runtime 3.6 or newer, or that you are building your applications outside Studio and deploying them to Mule Standalone *3.5.0* runtime or newer.
+This document assumes that you are using Anypoint Studio 7 with Mule runtime 4, or that you are building your apps using Studio 7 and deploying them to Mule 4 Standalone runtime.
 
 == Limitations
 
-* Defining flows, subflows, or any message processors as shared resources is not supported.
-* To share a WMQ connector as a shared resource, you need to remove the mule-transport-wmq-ee-<mule-version>.jar file from the $MULE_HOME/lib/mule/per-app/ directory and remove all the native jars for WMQ connectivity in your application's $MULE_HOME/apps/<my-app>/lib/ directory. Place all these jars in the $MULE_HOME/domains/<my-domain>/lib/ folder instead.
-* Adding properties in the configuration files of applications that use shared resources can result in issues, as these properties are shared with other apps in the domain and there may be conflicts. You can instead xref:setting-environment-variables.adoc[set environment variables].
-* Only the following connectors and related specifications can be specified as shared resources at this time: +
-** HTTP/HTTPS (both endpoints and connectors)
-** VM
-** TLS Context elements
-** JMS
-** JMS Caching Connection Factory
-** Database
-** WMQ
-** JBoss Transaction Manager
-** Bitronix Transaction Manager
+Defining flows, subflows, or any message processors as shared resources is not supported. Domains are not meant to share behavior. They are meant to share resources only.
 
 == Basic Anatomy
+
+=== Studio Project
 
 The following files are key within the Mule Domain Project:
 
 [%autowidth.spread]
 |===
-|*mule-domain-config.xml* |This is the shared resources configuration file. This file must have the `mule-domain-config.xml` file name.
-|*/lib* |This directory can contain libraries associated with the domain. Place the JDBC drivers for the datasources that you define as shared resources here or JMS broker APIs needed for the JMS connector.
-|*mule-deploy.properties* | This optional file may contain two configuration properties are equivalent to the ones in a Mule application: *redeployment.enabled* and *loader.overrides*. See xref:mule-application-deployment-descriptor.adoc#deployment-descriptor-in-a-domain[Deployment Descriptor in a Domain] for more details.
+|`/src/main/mule/mule-domain-config.xml` |This is the shared resources configuration file. This file must have the `mule-domain-config.xml` file name.
+|`pom.xml` |This is the dependencies file descriptor. It is a Maven POM file with required plugins for domains projects.
+|`/mule-artifact.json` |This file is a descriptor for the domain artifact.
+|===
+
+=== Domain Artifact
+
+You can find the following files when you package a domain into a JAR file:
+
+[%autowidth.spread]
+|===
+|`mule-domain-config.xml` |This is the shared resources configuration file. This file must have the `mule-domain-config.xml` file name.
+|`/repository` |A Maven-like repository with all the dependencies of the domain.
+|`/META-INF/maven/groupId/artifactId/pom.xml` |Artifact Maven descriptor file.
+|`/META-INF/mule-artifact/classloader-model.json` |Internal Mule file used for dependency management.
+|`/META-INF/mule-artifact/mule-artifact.json` |This file is a descriptor for the domain artifact.
 |===
 
 == Configuration
 
-To use shared resources in your applications, you must complete the following tasks.
+To use shared resources in your apps, you must complete the following tasks.
 
-. <<Creating a New Domain>>
-. Define one or more shared resources in that domain
-. <<Associating Applications with the Domain>>
-. <<Referencing Shared Resources>> in your applications
-. <<Deploying with Shared Resources>> the domain and the applications. Note that you can also deploy domain and apps together in a <<Deploying Domain Bundles>>
+. <<Creating a New Domain, Create a new domain>>.
+. Define one or more shared resources in that domain.
+. <<Associating Applications with the Domain, Associate applications with the domain>>.
+. <<Referencing Shared Resources, Reference shared resources>> in your applications.
+. <<Deploying with Shared Resources, Deploy>> the domain and the applications with shared resources. Note that you can also deploy domain and apps together in a <<Deploying Domain Bundles, domain bundle>>.
 
 The sections below describe the procedure for each of these steps.
 
+[[create_domain_project]]
 == Creating a New Domain
 
-To create a new domain in Anypoint Studio, follow the steps below:
+To create a new domain in Anypoint Studio:
 
-. In the top menu bar select *File* > *New* > *Mule Domain Project*
+. In the top menu bar select, File > New > Mule Domain Project.
 +
 image::new-domain.png[new+domain]
 +
@@ -68,56 +72,86 @@ image::new-domain.png[new+domain]
 +
 image::create-new-domain.png[create+new+domain]
 +
-Provide a name for the project and select a runtime. Optionally complete the Maven settings if you plan to use Maven with this project, and optionally create a .gitignore file if you plan to share this project via git or github.
+* Provide a name for the project, and select a Mule runtime version.
+//NOT IN STUDIO 7, YET ANYWAY...
+//* Optionally, create a `.gitignore` file if you plan to share this project through git or GitHub.
 
-[NOTE]
-====
-You can also create a domain project outside Studio, to do so create the following file structure in your file system:
-
-image::domain-folders.png[]
-
-Note that the `lib` folder is optional.
-====
 
 === Defining Shared Resources
 
-You can configure the domain project that you just created in the previous step by defining shared resources in the the  `mule-domain-config.xml` file. You can define multiple resources in this configuration file. In Anypoint Studio, there are two different views for editing this file. The `source` view should be the most familiar for those used to the XML editor in regular Studio Mule projects:
+You can configure the <<create_domain_project,Domain Project>> by defining shared resources in your `mule-domain-config.xml` file. You can define multiple resources in this configuration file. In Anypoint Studio, you can edit this file in a couple of ways:
 
-image::design-source.png[design+source]
+* Configuration file: Through the XML similar to the XML configuration file for a Mule app, for example:
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<domain:mule-domain
+        xmlns="http://www.mulesoft.org/schema/mule/core"
+        xmlns:domain="http://www.mulesoft.org/schema/mule/ee/domain"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/ee/domain http://www.mulesoft.org/schema/mule/ee/domain/current/mule-domain-ee.xsd">
 
-Include, at minimum, the namespace and XML schema location for the domain, as shown below. Be sure to use the version, *Community* or *Enterprise*, that matches the resource that you are creating. VM, WMQ, and the Bitronix Transaction Manager require the Enterprise version.
+    <!-- configure here resource to be shared within the domain -->
 
-Add additional namespaces and schema locations for each resource that you want to share. See the example definitions for each supported shared resource below for full namespace definitions required for each. Note that the examples are separated into separate XML configurations for clarity, but you can define multiple shared resources in a single `mule-domain` project.
+</domain:mule-domain>
+----
++
+* Global Elements: This view provides a graphical interface for defining shared resources.
 
-=== Associating Applications with the Domain
+You can add module or connector dependencies to you domain project so you can use them as shared resources.
 
-[NOTE]
-Applications may only be associated with one domain at a time.
+=== Associating Apps with the Domain in Studio
 
-In Anypoint Studio, to associate an existing application with a domain, edit the `mule-project.xml` file located at root level in the project. In the graphical view of this file, you see a *Domain* field, which by default is set to *default*, this value gives each project its independent domain. Change this value, the dropdown list on this field displays all of the domains you've created in the current workspace.
+Note that apps can only be associated with one domain at a time.
 
+To associate an existing app with a domain:
+
+. In the Project Explorer or Package Explorer view, double-click the Mule app.
+. In the menu that opens, click Properties.
+. From Properties, click Mule Project.
+. From the Domain field, select a domain for your project.
++
 image::assign-domain.png[assign+domain]
++
+Note that when you select a domain, the Server Runtime for your project will match the domain's Server Runtime automatically.
 
-Note that when picking a domain, the Server Runtime of your project automatically becomes that of the domain, as these must always match.
-
-[NOTE]
-====
-If you're creating your applications outside Studio, then to associate an existing application with a domain, edit the `mule-deploy.properties` file to include the domain property:
-
-`domain= <name of domain folder>`
-
-For example:
-
-`domain=mule-test-domain`
-====
-
-=== Referencing Shared Resources
-
-In the following example `mule-domain-config.xml`, an HTTP connector is defined as a shared resource.
+The domain will appear in the `pom.xml` for your project, for example:
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_01.xml[]
+<dependencies>
+  ...
+  <dependency>
+      <groupId>com.mycompany</groupId>
+      <artifactId>mymuledomain</artifactId>
+      <version>1.0.0</version>
+      <classifier>mule-domain-SNAPSHOT</classifier>
+      <scope>provided</scope>
+  </dependency>
+</dependencies>
+----
+
+== Associating Mule Apps with a Domain (Outside Studio)
+
+When creating a Mule app outside Studio, you need to include the `domain` property in the `mule-artifact.json` file to associate the domain your app:
+
+`domain: <name of domain folder>`
+
+Example:
+
+`domain: mule-test-domain`
+
+=== Referencing Shared Resources
+
+In the following example, `mule-domain-config.xml`, an HTTP connector is defined as a shared resource.
+
+[source,xml,linenums]
+----
+include::{examplesdir}/shared-resources_1.xml[]
 ----
 
 Any Mule application associated with the domain can make use of the shared resource by referencing it within the configuration, just as you would reference a resource within the project itself. In the example below, the HTTP listener connector references the shared resource named `HTTP_Listener_Configuration`.
@@ -138,7 +172,7 @@ image::pick-resource.png[pick+resource]
 
 == Deploying with Shared Resources
 
-In Anypoint Studio, when you deploy an application that is associated to a domain, by default Studio deploys both the application and the domain together. Also, when deploying a domain project, by default Studio deploys every application associated to it as well. You can change these default behaviors by changing the Run Configuration for the domain, you can in fact make any set of applications in your workspace be deployed together, even if they don't share the same domain.
+In Anypoint Studio, when you deploy an application that is associated to a domain, by default Studio deploys both the application and the domain together. Also, when deploying a domain project, by default Studio deploys every application associated to it, as well. You can change these default behaviors by changing the Run Configuration for the domain. In fact, you can deploy any set of applications in your workspace together, even if they don't share the same domain.
 
 To set this in Studio, open the drop-down menu next to the play button and select *Run Configurations*.
 
@@ -174,6 +208,7 @@ image::domainbundle.png[domainBundle]
 
 The deployment behavior is the same as deploying a domain and apps separately: Mule first deploys the domain itself, then the applications. Deploying domain bundles simplifies the deployment mechanism for teams by removing the manual step of deploying applications separately.
 
+////
 == Example Mule Domain Projects
 
 The following code examples show sample `mule-domain-config.xml` files, each configured to share a single resource. Note that you can define multiple shared resources in your `mule-domain-config.xml` file.
@@ -184,7 +219,7 @@ Sharing an HTTP connector within a domain allows you to reuse the same port with
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_02.xml[]
+include::_sources/shared-resources_02.xml[]
 ----
 
 === HTTPS
@@ -193,7 +228,7 @@ Sharing an HTTPS connector within a domain allows you to reuse the same port wit
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_03.xml[]
+include::_sources/shared-resources_03.xml[]
 ----
 
 === VM
@@ -204,7 +239,7 @@ Sharing a VM connector allows multiple Mule applications within the same domain 
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_04.xml[]
+include::_sources/shared-resources_04.xml[]
 ----
 
 === JMS
@@ -213,7 +248,7 @@ Sharing a JMS connector creates a common connection to the broker between multip
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_05.xml[]
+include::_sources/shared-resources_05.xml[]
 ----
 
 === JMS Caching Connection Factory
@@ -222,7 +257,7 @@ Mule provides a caching connection factory for JMS connections to improve JMS re
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_06.xml[]
+include::_sources/shared-resources_06.xml[]
 ----
 
 === Database Configuration
@@ -231,13 +266,12 @@ Sharing a `db` configuration creates a common connection to a database between m
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_07.xml[]
+include::_sources/shared-resources_07.xml[]
 ----
 
 === TLS Context
 
-Share xref:tls-configuration.adoc[TLS configurations] allows shared <<HTTP,listener configurations>> to use the same TLS configuration. +
-Additionally, all data (including passwords) would only need to be visible at the domain level, so app developers could use the certificates without having to access other critical data.
+<<HTTP,Listener configurations>> can share the same TLS configuration. Additionally, all data (including passwords) would only need to be visible at the domain level, so app developers could use the certificates without having to access other critical data.
 
 [source,xml,linenums]
 ----
@@ -284,7 +318,7 @@ For example:
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_08.xml[]
+include::_sources/shared-resources_08.xml[]
 ----
 
 === JBoss Transaction Manager
@@ -293,7 +327,7 @@ When you define JMS connectors and `db` configurations as shared resources in yo
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_09.xml[]
+include::_sources/shared-resources_09.xml[]
 ----
 
 === Bitronix Transaction Manager
@@ -304,30 +338,28 @@ When you define JMS connectors and `db` configurations as shared resources in yo
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_10.xml[]
+include::_sources/shared-resources_10.xml[]
 ----
 
 The Bitronix module integration also provides a JMS connection factory pool and a datasource pool to be used when using a datasource with XA transactions. You can define either or both of them as shared resources.
 
 [source,xml,linenums]
 ----
-include::{examplesdir}/shared-resources_11.xml[]
+include::_sources/shared-resources_11.xml[]
 ----
 
 == Tips
 
 * If you have existing applications that you created in Studio and you want to modify them to use shared resources you can follow all the same steps above.
 * Connectors defined at the domain level are automatically used as the default connectors for the applications deployed in those domains. When only one connector of a specific type is defined at the domain level and the application doesn't explicitly contain a reference to another connector of the same type, then the one defined at the domain level is used as the default connector for that application. In such case the `connector-ref` or `config-ref` attribute to use the shared resource is optional.
-* Note that although shared resources is limited to the selected connectors and libraries covered in this document, there are ways to share other configuration fragments in Mule. Refer to xref:sharing-custom-configuration-fragments.adoc[Sharing Custom Configuration Fragments] for details.
+* Note that although shared resources is limited to the selected connectors and libraries covered in this document, there are ways to share other configuration fragments in Mule. Refer to http://docs.mulesoft.com/mule-user-guide/v/3.9/sharing-custom-configuration-fragments[Sharing Custom Configuration Fragments] for details.
 
 == See Also
 
-Access reference documentation for:
-
-* xref:vm-transport-reference.adoc[VM]
-* xref:database-connector.adoc[DB]
-* xref:jms-transport-reference.adoc[JMS]
-* xref:http-connector.adoc[HTTP Connector]
-* xref:mule-wmq-transport-reference.adoc[WMQ]
-* xref:jboss-transaction-manager-reference.adoc[JBoss]
-* xref:setting-environment-variables.adoc[Set Environment Variables]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/database-connector[DB]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/jms-transport-reference[JMS]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/http-connector[HTTP Connector]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/mule-wmq-transport-reference[WMQ]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/jboss-transaction-manager-reference[JBoss]
+* http://docs.mulesoft.com/mule-user-guide/v/3.9/setting-environment-variables[Set Environment Variables]
+////

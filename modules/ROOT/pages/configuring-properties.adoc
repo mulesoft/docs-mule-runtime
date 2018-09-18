@@ -2,24 +2,26 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: anypoint, studio, on premises, on premise, properties, system properties, property placeholders
+:keywords: anypoint, studio, on premises, on premise, properties, system properties, property placeholders, configuration properties
 
 This page describes configuring properties, such as property placeholders and system properties.
 
 == Property Placeholders
 
-You can use http://ant.apache.org/[Ant]-style property placeholders in your Mule  configuration. For example:
+You can use http://ant.apache.org/[Ant]-style property placeholders in your Mule configuration. For example:
 
 [source,xml]
 ----
-<smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"/>
+<email:smtp-config name="config">
+    <email:smtp-connection host="${smtp.host}" port="${smtp.port}"/>
+</email:smtp-config>
 ----
 
 The values for these placeholders can be made available in a variety of ways, as described in the sections that follow.
 
 == Global Properties
 
-You can use the `<global-property>` element to set a placeholder value from within your Mule configuration, such as from within another Mule configuration file. Do not use the global property syntax to reference the values from a `.properties` file. To reference properties from a file, read the section on properties files.
+You can use the `<global-property>` element to set a placeholder value from within your Mule configuration, such as from within another Mule configuration file. You can use the global property syntax to reference the values from a `.yaml` or `.properties` file, and create new (global) properties that depends on configuration properties, or secure configuration properties. To reference configuration properties, read the section on properties files.
 
 [source,xml,linenums]
 ----
@@ -29,66 +31,53 @@ You can use the `<global-property>` element to set a placeholder value from with
 
 == Properties Files
 
-[WARNING]
-====
-If you deploy multiple applications through a xref:shared-resources.adoc[Shared Resources] structure, don't set anything in the properties files, as there might potentially be conflicts between the various apps that share a domain. Instead, set environment variables over the scope of the deployed app, its domain, and other apps under that domain.
-
-As explained in xref:shared-resources.adoc[Shared Resources], in Studio you can create these variables through the *Environment tab* of the *Run Configurations menu*, reachable via the drop-down menu next to the Play button.
-====
-
-In Anypoint Studio, you can add properties to the default properties file in your project's folders.
-
-image::properties-file.png[properties+file]
-
-To load properties from a custom file, you can place your custom properties file at `src/main/resources` and use the standard Spring element +
- `<context:property-placeholder>`:
+To load properties from a custom file, you can place your custom properties file at `src/main/resources` and use the tag `<configuration-properties>`:
 
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 
 <mule xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:context="http://www.springframework.org/schema/context"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.1.xsd">
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
 
-<context:property-placeholder location="smtp.properties"/>
+<configuration-properties file="smtp.yaml"/>
 
 <flow name="myProject_flow1">
     <logger message="${propertyFromFile}" doc:name="System Property Set in Property File"/>
 </flow>
 ----
 
-To load multiple properties files, separate each with commas:
+To load multiple properties files simply define a `<configuration-properties/>` tag for each file you want to load.
 
-[source,xml]
+* If a property is defined in more than one file referenced in `<configuration-properties/>` tags, the first definition will be preserved.
+
+These files must be located at `src/main/resources`, inside your Mule project, or you can also use absolute paths.
+
+[[supported_files]]
+== Supported Files
+
+The Configuration Properties supports both YAML configuration files and Properties files, as shown in the examples above. The recommended approach is to use a YAML configuration files, because it allows the addition of type validations and autocompletion.
+
+We are not currently supporting any other type than Strings.
+
+== File Properties
+
+The placeholder value can also be the entire content of the file. The placeholder value becomes the string value, for example:
+
+.properties-file.txt
 ----
-<context:property-placeholder location="email.properties,http.properties,system.properties"/>
+Some content
 ----
-
-These files must be located at `src/main/resources`, inside your Mule project.
-
-You can also pass HTTP URL's in the location attribute, as below, to refer the properties from a centralized location:
-
-[source,xml]
-----
-<context:property-placeholder location="https://www.abccompany.com/property/http.properties"/>
-----
-
-Since properties from files, system properties and environment variables are referred to through the same syntax, you can add a `system-properties-mode` parameter to your property placeholder to ensure that overrides work in the way that you desire. The accepted values for this parameter are ENVIRONMENT, NEVER, FALLBACK, and OVERRIDE:
 
 [source,xml,linenums]
 ----
-<context:property-placeholder location="app.properties" system-properties-mode="ENVIRONMENT"/>
-<flow name="myProject_flow1">
-    <logger message="${propertyFromFile}" doc:name="System Property Set in Property File"/>
-</flow>
+<mule:set-payload value="${file::properties-file.txt}"/>
 ----
 
-== Message Properties
+The payload's value becomes `"Some content"`. Just like other properties files, these files must be located in `src/main/resources`, inside your Mule project. Absolute paths can also be used.
 
-You can use placeholders to perform logic on message properties such as the header. For example, if you wanted to evaluate the content-type portion of the message header, you would specify it as `#[message.inboundProperties['Content-Type']]`. Typically, you use message property placeholders with expressions. For more information, see xref:mule-expression-language-mel.adoc[Mule Expression Language MEL].
+This practice is useful for modularizing the configuration file: You can extract large contents from the config file, SQL queries, or transformations to make the config file clearer, and you can reuse the contents.
 
 == System Properties
 
@@ -100,16 +89,6 @@ mule -M-Dsmtp.username=JSmith -M-Dsmtp.password=ChangeMe
 
 You can also edit the system properties in `conf/wrapper.conf` if you are deploying Mule as a webapp. When running Mule in a container.
 
-You can also specify the server ID in the `web.xml` file as follows:
-
-[source,xml,linenums]
-----
-<context-param>
-  <param-name>mule.serverId</param-name>
-  <param-value>MyServer</param-value>
-</context-param>
-----
-
 If you start Mule programmatically, you would specify the properties as follows before creating and starting the Mule context:
 
 [source,text,linenums]
@@ -117,28 +96,6 @@ If you start Mule programmatically, you would specify the properties as follows 
 System.getProperties().put("smtp.username", "JSmith");
 System.getProperties().put("smtp.password", "ChangeMe");
 ----
-
-There are also several system properties that are immutable after startup. To set these, customize the `MuleConfiguration` using the set method for the property (such as `setId` for the system ID), create a `MuleContextBuilder`, load the configuration to the builder, and then create the context from the builder.
-
-For example:
-
-[source,text,linenums]
-----
-SpringXmlConfigurationBuilder configBuilder = new SpringXmlConfigurationBuilder("my-config.xml");
-DefaultMuleConfiguration muleConfig = new DefaultMuleConfiguration();
-muleConfig.setId("MY_SERVER_ID");
-MuleContextBuilder contextBuilder = new DefaultMuleContextBuilder();
-contextBuilder.setMuleConfiguration(muleConfig);
-MuleContextFactory contextFactory = new DefaultMuleContextFactory();
-MuleContext muleContext = contextFactory.createMuleContext(configBuilder, contextBuilder);
-muleContext.start();
-----
-
-For information on the set methods you can use to set system properties, see:
-
-https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/config/DefaultMuleConfiguration.html[org.mule.config.DefaultMuleConfiguration]
-
-For information on configuration builders, see xref:about-configuration-builders.adoc[About Configuration Builders].
 
 === Setting System Properties in Anypoint Studio
 
@@ -201,8 +158,6 @@ image::environment-tab2.png[Environment+Tab2]
 
 If you deploy your application to xref:runtime-manager::index.adoc[Runtime Manager], you can also set properties through the Runtime Manager console. These can be defined when xref:runtime-manager::deploying-to-cloudhub.adoc[Deploying to CloudHub], or on an xref:runtime-manager::managing-applications-on-cloudhub.adoc[already running application].
 
-*Note:* If you also have the same variables set in the `mule-app.properties` file inside your application, the environment variables you set here in the console always override the values in 'mule-app.properties' when your application deploys.
-
 To create an environment variable or application property:
 
 . Log in to your Anypoint Platform account.
@@ -212,7 +167,15 @@ To create an environment variable or application property:
 
 See xref:runtime-manager::managing-applications-on-cloudhub.adoc[Managing Applications on CloudHub] and xref:runtime-manager::secure-application-properties.adoc[Secure Application Properties] for more details.
 
-== See Also
+== Properties Hierarchy
 
-* Read more about mule messages and their properties in our http://blogs.mulesoft.com/dev/anypoint-platform-dev/mule-school-the-mulemessage-property-scopes-and-variables/[Mule School: The MuleMessage, Property Scopes, and Variables].
-* xref:deploying-to-multiple-environments.adoc[Deploying to Multiple Environments]
+Configuration properties can be overwritten. The Hierarchy in which these are treated is:
+
+. Environment Properties
+. System Properties
+. Deployment Properties
+. Application Properties
+
+So, for example, if a configuration property is defined in a System Property, and there is also an application configuration property, the value for that application will be the last one.
+
+Also, an application property could depend on Environment, System and/or Deployment properties. Deployment Properties could depend on System Properties, and so on.

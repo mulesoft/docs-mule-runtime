@@ -1,0 +1,77 @@
+= FAQ: How to Filter Records in a Batch Step
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The batch step allows you to use two attributes to filter the records that it processes. +
+Imagine a batch job which uses its first batch step to check to see if a Salesforce contact exists for a record, and a second batch step updates each existing Salesforce contact with new information. You can apply a filter to the second batch step to ensure it only processes records that didn't fail during the first batch step. +
+By having batch steps accept only some records for processing, you streamline the batch job so the runtime can focus only on the relevant data for a particular batch step.
+
+A batch step uses two attributes to filter records:
+
+* acceptExpression
+* acceptPolicy
+
+Filters are applied within batch steps. Each batch step can accept one acceptExpression and one acceptPolicy attributes to filter records. +
+Batch filters only apply to batch steps which, in turn, are only usable within the batch process phase of a batch job. You cannot apply filters during the On Complete phase.
+
+== About the acceptExpression Attribute
+
+Use the acceptExpression attribute to process only those records which evaluate to true; if the record evaluates to false, the batch step skips the record and sends it to the next one. In other words, those records with a filter expression that resolves to false are the ones Mule filters _out_.
+
+The example below filters out all records where the age is less than 21; the batch step does not process those records.
+
+[source,xml,linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="adultsOnlyStep" acceptExpression="#[payload.age > 21]">
+			...
+		</batch:step>
+	</batch:process-records>
+ </batch:job>
+----
+
+== About the acceptPolicy Attribute
+
+Use the acceptPolicy attribute from batch step to process only the records which, relative to the value of the accept policy attribute, evaluate to true. Refer to the table below for a list of the available values for the accept policy.
+
+[%header,cols="25a,75a"]
+|===
+|Accept Policy |When evaluates to TRUE
+|NO_FAILURES |_Default_ +
+Batch step processes only those records that _succeeded_ processing in all preceding steps
+|ONLY_FAILURES |Batch step processes only those records that _failed_ processing in a preceding batch step
+|ALL |Batch step processes all records, regardless of whether they failed processing in a preceding batch step
+|===
+
+If you don't apply filters to a batch step, the batch processes only those records that _succeeded_ processing in all preceding steps. In other words, the default Accept Policy applied to all batch steps is NO_FAILURES.
+
+When a batch job instance exceeds its `maxFailedRecords` value, regardless of the filter set on the batch step, the step does not process any records, and simply pushes the failed batch job instance to the On Complete phase.
+
+The example below illustrates the second batch step in a batch job that processes only those records that failed processing during the preceding step. In the first batch step, the runtime checked each record to see if it had an existing Salesforce contact; the second batch step, which creates a contact for each record, processes only the failed records (that is, records that failed to have an existing account).
+
+[source,xml,linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="batchStep1">
+			...
+		</batch:step>
+		<batch:step name="batchStep2" accept-policy="ONLY_FAILURES">
+			...
+		</batch:step>
+	</batch:process-records>
+ </batch:job>
+----
+
+
+Where you apply both types of filters, Mule evaluates them in the following order:
+
+. Accept Policy
+. Accept Expression
+
+== See Also
+
+* xref:batch-job-concept.adoc[About Batch Job]
+* xref:batch-performance-faq.adoc[FAQ: Understanding Batch Job Performance]

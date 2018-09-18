@@ -1,0 +1,227 @@
+= Migrating from DataWeave version 1 to 2
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+// sme: PLG, Shoki?, author: sduke?
+
+// Explain generally how and why things changed between Mule 3 and Mule 4.
+
+* <<dw_header>>
+* <<dw_flow_control>>
+* <<dw_type_references>>
+* <<dw_object_coercion>>
+* <<dw_cond_key_value_parens>>
+
+[[dw_header]]
+== DataWeave Header Content
+
+Most of the header directives have been changed in DataWeave. The `%dw` directive is an exception. In most cases, MuleSoft removed the `%`, and in some cases the keyword is shortened.
+
+[%header,cols=“1,1”]
+|===
+|DataWeave 1.0 |DataWeave 2.0 |
+|`%dw 1.0`    |`%dw 2.0`|
+|`%output`    |`output` |
+|`%var`       | `var`   |
+|`%function`  | `fun`   |
+|`%namespace` | `ns`    |
+|===
+
+[[dw_flow_control]]
+== Flow Controls
+
+Flow control changed somewhat in DataWeave 2.
+
+[[dw_flow_control_when_otherwise]]
+=== When Otherwise
+
+The `when otherwise` statement is replaced by `if else`, for example:
+
+.Mule 3 Example: DataWeave 1
+[source,dataweave,linenums]
+----
+{
+    orderStatus: "complete" when flowVars.purchaseOrderStatus == "C" otherwise "incomplete"
+}
+----
+
+.Mule 4 Example: DataWeave 2
+[source,dataweave,linenums]
+----
+{
+    orderStatus: if(vars.purchaseOrderStatus == "C") "complete" else "incomplete"
+}
+----
+
+//TODO: Add another pair of examples to show how to migrate DataWeave 1.0's "unless otherwise" statement
+
+[[dw_flow_control_pattern_matcher]]
+=== Pattern Matcher
+
+Pattern matching changed in DataWeave 2. It adds the keyword `case` and `else` (instead of `default`). You also no longer separate cases with commas (`,`) since they are now explicitly separated by the `case` keyword.
+
+.Mule 3 Example: DataWeave 1
+[source,dataweave,linenums]
+----
+'world' match {
+    :string -> true,
+    default -> false
+  }
+----
+
+.Mule 4 Example: DataWeave 2
+[source,dataweave,linenums]
+----
+'world' match {
+    case is String -> true
+    else -> false
+  }
+----
+
+For type pattern matchers, the `is` keyword needs to be set.
+
+[[dw_type_references]]
+== Type References
+
+The `:` was removed from the type references and are now all camel case, so `:string` is now `String`
+
+[[dw_object_coercion]]
+== Object Coercion
+
+In DataWeave 1.0, selecting a key-value pair from an object required you to do something like this:
+
+.Mule 3 Example: DataWeave 1
+[source,dataweave,linenums]
+----
+%var payload = {a: 1, b:2}
+---
+payload.a as :object
+----
+
+The DataWeave 1.0 expression above returns `{a:1}`. Because this is a coercion, it is also included in the auto-coercion mechanism and generates undesired or unexpected results.
+
+In DataWeave 2.0, the coercion is removed, and a new selector (`&`) is introduced to select key-value pair parenthesis.
+//TODO: To select a key-value pair from an object or something like that?
+
+.Mule 3 Example: DataWeave 2
+[source,dataweave,linenums]
+----
+var payload = {a: 1, b:2}
+---
+payload.&a
+----
+
+This expression also returns `{a:1}`.
+
+[[dw_cond_key_value_parens]]
+== Conditional Key-Value Parenthesis
+
+In DataWeave 1.0, conditional key-value pairs are declared with the `when` keyword.
+
+.Mule 3 Example: DataWeave 1
+[source,dataweave,linenums]
+----
+{
+    (a: 1) when payload.product == "Mule"
+}
+----
+
+In DataWeave 2.0, you use the `if` keyword.
+
+.Mule 4 Example: DataWeave 2
+[source,dataweave,linenums]
+----
+{
+    (a: 1) if payload.product == "Mule"
+}
+----
+
+////
+DataWeave 2.0 (packaged as part of Mule Runtime 4.0) introduces the following syntax changes over previous versions:
+
+* Removed automatic coercion from Object to Array (implies, for example, that the `map` function no longer works over an Object).
+// TODO: should they use mapObject instead? Maybe we should give an example.
+* Updated version header to `%dw 2.0`.
+* Removed `%` from all other directives.
+* Changed all type names format, which are now written without a colon and with an upper case letter (for example, `String` instead of `:string`, as before), for example: `1 as String` returns `"1"``.
+* All operators are now functions (for example, `upper()`, `typeOf()`). Therefore, they must include their arguments between parentheses, for example, `upper("hello")` and `typeOf("hello")`.
+// TODO: IS THIS TRUE for all or just for those that take a single argument? We used to all all the functions operators.
+* Custom functions are declared in the DataWeave header via the keyword `fun`, rather than `function`. For example, `fun funName(args) = body`
+* The `..` operator is no longer used for selecting ranges (but still works as a descendants selector). Its functionality is replaced by `to`. Example: `[2 to 15]`.
+* `when`, `unless` and `otherwise` are no longer used for conditional logic. They have been replaced by `if` and `else`. This requires that you change the order of the expression. Example: `if payload is(String) uppercase(payload)`.
+* Binary functions (that take two arguments) support an alternative infix notation (arg1 function arg2). For example, `payload.*items contains "3"` instead of `contains(payload.*items, "3")`.
+* New key-value pair selector (`.&`) returns all matching keys and values. It returns them as a single object containing these.
+* New namespace selector (`.#`) returns the namespace used.
+* The function `groupBy` is overloaded to operate on objects.
+* The new function `filterObject` can be used to filter objects.
+* The functions `map`, `mapObject` and `filter` support a null input (in which case they return null).
+* New supported syntax for `match` when using arrays `[head ~ tail]`
+* Namespace prefixes can no longer contain the character `-`.
+* Multiple functions are no longer packaged as part of the core functions module. The package they belong to must be manually imported in the header before they can be called.
+* Index parameter: Added `index` as a third parameter to `mapObject`, `pluck`, `filter`, and `groupBy`.
+* Closed objects: For declared types, added the pipe (`|`) syntax to specify a closed (or exact) object. For example, if `{|a: String|}` is specified as a return type of a function, the function cannot return `{a: String, b: Number}`.
+* Ordered objects: Added the hyphen character (`-`) for ordered objects, for example: `{- a: String, b: Number -}`. The fields must be in the specified order.
+* Repeated fields: Added the asterisk (`\*`) for repeated fields in an object, for example: `{ a*: String}`. This is primarily needed for XML, where the names of child elements can be repeated, unlike keys in Java and JSON objects.
+* For the flat file, the content type is `application/flatfile` instead of `text\plain`.
+////
+
+////
+TODO IN SEPARATE TOPIC, POINTING TO DW TYPES PAGE.
+Declaring DW types
+declare the type of a variable or of a function param or return, e.g.,
+fun foo(arg1: {|a: String|}): String = arg1.a
+`{|a: String|}` is the type of arg1
+
+var message: String = "foo"
+var user: {name*: String } = {name: "Mariano", name: "Leandro"}
+var a: Array<Number> = [1,2,3]
+
+for example, our `map` function
+fun map <T,R>(lhs: Array<T>, rhs: (T, Number) -> R ): Array<R>
+this signature says that it has 2 type parameters, T and R
+
+`lhs` is an argument of type `Array<T>` (edited)
+
+which is an array of `something`
+
+that will be defined when the user calls the function
+
+`rhs` is a lambda function, that has 2 inputs (T, Number) and returns something of type R (edited)
+
+and the `map` function returns something of type `Array<R>`
+////
+
+
+////
+Passing Data in URI params:
+when you pass data in URI parameters, you need to encode them using that format
+if you have for example
+```{
+  "key1" : ["value", "value@"],
+  "key 2": "value 1",
+  "key3": "value",
+  "key 4 her%": null
+}
+
+that has to be formatted as
+```key1=value&key1=value%40&key+2=value+1&key3=value&key+4+her%25
+```
+when used as URI parameters
+
+you put `application/x-www-form-urlencoded` as your output format
+with the header `output application/x-www-form-urlencoded` in the script
+////
+
+////
+* Changed pattern matching     ... how?
+* explain `[head ~ tail]` better
+////
+
+== See Also
+
+xref:intro-dataweave2.adoc[Introduction to Mule 4: DataWeave 2.0]
+
+xref:migration-patterns.adoc[Migration Patterns]
+
+// link:migration-components[Migrating Components]

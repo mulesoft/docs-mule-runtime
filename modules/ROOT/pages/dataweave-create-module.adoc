@@ -1,0 +1,175 @@
+= Creating Custom Modules and Mappings
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+In addition to using the built-in DataWeave function modules (such as xref:dw-core.adoc[dw::Core] and xref:dw-crypto.adoc[dw::Crypto]), you can also create and use custom modules and mapping files. You write modules and mapping files in a DataWeave Language (`.dwl`) file and import into your Mule app through DataWeave scripts in Mule components. Both modules and mapping files are useful when you need to reuse the same functionality or feature over and over again.
+
+* Custom modules can define functions, variables, types, and namespaces. You can import these modules into a DataWeave script to use the features.
+* Custom mapping files are a type of module that contains a complete DataWeave script that you can import and use in another DataWeave script or reference in a Mule component.
+
+Fields in many Mule connectors and components accept DataWeave expressions and scripts.
+
+Note that if you want to import and use a built-in DataWeave function module, and not a custom one, see xref:dw-functions.adoc[DataWeave Function Reference].
+
+[[create_dw_mapping]]
+== Creating and Using DataWeave Mapping Files
+
+You can store a DataWeave transformation in  a`.dwl` mapping file (mapping module), then import the file into another DataWeave script. Mapping files can be executed through the Message Transfrom component, or you can import them into another mapping and execute them through the `main` function.
+
+.Example: DataWeave Mapping File in a Studio Project
+image::dataweave-mapping-file.png[Example: DataWeave Mapping File]
+
+. In your Studio project, set up a subfolder and file for your mapping module:
++
+* You can create a subfolder such as `src/main/resources` by navigating to New -> Folder -> [your_project] -> `src/main/resource`, then adding a folder named `modules`.
+* You can create a new file for your module in that folder by navigating to New -> File -> [your_project] -> `src/main/resource`, then adding a DWL (DataWeave language) file such as `MyMapping.dwl`.
++
+Saving the module within `src/main/resource` makes it accessible for use in a DataWeave script.  component in a Mule app in that project.
++
+. Create your function in your mapping file, for example:
++
+[[mapping_file]]
+.Example: Mapping File Content
+[source,dataweave,linenums]
+----
+%dw 2.0
+import dw::core::Strings
+fun capitalizeKey(value:String) = Strings::capitalize(value) ++ "Key"
+---
+payload mapObject ((value, key) ->
+    {
+      (capitalizeKey(key as String)) : value
+    }
+  )
+----
++
+. Save your DWL function module file.
+
+=== Using a Mapping File in a DataWeave Script
+
+To use a mapping file, you need to import it into a DataWeave script and use the `main` function to access the body of the script in the mapping file.
+
+Assume that you have created the <<mapping_file, MyMapping.dwl>> file in `/src/main/resource/modules` that contains this script.
+
+To import and use the body expression from the `MyMapping.dwl` file (above) in  DataWeave Mapping file, you need to do this:
+
+* Specify the `import` directive in the header.
+* Invoke the `MyMapping::main` function. The function expects an input that follows the structure of the input that the mapping file uses. For example, the body of `MyMapping.dwl` expects an object of the form `{"key" : "value"}`.
+
+.Example: Importing and Using the Mapping in a DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+import modules::MyMapping
+output application/json
+---
+MyMapping::main(payload: { "user" : "bar" })
+----
+
+Here is the result:
+
+.Output
+[source,json,linenums]
+----
+{
+  "UserKey": "bar"
+}
+----
+
+Even though the <<mapping_file, capitalizeKey>> function is private, it is still used through the `main` function call, and the DataWeave mapping file is also able to import and reuse the `dw::core::Strings` module.
+
+
+== Creating and Using a Custom Module
+
+The steps for creating a custom DataWeave module are almost identical to the steps for creating a custom mapping file. The only difference is the contents of the `.dwl` file. For guidance, see <<create_dw_mapping>>.
+
+.Example: Custom Module in a Studio Project
+image::dataweave-function-custom.png[Example: DataWeave Custom Function Module]
+
+A custom module file can only contain `var`, `fun`, `type`, and `ns` declarations, for example:
+
+[[example_custom_dw_module]]
+.Example: Custom DataWeave Module
+[source,dataweave,linenums]
+----
+%dw 2.0
+fun myFunc(name: String) = name ++ " Test"
+var name = "MyData"
+ns mynamespace http://acme.com/bar
+----
+
+Unlike a typical DataWeave script or mapping file, a custom DataWeave module cannot contain an `output` directive, body expression, or the separator (`---`) between header and body sections.
+
+When you import a custom module into another DataWeave script, any functions, variables, types, and namespaces defined in the module become available for use in the DataWeave body. In the next example, a DataWeave script:
+
+* Imports the module `MyModule` through the `import` directive in the header. In this case, the imported module is stored in a Studio project path `src/main/resources/modules/MyModule.dwl`
+* Calls a function in `MyModule` by using `MyModule::myFunc("dataweave")`.
+
+.Example: Importing and Using a Custom DataWeave Module
+[source,dataweave,linenums]
+----
+%dw 2.0
+import modules::MyModule
+output application/json
+---
+MyModule::myFunc("dataweave") ++ "name"
+----
+
+There are several ways to import a module or elements in it:
+
+* Import the module, for example: `import modules::MyModule`. In this case, you must include the name of the module when you call the element (here, a function) in it, for example: `MyModule::myFunc`.
+* Import all elements from the module, for example: `import * from modules::MyModule`. In this case, you do not need to include the name of the module when you call the element. For example: `myFunc("dataweave") ++ "name"` works.
+* Import specific elements from a module, for example: `import myFunc from modules::MyModule`. In this case, you do not need to include the name of the module when you call the element. For example: `myFunc("dataweave") ++ "name"` works. You can import multiple elements from the module like this, for example: `import myFunc someOtherFunction from modules::MyModule` (assuming both `myFunc` and `someOtherFunction` are defined in the module).
+
+.Output
+[source,json,linenums]
+----
+"dataweave_name"
+----
+
+== Assigning a Local Alias for an Imported Element
+
+To avoid name clashes, you can use `as` to assign an alias for a custom module or its elements when you import the module into a DataWeave script.
+
+Assume that you have a custom module like this one:
+
+.Example: Custom Module
+[source,dataweave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+var myVar = "Test"
+----
+
+When you import the custom module into a DataWeave script, you can create aliases to elements in the custom module, for example:
+
+.Example: Applying an Alias to Imported Elements
+[source,dataweave,linenums]
+----
+%dw 2.0
+import myFunc as appendDash, myVar as weaveName from modules::MyModule
+var myVar = "Mapping"
+output application/json
+---
+appendDash("dataweave") ++ weaveName ++ "_" ++ myVar
+----
+
+You can create an alias to the imported module, for example:
+
+.Example: Applying an Alias to an Imported Module
+[source,dataweave,linenums]
+----
+%dw 2.0
+import modules::MyModule as WeaveMod
+output application/json
+---
+WeaveMod::myFunc("dataweave")
+----
+
+== Referencing a DWL File
+
+You can use DWL files directly in Mule connectors and components.
+
+See xref:dataweave-language-introduction.adoc#dwl_file[dwl File] for details.

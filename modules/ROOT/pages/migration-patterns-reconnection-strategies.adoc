@@ -1,0 +1,93 @@
+= Migrating Reconnection Strategies
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+From a syntax point of view, reconnection hasn't changed much boretween Mule 3 and Mule 4. However, there are significant behavior differneces.
+
+In Mule 3, reconnection strategies were specified on each connector's config element. These strategies had two purposes:
+
+* To reconnect when a running application looses connection to an endpoint
+* To validate all connections when the application is being deployed.
+
+So, suppose an application which connects to a mysql Database. If that connection cannot be established at deployment time, the deployment will fail. This was to guarantee that all deployed apps are in a functioning state.
+
+.Mule 3 Examples: Reconnection Settings (for a MySQL database)
+
+[source,xml,linenums]
+----
+<db:mysql-config ...>
+  <reconnect frequency="4000" count="4"/>`
+</db:mysql-config>
+
+<db:mysql-config ...>
+  <reconnect-forever frequency="4000"/>`
+</db:mysql-config>
+----
+
+However, there are use cases in which you don't necessarily want the deployment to fail if connectivity fails. For example, your application might have a flow that reaches an external SFTP server only once a day at 3:00 AM. If the app is being deployed at 8:00 AM, there's no reason for the deployment to fail if the SFTP server is down. You still have all day to make sure the server is up when it's actually needed.
+
+To achieve this with Mule 3, you had to use the `blocking="false"` option, so that reconnection happens asynchronously and deployment is not aborted.
+
+.Mule 3 Examples: Asynchronous reconnection Settings (for a MySQL database)
+
+[source,xml,linenums]
+----
+<db:mysql-config ...>
+  <reconnect frequency="4000" count="4" blocking="false"/>`
+</db:mysql-config>
+----
+
+In Mule 4 you can simply specify if deployment should fail or not if connectivity testing fails:
+
+.Mule 4 Examples: Reconnection Settings (for a SQL database)
+[source,xml,linenums]
+----
+<!-- fail deployment is connection cannot be established -->
+<db:mssql-connection ...>
+  <reconnection failsDeployment="true">
+    <reconnect frequency="4000" count="4"/>
+  </reconnection>
+</db:mssql-connection>
+
+<!-- don't fail deployment is connection cannot be established -->
+<db:mssql-connection ...>
+  <reconnection >
+    <reconnect-forever frequency="4000" />
+  </reconnection>
+</db:mssql-connection>
+----
+
+By default, a failure to establish connection will only generate a warning in the logs.
+
+== Operation level reconnection strategy
+
+In Mule 3, the same reconnection strategy at the config element was used both at deployment time and at runtime. For example, if connectivity to the Database is lost which executing a flow, the same reconnection strategy will be used.
+
+In Mule 4 this behavior is kept by default, but you also get the chance to specify a different strategy at the operation or Message Source level:
+
+.Mule 4 Examples: Reconnection Settings (for a SQL database)
+[source,xml,linenums]
+----
+<flow name="reconnectionDemo">
+  <http:listener path="test" config-ref="httpListener">
+    <reconnect count="1" frequency="5000"/>
+    <http:response>
+      <http:body>#[{'my': 'map'}]</http:body>
+      <http:headers>
+          #[{{'content-type' : 'text/plain'}}]
+      </http:headers>
+    </http:response>
+  </http:listener>
+
+  <http:request path="undeliable/endpoint" config-ref="httpRequester" method="GET">
+    <reconnect count="1" frequency="1000"/>
+  </http:request>
+
+</flow>
+----
+
+== See Also
+
+* xref:migration-patterns.adoc[Migration Patterns]
+* xref:migration-connectors.adoc[Migrating Connectors]

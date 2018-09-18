@@ -1,0 +1,267 @@
+= Migrating the XML Module
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+A new XML module in Mule 4 replaces the one that was bundled in with Mule 3. The main changes are:
+
+* Removal of components and expressions, functions, and evaluators that were deprecated in Mule 3.6:
+** jxpath-filter
+** jaxen-filter
+** jxpath-extractor-transformer
+** is-xml-filter
+** xpath-filter
+* Changes to XPath, XSLT, and XQuery components to be consistent with the new Mule 4 components, mainly around:
+** DSL namespace prefix changed from `mxml` to `xml-module`
+** Consistency of return types
+** Syntax and UX changes
+* `xpath()` and `xpath3()` functions replaced by a new `XmlModule::xpath()` function
+* Improved error reporting for the schema validator
+* `schema-validation-filter` now replaced with `schema-validator`
+* No longer tied to Java: It no longer uses SAX, StaX, or DOM types. Mule 4 is now strongly typed and we have mime type information about which data is in XML format. The runtime does the rest. All XML documents are represented as either Strings or streams. This means the following no longer exist (and are no longer needed):
+** dom-to-xml-transformer
+** dom-to-output-handler-transformer
+** xml-to-dom-transformer
+** xml-prettyprinter-transformer
+** jaxb-object-to-xml-transformer
+** jaxb-xml-to-object-transformer
+** jaxb-context
+** object-to-xml-transformer
+** xml-to-object-transformer
+
+== Migrating XSLT Operations
+
+=== To use an XSL Style Sheet in an External File
+
+.Mule 3 Example: To use an XSL sheet in an external file
+[source,xml,linenums]
+----
+<mulexml:xslt-transformer xsl-file="cities-xslt.xsl" />
+----
+
+In Mule 4:
+
+.Mule 4 Example: To use an XSL sheet in an external file
+[source,xml,linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt>${file:::cities.xslt}</xml-module:xslt>
+</xml-module:xslt-transform>
+----
+
+=== To Use Context Properties
+
+.Mule 3 Example: To set context properties
+[source,xml,linenums]
+----
+<mulexml:xslt-transformer xsl-file="cities-result-document-xslt.xsl">
+    <mulexml:context-property key="output_location" value="#[flowVars['outputFile']" />
+    <mulexml:context-property key="user_id" value="#[flowVars['userId']" />
+</mulexml:xslt-transformer>
+----
+
+.Mule 4 Example: To set context properties
+[source,xml,linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt>${file::cities.xslt}</xml-module:xslt>
+    <xml-module:context-properties>#[{'output_location': vars.outputFile, 'user_id': vars.userId}]</xml-module:context-properties>
+</xml-module:xslt-transform>
+----
+
+== Migrating XPath Operations and Expressions
+
+=== To Use the XPath Extractor Transformer
+
+The XPath extractor no longer supports custom `resultType` parameter. It will now always return a List of Strings with all the matching elements.
+
+.Mule 3 Example: To use the XPath extractor
+[source,xml,linenums]
+----
+<mule-xml:xpath-extractor-transformer expression="//book" resultType="STRING"/>
+----
+
+.Mule 4 Example: To use the XPath extractor
+[source,xml,linenums]
+----
+<xml-module:xpath-extract xpath="//book" />
+----
+
+=== To Use the XPath Expression Function
+
+Mule 3 originally had an `xpath()` MEL function. In Mule 3.6, it was deprecated in favor of a new `xpath3()` function. Now, both functions are replaced by a new `XmlModule::xpath()` DataWeave function, which becomes available when the module is added to an application.
+
+.Mule 3 Example: Using the xpath3 function
+[source,xml,linenums]
+----
+<set-payload value="#[xpath3('//book', payload, 'NODESET')]" />
+----
+
+Mule 3's `xpath3()` function allowed you to specify the XPath expression and the input value, and it gave different options in terms of the expected output: `BOOLEAN`, `STRING`, `NUMBER`, `NODESET` or `NODE`, where `NODESET` and `NODE` required understanding of Java's representation of a DOM tree.
+
+The new function also accepts the XPath expression and the input, but differs in these ways:
+
+* It adds support for custom context properties.
+* It does not allow specification of the output type. It will always return a List of Strings, just as `<xml-module:xpath-extract>` does.
+
+.Mule 4 Example: Using the xpath function
+[source,xml,linenums]
+----
+<set-payload value="#[XmlModule::xpath('//book', payload, {})]" />
+----
+
+[TIP]
+You can use this function inside any DataWeave transformation.
+
+=== To Use XPath with Custom Namespaces
+
+In Mule 3, a `<mxml:namespace-manager>` is needed to map custom namespaces prefixes:
+
+.Mule 3 Example: Using custom namespaces
+[source,xml,linenums]
+----
+ <mulexml:namespace-manager includeConfigNamespaces="true">
+      <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+      <mulexml:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+  </mulexml:namespace-manager>
+
+  <flow name="xpathWithNamespace">
+      <expression-transformer expression="xpath3('/soap:Envelope/soap:Body/mule:echo/mule:echo')" />
+  </flow>
+----
+
+This approach has the limitation that only one namespace-manager could be used per application. In Mule 4, you can declare as many `namespace-directory` elements as you want, and then reference the one you need on each operation:
+
+.Mule 4 Example: Using custom namespaces
+[source,xml,linenums]
+----
+<xml-module:namespace-directory name="fullNs">
+    <xml-module:namespaces>
+        <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+        <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+    </xml-module:namespaces>
+</xml-module:namespace-directory>
+
+<flow name="xpathWithFullNs">
+    <xml-module:xpath-extract xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo" namespaceDirectory="fullNs"/>
+</flow>
+----
+
+Additionally, you could even choose not to declare a 'namespace-directory' and instead just map the namespace inline:
+
+.Mule 4 Example: Inline custom namespaces mapping
+[source,xml,linenums]
+----
+
+<flow name="xpathWithFullNs">
+    <xml-module:xpath-extract xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo">
+      <xml-module:namespaces>
+          <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+          <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+      </xml-module:namespaces>
+    </xml-module:xpath-extract>
+</flow>
+----
+
+== Migrating XQuery Operations
+
+The main difference is that in Mule 3, the output type of this transformer would depend on the result of the transformation:
+
+* If the transformation generates many elements, a List is returned.
+* Depending on the transformation, the elements of that list could be String or some generic Java repesentation, such as a `Node`.
+* If the transformation generates only one element, it returns that element.
+
+In Mule 4, this will always return a List of Strings.
+
+Other than that, changes are around syntax only:
+
+.Mule 3 Example: Using XQuery transformer
+[source,xml,linenums]
+----
+<mxml:xquery-transformer>
+    <mxml:context-property key="books" value="#[flowVars['books']]" />
+    <mxml:context-property key="cities" value="#[flowVars['cities']]" />
+    <mxml:xquery-text>
+        <![CDATA[
+            xquery version "3.0";
+            declare variable $document external;
+            declare variable $cities external;
+            declare variable $books external;
+            <mixes>
+            {
+                for $b in $books/BOOKLIST/BOOKS/ITEM,
+                    $c in $cities/cities/city
+
+                return <mix title="{$b/TITLE/text()}" city="{$c/@name}" />
+            }
+            </mixes>
+        ]]>
+    </mxml:xquery-text>
+</mxml:xquery-transformer>
+----
+
+In Mule 4:
+
+.Mule 4 Example: Using XQuery transformer
+[source,xml,linenums]
+----
+<xml-module:xquery-transform>
+    <xml-module:xquery>
+        <![CDATA[
+            xquery version "3.0";
+            declare variable $document external;
+            declare variable $cities external;
+            declare variable $books external;
+            <mixes>
+            {
+                for $b in fn:doc($books)/BOOKLIST/BOOKS/ITEM,
+                    $c in fn:doc($cities)/cities/city
+
+                return <mix title="{$b/TITLE/text()}" city="{$c/@name}" />
+            }
+            </mixes>
+        ]]>
+    </xml-module:xquery>
+    <xml-module:context-properties>#[{'books' : vars.books, 'cities': vars.cities}] </xml-module:context-properties>
+</xml-module:xquery-transform>
+----
+
+== Validating XML Against a Schema
+
+In Mule 3, a filter was used to validate schemas:
+
+.Mule 3 Example: Schema validation filter
+[source,xml,linenums]
+----
+<mxml:schema-validation-filter schemaLocations="schema1.xsd, schema2.xsd"/>
+----
+
+If the validation fails, the message is dropped.
+
+In Mule 4, we replaced filters with validators:
+
+.Mule 4 Example: Schema validator
+[source,xml,linenums]
+----
+<xml-module:validate-schema schemas="schema1.xsd, schema2.xsd"/>
+----
+
+This validator will raise an `XML-MODULE:SCHEMA_NOT_HONOURED` error.
+
+== Installing the XML Module
+
+To use the XML module, simply add it to your application using the Studio palette or Flow Designer card, or add the following dependency in your `pom.xml` file:
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-xml-module</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== See also
+
+* xref:connectors::xml/xml-module.adoc[XML Module]

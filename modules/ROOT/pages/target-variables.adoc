@@ -1,0 +1,137 @@
+= Enriching Data with Target Parameters
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+When creating a flow in a Mule app, you might need to store data in a variable so that any component in the flow can use it. Non-void operations (such as the Read operation to the File connector) can store the message data that they return in a variable. Once defined, variables created with the target parameter are available for use within the flow, and you can access them like you access any other variable.
+
+You often define variables through these parameters:
+
+* Target (`target`): Name of the variable in which you want to store message data. Names can only include numbers, characters, and underscores. For example, hyphens are not allowed in the name.
+* Target Value (`targetValue`): Value of the data to store in the target variable. By default, the value is the message payload (`payload`). The field accepts any value that a variable accepts: any supported data type, DataWeave expressions, the keywords `payload`, `attributes`, and `message`, but _not_ the keyword `vars`.
+
+It is important to understand that setting a target variable changes the typical course of the message through the flow. Normally, an operation outputs a different message than it receives as input. However, when you set a variable from an operation, the operation outputs to the _next_ component in the flow the same message that it received as input. For example, assume you have a flow consisting of component A, followed by component B with a target value of `myMessage`, and then component C. In this case, component C will receive the same message that B received from A.
+
+//TODO: ADD GRAPHIC OF A , B,  C
+
+Here, a Read operation stores the payload of `readme.txt` in `myVar`:
+
+----
+<file:read path="readme.txt" target="myVar" />
+----
+
+Note that the target variable `myVar` stores the payload by default. You only need to specify a Target Value (`targetValue`) if you want to store something other than the full payload.
+
+
+Here, the entire message is stored in `myVar`:
+
+----
+<file:read path="readme.txt" target="myVar" targetValue="#[message]" />
+----
+
+This way the variable `myVar` will not only contain the content of the file but also all the metadata related.
+
+* Expression to access the file content: `#[myVar.payload]`
+* Expression to access the file metadata: `#[myVar.attributes]`
+
+Here, only the file size is stored in `myVar`:
+
+----
+<file:read path="readme.txt" target="size" targetValue="#[attributes.size]" />
+----
+
+The scenarios describe some cases where you might use target variables.
+
+== Scenario: Setting a Target Variable from within an Operation
+
+Assume that you want to log the entire message (payload and attributes) returned by a Database connector operation, such as Insert. Instead of using a Set Variable component after the operation, you can instead capture the message data by adding a target variable directly to the operation:
+
+----
+<db:insert config-ref="dbConfig" target="result" targetValue="#[message]">
+    <db:sql>INSERT INTO PLANET(POSITION, NAME, DESCRIPTION) VALUES (777, 'Pluto', :description)</db:sql>
+    <db:parameter-types>
+        <db:parameter-type key="description" type="CLOB"/>
+    </db:parameter-types>
+    <db:input-parameters>
+        #[{'description' : payload}]
+    </db:input-parameters>
+</db:insert>
+----
+
+* Target Variable for the Insert operation: `result`
+* Target Value: `message` in Design Center, `#[message]` in Anypoint Studio.
+
+Then you might retrieve the result from the Logger like this:
+
+----
+<logger level="INFO" doc:name="Logger" doc:id="8dca355c-a85c-44db-8c53-5b9c188a2431" message="Payload is: #[vars.result.payload] and attributes are: #[vars.result.attributes]"/>
+----
+
+* Message: `Payload is: #[vars.result.payload] and attributes are: #[vars.result.attributes]`
+
+Assume that you want to log the name of the first entry in a planet database. You can define a target variable like this one through the Select operation of the Database connector:
+
+----
+<db:select config-ref="dbConfig" target="planetName" targetValue="#[payload[0].name]">
+    <db:parameterized-query>select * from PLANET order by ID</db:parameterized-query>
+</db:select>
+----
+
+* Target Variable for the Select operation: `customerName`
+* Target Value: `payload[0].name` in Design Center, `#[payload[0].name]` in Anypoint Studio.
+
+Then you might retrieve the result from the Logger like this:
+
+----
+<logger level="INFO" doc:name="Logger" doc:id="8dca355c-a85c-44db-8c53-5b9c188a2431" message="#['Customer name is: ' ++ vars.customerName]"/>
+----
+
+* Message: `'Customer name is: ' ++ vars.customerName`
+
+== Scenario: Using the Stored Value as Input to an Operation
+
+Assume that you want to access all planets discovered after a given planet was discovered. You might create a target variable called `discoveryDate` within a select operation to capture the a planet's discovery date.
+
+----
+<db:select config-ref="dbConfig" target="discoveryDate" targetValue="#[payload[0].discoveryDate]">
+    <db:sql>select discoveryDate from PLANET where name = :name</db:sql>
+    <db:input-parameters>
+        #[{'name' : 'pluto'}]
+    </db:input-parameters>
+</db:select>
+----
+
+* Target Variable for the Retrieve operation: `discoveryDate`
+
+Then you can use the Input parameter of another operation in your flow (such as the Select operation to the Database connector) to make the variable available for use in your query, for example:
+
+----
+<db:select config-ref="dbConfig" target="discoveryDate" targetValue="#[payload[0].discoveryDate]">
+    <db:sql>select * from PLANET where discoveryDate > :discoveryDate</db:sql>
+    <db:input-parameters>
+        #[{'discoveryDate' : vars.discoveryDate}]
+    </db:input-parameters>
+</db:select>
+----
+
+* Input Parameter definition for the Select operation:
+ ** Key: `discoveryDate`
+ ** Value: `vars.discoveryDate` in Design Center, `#[vars.discoveryDate]` in Anypoint Studio.
+
+
+== Scenario: Bypassing the Normal Message Flow
+
+Assume that you want to insert a number of records into a database that are located in the messages's payload, then pass those same records on for further processing by the next component in your flow. Though you want to use the Bulk Insert operation to the Database connector to insert the records, the operation returns a success message that replaces the current payload, which makes the records inaccessible. So, to pass on the records to the next component instead of replacing the payload with the Bulk Insert result, you can store the success message in a target variable, for example:
+
+* Target Variable: `bulkInsertResult`
+
+Then the next operation in your flow can process the records located in the payload.
+
+== See Also
+
+* xref:intro-programming-model.adoc[Mule 4 Programming Model]
+* xref:about-mule-event.adoc[About the Mule Event]
+* xref:about-mule-variables.adoc[About Variables in the Mule Event]
+
+// file removed, no obvious replacement:
+//* link:/connectors/database-sync-workflow[Workflow: Synchronize a Database]

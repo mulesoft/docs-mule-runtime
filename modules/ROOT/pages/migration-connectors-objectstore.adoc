@@ -1,0 +1,289 @@
+= Migrating the Object Store Connector
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The Object Store Connector in Mule 4 is very similar to the one in Mule 3. The main
+differences between these major versions are:
+
+* How custom Object Stores are created: on Mule 4 creation of a Custom Object Store
+does not require the usage of Spring or the knowledge of the existence of certain java classes.
+
+* Keys must always be Strings: the Object Store Connector used to accept any `Serializable` as keys.
+On Mule 4 all keys must be of type `String`.
+
+== What's covered in this section:
+
+* <<namespace>>
+* <<configs-object-stores>>
+* <<custom-object-store>>
+* <<change-on-keys>>
+* <<storing-values>>
+* <<persistent-default-value>>
+* <<dispose-clear>>
+* <<dual-store>>
+* <<remove-behavior>>
+
+[[namespace]]
+== Namespace Change
+
+On the Mule 3 ObjectStore Connector the namespace used was `objectstore` . This namespace
+has change to `os` on the new Mule 4 Connector.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<objectstore:contains config-ref="ObjectStoreConnector" key="#[flowVars.userId]"/>
+----
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<os:contains key="#[vars.userId]" objectStore="customObjectStore"/>
+----
+
+[[configs-object-stores]]
+== Using Top Level Objects
+
+You may have noticed in the previous example that the `config-ref` parameter was removed, and
+instead an `objectStore` parameter appears. This is because on Mule 3 most of the connector
+operations require a _Connector Configuration reference_, while on Mule 4 most
+operations will instead receive a reference to an _Object Store top level element_.
+
+[[custom-object-store]]
+== Creating Custom Object Stores
+
+Custom Object Stores are global definitions of an OS that you can reference by name
+to use it in an operation, allowing you to tweak and configure the
+Object Store behavior to your needs.
+
+On Mule 3, in order to create a new ObjectStore you needed to create a spring bean and
+know the specific java classes used for the ObjectStore. On Mule 4 this is much easier,
+you just have to create a global element that declares the ObjectStore using the `os:object-store` component.
+
+This are examples of how this was done on Mule 3 and how it is done now on Mule 4 for
+a simple case where `store` and `retrieve` are exposed through HTTP endpoints using
+persistent custom object stores:
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<spring:beans>
+  <spring:bean id="myCustomObjectStore" class="org.mule.util.store.SimpleMemoryObjectStore"/> // <1>
+</spring:beans>
+
+<objectstore:config name="ObjectStoreConnector" objectStore-ref="myCustomObjectStore"  partition="users" entryTtl="3600000" expirationInterval="10000" maxEntries="1000" persistent="true"/> // <2>
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080"/>
+
+<flow name="storeBook">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/store"/>
+  <dw:transform-message>
+    <dw:set-payload><![CDATA[%dw 1.0 // <3>
+%output application/java
+---
+{
+	id: inboundProperties.'http.query.params'.id,
+	book: inboundProperties.'http.query.params'.book,
+	author: inboundProperties.'http.query.params'.author
+}]]></dw:set-payload>
+  </dw:transform-message>
+  <objectstore:store config-ref="ObjectStoreConnector" key="#[payload.id]" value-ref="#[payload]"/> // <4>
+</flow>
+
+<flow name="retrieveBook">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieve"/>
+  <objectstore:retrieve config-ref="ObjectStoreConnector" key="#[message.inboundProperties.'http.query.params'.id]/>
+  <json:object-to-json-transformer/>
+</flow>
+----
+
+In this snippet a couple of things are to be noted:
+
+<1> Creates the custom object store using Spring beans and a reference to a java class.
+
+<2> References the custom object store in a configuration.
+
+<3> Before using the store operation, a DataWeave transformation is used to set on the
+payload what is going to be stored.
+
+<4> The payload is stored in the object store.
+
+Implementing the same app in Mule 4 would look like this:
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="localhost" port="8080" />
+</http:listener-config>
+
+<os:object-store name="booksObjectStore" maxEntries="1000" entryTtl="1" entryTtlUnit="HOURS" expirationIntervalUnit="SECONDS" expirationInterval="10"/> // <1>
+
+<flow name="storeBook">
+  <http:listener config-ref="HTTP_Listener_config" path="/store"/>
+  <os:store key="#[attributes.queryParams.id]" objectStore="booksObjectStore" failIfPresent="true"> // <2>
+    <os:value>
+    #[{
+      id: attributes.queryParams.id,
+      book: attributes.queryParams.book,
+      author: attributes.queryParams.author
+    }]
+    </os:value>
+  </os:store>
+</flow>
+
+<flow name="retrieveBook">
+  <http:listener config-ref="HTTP_Listener_config" path="/retrieve"/>
+  <os:retrieve key="#[attributes.queryParams.id]" objectStore="booksObjectStore"/>
+  <set-payload value="#[output application/json --- payload]">
+</flow>
+----
+
+As you may see, main differences are:
+
+<1> A new object store is created without any knowledge of spring beans nor java classes. Note that
+what is being defined here is no a configuration, but rather an object store top level element.
+
+<2> Without the need to store a value on a variable or the payload, an inline expression
+defines what is going to be stores in the object store.
+
+Note that on Mule 3 you used to have to specify a partition of the Object Store. On
+Mule 4 you no longer have to specify a partition, instead you just use another Object Store.
+Also, you can specify the time units for both the entry time to live and the
+frequency on which you will check if entries have expired or exceed the maximum amount of
+entries.
+
+[[change-on-keys]]
+== Changes to Keys
+
+On Mule 3 the keys used to reference values on an object store could be any `Serializable`. On Mule 4
+only `String` objects are used for this purpose.
+
+In case that you are using a `Serializable` that is not a `String` as keys, you should convert
+it into  `String` values.
+
+[[storing-values]]
+== Storing a value
+
+On Mule 4 the value parameter now is taken as a content parameter, this means that
+it should be defined inline. This was configured as an attribute on Mule 3.
+
+Also, the way to update a value on an object store had a minor change. On Mule 3 you had a
+flag called `overwrite` that by default comes as false. On Mule 4 you have a flag
+called `failIfPresent` that by default comes as false. This means that now when using the store
+operation with an already used key, the default behavior is to overwrite the value.
+
+WARNING: In Mule 4, when the key already exists and the flag `failIfPresent` is set to true, the error
+OS:KEY_ALREADY_EXISTS will be thrown.
+
+When migrating pay close attention to how flags are configure, since the default behaviors
+are different.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080"/>
+<objectstore:config name="ObjectStoreConnector" partition="users"/>
+
+<flow name="storeClient">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/put"/>
+  <dw:transform-message>
+    <dw:set-variable variableName="client"><![CDATA[%dw 1.0
+      %output application/java
+      ---
+      {
+        id: payload.id,
+        name: payload.name,
+        lname: payload.lname
+      }]]></dw:set-variable>
+    </dw:transform-message>
+  <objectstore:store config-ref="ObjectStoreConnector" key="#[flowVars.client.id]" value-ref="#[flowVars.client]"/> // <1>
+</flow>
+----
+
+<1> Since on Mule 3 you cannot insert the DataWeave expression inline, your options are to
+to either save the content on a variable or modify the payload. In this it was assigned to
+the client variable.
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="localhost" port="8080" />
+</http:listener-config>
+
+<os:object-store name="Object_store" persistent="false"/>
+
+<flow name="storeClient">
+  <http:listener config-ref="HTTP_Listener_config" path="/put"/>
+  <os:store key="#[payload.id]" objectStore="Object_store" failIfPresent="true">
+    <os:value >#[{ // <1>
+      id: payload.id,
+      name: payload.name,
+      lname: payload.lname,
+      age: payload.age
+    }]</os:value>
+  </os:store>
+</flow>
+----
+
+<1> On Mule 4 you can insert the content to store inline. After this operation the
+payload remains unchanged.
+
+[[persistent-default-value]]
+== Default Value to Persistent Attribute
+
+On Mule 4 object stores are persistent by default, while on the Mule 3 connector they
+are stored on-memory by default. Because of this you will have to be carefull when
+migrating your implementation. Not saying explicitly the percistancy of the object store
+will mean different things.
+
+This example shows how after migrating, the persistent attribute had to be explicitly added:
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<objectstore:config name="ObjectStoreConnector" partition="users"/>
+----
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<os:object-store name="customObjectStore" persistent="false"/>
+----
+
+[[dispose-clear]]
+== Cleaning an Object Store
+
+The dispose operation on Mule 3 was used to clear a specific partition of an object store.
+On Mule 4 we have the clear operation that clears a whole object store. There is no
+notion of partition anymore.
+
+.Mule 3 example
+[source,xml,linenums]
+----
+<objectstore:dispose-store config-ref="ObjectStoreConnector" partitionName="users"/>
+----
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<os:clear objectStore="customObjectStore"/>
+----
+
+WARNING: On Mule 4 the clear operation will clear the whole Object Store.
+
+[[dual-store]]
+== Removal of the Dual Store Operation
+
+The Mule 3 Object Store Connector had an operation `dual-store` that stored a value using key and
+also stored the same key using value. As key is restricted to be a `String`, on Mule 4 this operation
+would not make sense, so it was removed.
+
+[[remove-behavior]]
+== Remove Operation Behavior
+
+On Mule 3 the `remove` operation had a flag named `ignoreNotExists` which defaults to false
+that indicated whether the operation should fail if the key that was going to be removed did not
+exist. On Mule 4 if the key does not exist, the error `OS:KEY_NOT_FOUND` will be thrown and the you
+can handle it however you want on the error handling.

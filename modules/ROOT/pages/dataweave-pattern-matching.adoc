@@ -1,0 +1,244 @@
+= Pattern Matching in DataWeave
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+In DataWeave, pattern matching executes on the first pattern that matches the specified expression. DataWeave supports four different types of patterns:
+
+* <<pattern_match_literals,Literal values>>
+* <<pattern_match_data_types,Data types>>
+* <<pattern_match_expressions,Expressions>>
+* <<pattern_match_regex,Regular expressions>>
+
+Each pattern type can be named or unnamed.
+
+.Pattern Matching Model
+[source,dataweave,linenums]
+----
+value match {
+  case (<name>:)?<pattern> -> <when matched>
+  case (<name>:)?<pattern> -> <when matched>
+  else -> <when none of them matched>
+}
+----
+
+//TODO: INTERPRET THIS
+
+For use cases where you simply need a Boolean result based on whether a value matches or not, you can use the `matches` function instead of using pattern matching.
+
+// TODO: You can also use the `match` function. IS DIFFERENT FROM this match operator?
+
+[[pattern_match_literals]]
+== Pattern Matching to Literal Values
+
+Matches when the evaluated value equals a simple literal value.
+
+In this example, the first field matches the value in `payload.string` and returns a Boolean. The second field performs the same match, but returns an object that contains both a boolean and a reference to the validated value.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.string match {
+    case "Emiliano" -> true
+    case "Mariano" -> false
+  },
+  b: payload.string match {
+    case str: "Emiliano" -> { "matches": true, value: str }
+    case str: "Mariano" -> { "matches": false, value: str }
+  }
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "string": "Emiliano"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": true,
+  "b": {
+    "matches": true,
+    "value": "Emiliano"
+  }
+}
+----
+
+[[pattern_match_expressions]]
+== Pattern Matching on Expressions
+
+Matches when a given expression returns `true`.
+
+In this example, the first field matches the value of `payload.string` against two alternatives and conditionally appends a different string to it. The second field evaluates if the value in `payload.number` is "greater", "less than", or "equal" to 3 and returns the corresponding string.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.string match {
+    case str if str == "Mariano" -> str ++ " de Achaval"
+    case str if str == "Emiliano" -> str ++ " Lesende"
+  },
+  b: payload.number match {
+    case num if num == 3 -> "equal"
+    case num if num > 3 -> "greater than"
+    case num if num < 3 -> "less than"
+  }
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "string": "Emiliano",
+  "number": 3.14
+}
+----
+
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "a": "Emiliano Lesende",
+    "b": "greater than"
+  }
+]
+----
+
+[[pattern_match_data_types]]
+== Pattern Matching on the Data Type
+
+Matches when the evaluated value is the specified data type.
+
+In this example, the first field evaluates the type of `payload.a` and returns a string with the corresponding type name. The second field is similar but also returns the value of the `payload.b`.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.a match {
+    case is Object -> 'OBJECT'
+    case is String -> 'STRING'
+    case is Number -> 'NUMBER'
+    case is Boolean -> 'BOOLEAN'
+    case is Array -> 'ARRAY'
+    case is Null -> 'NULL'
+    else -> 'ANOTHER TYPE'
+  },
+  b: payload.b match {
+    case y is Object -> { 'Type': { 'OBJECT' : y} }
+    case y is String -> { 'Type': { 'STRING' : y} }
+    case y is Number -> { 'Type': { 'NUMBER' : y} }
+    case y is Boolean -> { 'Type': { 'BOOLEAN' : y} }
+    case y is Array -> { 'Type': { 'ARRAY' : y} }
+    case y is Null -> { 'Type': { 'NULL' : y} }
+    else -> { 'Type': { 'ANOTHER TYPE' : payload.b} }
+  }
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "a": "Emiliano",
+  "b": 3.14
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "STRING",
+  "b": {
+    "Type": {
+      "NUMBER": 3.14
+    }
+  }
+}
+----
+
+[[pattern_match_regex]]
+== Pattern Matching on Regular Expressions
+
+Matches when the evaluated value fits a given regular expression. In this example, the input payload includes an array of strings. The script uses the `map` function to iterate through the array. It evaluates each element against a regular expression and outputs an object based on matches to the input.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.phones map ($ match {
+     case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1]}
+     case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+   }),
+ b: payload.phones map ($ match {
+   case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1], area: phone[2], number: phone[3] }
+   case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+ })
+}
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "phones": [
+    "+1 (415) 229-2009",
+    "(647) 456-7008"
+  ]
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": [
+    {
+      "country": "1"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ],
+  "b": [
+    {
+      "country": "1",
+      "area": "415",
+      "number": "229-2009"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ]
+}
+----
+
+== See Also
+
+// * link:dw-functions-core[DataWeave Core Functions]
+* xref:dataweave-types.adoc[DataWeave Types]
+* xref:dataweave-selectors.adoc[DataWeave Selectors]

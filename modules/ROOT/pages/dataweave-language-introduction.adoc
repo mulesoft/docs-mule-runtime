@@ -1,1279 +1,317 @@
-= DataWeave Language
+= DataWeave Scripts
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
 
-The xref:dataweave.adoc[DataWeave] Language is a powerful template engine that allows you to transform data to and from any kind of format (XML, CSV, JSON, Pojos, Maps, etc). In Anypoint Studio, this language can be used in:
+DataWeave is the primary data transformation language for Mule flows. You can write standalone DataWeave scripts in Transform Message components, or you can write inline DataWeave expressions to transform data _in-place_ and dynamically set the value of various properties, such as configuration fields in an event processor or global configuration element. Inline DataWeave expressions are enclosed in `&#35;[ ]` code blocks. For example, you can use a DataWeave expression to set conditions in a Choice router or to set the value of a Set Payload or Set Variable component.
 
-* The *Transform Message Component*, described in xref:6@studio::transform-message-component-concept-studio.adoc[About Transform Message Component]
-* Any Mule component that accepts Mule Expression Language, through xref:mel-dataweave-functions.adoc[MEL DataWeave Functions]
+The DataWeave code in this example sets a timestamp variable to the current time using the DataWeave `now()` function:
 
-
-
-This document covers basic examples, an overview, the structure of a DataWeave file and information about how to access different data from it. Below are some links for more advanced topics:
-
-
-* For a reference about all of the operators that are available for using, see xref:dataweave-operators.adoc[DataWeave Operators]
-* For a listing and details about all of the types you can use, see xref:dataweave-types.adoc[DataWeave Types]
-
-
-
-== Basic Example
-
-In order to show the power of DataWeave, here is a minimal example to get started. This example shows a simple mapping form JSON to XML:
-
-.Input
-[source,json,linenums]
-----
-{
-  "title": "Java 8 in Action: Lambdas, Streams, and functional-style programming",
-  "author": "Mario Fusco",
-  "year": 2014
-}
-----
-
-.Transform
+.Example: Simple Inline DataWeave Script
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
----
-{
-  order: {
-    type: "Book",
-    title: payload.title,
-    details: "By " ++ payload.author ++ " (" ++ payload.year ++ ")"
-  }
-}
+<set-variable value="#[now()]" variableName="timestamp" doc:name="Set timestamp" />
 ----
 
-.Output
-[source,xml,linenums]
-----
-<?xml version='1.0' encoding='UTF-8'?>
-<order>
-  <type>Book</type>
-  <title>Java 8 in Action: Lambdas, Streams, and functional-style programming</title>
-  <details>By Mario Fusco (2014)</details>
-</order>
-----
+You can also store DataWeave code in <<dwl_file, external files>> and read them into other DataWeave scripts, or you can factor DataWeave code into modules (libraries) of reusable DataWeave functions that can be shared by all the components in a Mule app.
 
 
-== DataWeave File Structure
+== The Structure of DataWeave Scripts
+DataWeave scripts and files are divided into two main sections:
 
-DataWeave files are divided into two sections:
+* The Header, which defines directives that apply to the body expression (optional).
 
-* *Header* - defines directives (_optional_)
-* *Body* - describes the output structure
+* The Body, which contains the expression to generate the output structure.
 
-The two sections are delimited by a three-dash *separator*: "---"
+When you include a header, the header appears above the body separated by a delimiter consisting of three dashes: `---`.
 
-This is basically what a `.dwl` file looks like. This code describes a transformation from a JSON input to an XML output:
+Here is an example of a DataWeave file with an output directive declared in the header, followed by a DataWeave expression to create a user object that contains two child key/value pairs:
 
+.Example: Simple DataWeave Script
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/xml
+%dw 2.0
+output application/xml
 ---
 {
   user: {
-    name: payload.user_name,
+    firstName: payload.user_firstname,
     lastName: payload.user_lastName
   }
 }
 ----
 
-Note that the two initial lines of code compose the header, the separator then delimits it from the rest of the file, the body, where the output structure is defined.
-
-This DataWeave example expects to receive a JSON input that is structured like the JSON example below:
-
-[source,json,linenums]
-----
- {
-  "user_name": "Annie",
-  "user_lastName": "Point"
- }
-----
-
-Upon receiving that as an input, DataWeave produces the XML output shown below:
-
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8"?>
-<user>
- <name>Annie</name>
- <lastName>Point</lastName>
-</user>
-----
-
 == DataWeave Header
 
-The DataWeave header contains the *directives*, which define high-level information about your transformation. The structure of the *header* is a sequence of lines, each with its own *directives*. The *header* section ends at `---`.
+This example shows keywords (such as `import` and `var`) you can use for header directives.
 
-Through the use of the following *directives*, key aspects of the transformation are defined:
-
-* *DataWeave version*, for example, `%dw 1.0`
-* *Output type*, for example, `%output application/xml`
-* *Input type*, for example, `%input payload application/xml`
-* *Namespaces* to import into your transform, for example, %namespace ns0 `+http://mulesoft.org/tshirt-service/+`
-* *Constants* that can be referenced throughout the body, for example, `%var conversionRate=13.15`
-* *Functions* that can be called throughout the body, for example, `%var toUser = (user) -> {firstName: user.name, lastName: user.lastName}`
-
-All directives are declared in the header section of your DataWeave document and act on the entire scope of it.
-
-Directives are a mechanism used to declare _variables_, _constants_ and _namespaces_ and their _aliases_, which are referenced in the body.
-
-Output type directives are needed to declare the type of the output of your transform.
-
-Input directives may optionally be used to declare additional input sources and their input types.
-
-=== Version Directive
-
-Specify the version of the DataWeave syntax that is used to interpret the transformation using the version directive.
-
-[source,dataweave]
-----
-%dw 1.0
-----
-
-=== Namespace Directive
-
-Use this directive to specify an alias for a URI, which is specified after the alias. The directive is relevant only when either the input or the output is of type XML.
-
+.DataWeave Script
 [source,dataweave,linenums]
 ----
-%namespace mes http://www.mulesoft.com/anypoint/SOA/message/v1.0
+%dw 2.0
+import * from dw::core::Arrays
+var myVar=13.15
+fun toUser(obj) = {
+  firstName: obj.field1,
+  lastName: obj.field2
+}
+type Currency = String { format: “##“}
+ns ns0 http://www.abc.com
+output application/xml
+---
+/*
+ * Body here.
+ * /
 ----
 
-
-=== Output Directive
-
-Specify the transformation output type in the following format: `<content>/<type>`.
-
-Only one output type can be specified -- the structure of this output is further specified in the DataWeave body.
-
-[source,dataweave]
-----
-%output application/xml
-----
-
-Valid types are:
-
-* xref:dataweave-formats.adoc#java[`application/java`]
-* xref:dataweave-formats.adoc#csv[`application/csv`]
-* xref:dataweave-formats.adoc#csv[`text/csv`]
-* xref:dataweave-formats.adoc#json[`application/json`]
-* xref:dataweave-formats.adoc#json[`text/json`]
-* xref:dataweave-formats.adoc#xml[`application/xml`]
-* xref:dataweave-formats.adoc#xml[`text/xml`]
-* xref:dataweave-formats.adoc#flat-file[`text/plain`]
-* `application/dw`
-
-
-=== Input Directive
-
-[NOTE]
-====
-It is not necessary to declare input directives for any of the components of the Mule Message that arrive at the DataWeave transformer (payload, flow variables, and input/outbound properties) nor for any system variables.
-
-You likely will not need this feature as any data arriving inside the incoming Mule message gets implicitly recognized as input based on the accompanying metadata that passes along with it through the flow components.  As a result, the data can be referenced and acted upon easily enough anywhere within the DataWeave body without a need to include them in the header.
-====
-
-Optionally specify an input source and its input type in the following format: `<content>/<type>`.
-
-
-[source,dataweave]
-----
-%input payload application/xml
-----
-
-Valid types are:
-
-* xref:dataweave-formats.adoc#java[`application/java`]
-* xref:dataweave-formats.adoc#csv[`application/csv`]
-* xref:dataweave-formats.adoc#csv[`text/csv`]
-* xref:dataweave-formats.adoc#json[`application/json`]
-* xref:dataweave-formats.adoc#json[`text/json`]
-* xref:dataweave-formats.adoc#xml[`application/xml`]
-* xref:dataweave-formats.adoc#xml[`text/xml`]
-* `application/dw`
-
-
-=== Define Constant Directive
-
-You can define a constant in the header, and reference it (or its child elements, if any exist) in the DataWeave body.
-
+* `%dw`: DataWeave version is optional. Default is `2.0`.
++
+Example: `%dw 2.0`
++
+* `output`: Commonly used directive that specifies the mime type that the script outputs.
++
+Example: `output application/xml`
++
+Valid values: xref:dataweave-formats.adoc[Data Formats Supported by DataWeave].
++
+Default: If no output is specified, the default output is determined by an algorithm that examines the inputs (payload, variables, and so on) used in the script:
++
+. If there is no input, the default is `output application/java`.
+. If all inputs are the same mime type, the script outputs to the same mime type. For example, if all input is `application/json`, then it outputs `output application/json`.
+. If the mime types of the inputs differ, and no output is specified, the script throws an exception so that you know to specify an output mime type.
++
+Note that only one output type can be specified.
++
+* `import`: For importing a DataWeave function module. See xref:dw-functions.adoc[DataWeave Functions].
+* `var`: Global variables for defining constants that you can reference throughout the body of the DataWeave script:
++
+.Example
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%var conversionRate=13.15
-%output application/json
+%dw 2.0
+var conversionRate=13.15
+output application/json
 ---
 {
  price_dollars: payload.price,
  price_localCurrency: payload.price * conversionRate
 }
 ----
-
-=== Define Function Directive
-
-You can define a xref:dataweave-types.adoc#functions-and-lambdas[function] in the header, you can then call it in any part of the DataWeave body, including arguments.
-
++
+For details, see xref:dataweave-variables.adoc[About DataWeave Variables].
++
+* `type`: For specifying a custom type that you can use in the expression.
++
+For a more complete example, see xref:dataweave-types-coercion.adoc[About Type Coercion with DataWeave].
++
+* `ns`: Namespaces, used to import a namespace.
++
+.Example
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
-%var toUser = (user) -> {firstName: user.name, lastName: user.lastName}
+%dw 2.0
+output application/xml
+
+ns ns0 http://www.abc.com
+ns ns1 http://www.123.com
 ---
 {
- user: toUser(payload)
+    ns0#myroot: {
+         ns1#secondroot: "hello world"
+    }
+}
+----
++
+* `fun`: For creating custom functions that can be called from within the body of the script.
++
+.Example
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+fun toUser = (user) -> {firstName: user.name, lastName: user.lastName}
+---
+{
+  user: toUser(payload)
 }
 ----
 
-A function directive can be defined via `%var` as in the example above, or via `%function`
+=== Including Headers in Inline DataWeave Scripts
 
-.Transform
+You can include header directives when you write inline DataWeave scripts by flattening all the lines in the DataWeave script into a single line. For smaller DataWeave scripts, this allows you to quickly apply header directives (without having to add a separate Transform Message component to set a variable), then substitute the variable in the next Event processor.
+
+For example, here is the Mule configuration XML to create the same valid XML output as the previous Transform Message component:
+
+.Example: Simple Inline DataWeave Script
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
-%function toUser(user){firstName: user.name, lastName: user.lastName}
----
-{
- user: toUser(payload)
-}
+<set-payload value="#[output application/xml --- { myroot: payload } ]" doc:name="Set Payload" />
 ----
 
-
-See xref:dataweave-types.adoc#functions-and-lambdas[Functions and Lambdas] for more on this.
+Note that the DataWeave documentation provides numerous <<see_also, transformation examples>>.
 
 == DataWeave Body
 
-[NOTE]
-The *body* contains the *expression* that generates the output structure.
+The DataWeave body contains an expression that generates the output structure. Note that MuleSoft provides a canonical way for you to work on data with the DataWeave model: a query, transform, build process.
 
-Regardless of the input and output types, the data model for the output is always described in standard DataWeave code, and it is this model that the input is transformed into.
+Here is simple example that provides JSON input for a DataWeave script:
 
-The data model of the produced output could consist of three different types of data:
-
-. Simple Values
-. Arrays: Represented as a sequence of comma separated values
-. Objects: Represented as collection of key value pairs
-
-
-When you write code in the DataWeave body, you define an expression that generates one of the data types listed above, even a literal string `Hello world` is a valid DataWeave body.
-
-Expressions can also be complex, meaning that they can be composed of other expressions. This can be achieved by either nesting expressions inside Arrays or Objects, or through the use of operators.
-In complex expressions, the result of one expression sets the context for the subsequent execution of other expressions. You just need to remember that each expression produces an Object, an Array, or a Variable. When you understand the structure of these data types are constructed from DataWeave expressions, you effectively understand how to use DataWeave.
-
-
-[TIP]
-To visualize the canonical DataWeave model of your data to get a better visual reference, set the output type of your transform to `application/dw`. Your transform then outputs your data as a DataWeave expression, which resembles a JSON object.
-
-
-=== Simple Values
-
-Simple values can be of the following types:
-
-* xref:dataweave-types.adoc#string[*String*] : Double quoted ("Hello") or Single quoted ('Hello')
-* xref:dataweave-types.adoc#boolean[*Boolean*] : Literals true or false
-* xref:dataweave-types.adoc#number[*Number*] : Decimal and Integer values are supported (ex: 2.0)
-* xref:dataweave-types.adoc#dates[*Date*] : IS0-8601 enclosed by "|" (ex:|2003-10-01T23:57:59Z|)
-* xref:dataweave-types.adoc#regular-expressions[*Regex*] : Regex expression enclosed by "/" (ex:/(\d+)-(\d+)/)
-
-=== Arrays
-
-Arrays are represented as a sequence of value expressions.
-
-.Input
-[source,dataweave]
-----
-[ 1, 2 + 2, 3 * 3, $x ]
-----
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-[ "My", "three", "words" ]
-----
-
-See xref:dataweave-types.adoc#array[DataWeave types] for more details on arrays.
-
-=== Objects
-
-These are represented as a comma separated sequence of key: value pairs surrounded by curly brackets { }.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-myoutput:{
-  name : "Jill",
-  payload : payload.id + 3
-  }
-----
-
-.Output
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8"?>
-<myoutput>
-  <name>Jill</name>
-  <payload>5</payload>
-</myoutput>
-----
-
-Note that both the keys and the values may be *expressions*.
-
-See xref:dataweave-types.adoc#object[DataWeave types] for more details on objects.
-
-
-== Variables
-
-=== Constants
-
-In the DataWeave header, you define constants as directives, these can then be referenced as variables in any part of your transform body, just as you do with input variables.
-The following creates an XML document and inserts the constant value for Language "Español" in the output language element.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
-%var language='Español'
----
-{
-  document: {
-    language: language,
-    text: "Hola mundo"
-  }
-}
-----
-
-.Output
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8"?>
-<document>
-  <language>Español</language>
-  <text>Hola Mundo</text>
-</document>
-----
-
-=== Scoped Variables
-
-Variables declared in the Transform's header always have a global scope, to declare and initialize a variable with a limited scope, you can do so in any part of the transform's body.
-
-You can initialize these variables using literal expressions, variable reference expressions, or functional expressions. They may reference any other scoped variables or any of the input variables or constants in their initialization. The declaration and initialization can be prepended to any literal expression, but you must be aware that the literal they are prepended to delimits their scope. You cannot reference a variable outside its scope.
-
-To declare a variable in the DataWeave body, the following syntax is supported: *using (<variable-name> = <expression>)* and it must be written before defining the contents of the literal that it exists in.
-To reference an already initialized variable, you can just call it by the name you defined for it as with any other variable, or you can also write it in the form *$<variable-name>*.
-
-Consider the following examples:
-
-*Scoped to Simple Value*
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-using (x = 2) 3 + x # <1>
-----
-<1> Result is simply 5
-
-*Scoped to Array literal*
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-using (x = 2) [1, x, 3]
-----
-
-*Scoped to Object literal*
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
-  person: using (user = "Greg", gender = "male") { # <1>
-    name: user, # <2>
-    gender: gender
-  }
-}
-----
-
-<1> Declaration and initialization.
-<2> *user* is a valid reference because it is within the object *person* for which it was declared.
-
-*Invalid Reference outside of Scope*
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-entry: using (firstName = "Annie", lastName = "Point") {
-  person: using (user = firstName, gender = "male") {
-    name: user,
-    gender: gender
-  },
-  sn: lastName, # <1>
-  gen: gender # <2>
-}
-----
-
-<1> The reference *lastName* is valid because it is within scope.
-<2> The reference *gender* is invalid because gender was declared in the *person* object, and this reference exists outside the scope of that object.
-
-== Expressions
-
-DataWeave allows you to put logic in your script using expression values.
-All expressions in DataWeave return a value, these can be categorized into:
-
-* <<Operators>>
-* <<Selectors>>
-* <<Flow Control Expressions>>
-
-=== Operators
-
-An operator applies a specific logic/transformation over a data-structure.
-Operators can be classified based on their https://en.wikipedia.org/wiki/Arity[arity] as Unary, Binary or Ternary. See xref:dataweave-operators.adoc[DataWeave Operators] for a full reference.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  name: upper "mulesoft"
-}
-----
-
-.Output
+.Example: JSON Input
 [source,json,linenums]
 ----
 {
-  "name": "MULESOFT"
+    "message": "Hello world!"
 }
 ----
 
-=== Selectors
+This DataWeave script takes the entire payload of the JSON input above and transforms it to the `application/xml` format.
 
-A selector allows for the navigation and querying the multiple levels of a data-structure to reference a certain value or set of values. See xref:dataweave-selectors.adoc[DataWeave Selectors] for a full reference.
-
-.Transform
+[[script_output_xml]]
+.Example: Script that Outputs application/xml
 [source,dataweave,linenums]
 ----
-%dw 1.0
-%output application/json
+%dw 2.0
+output application/xml
 ---
-{
-  users: payload.users.*user
-}
+payload
 ----
 
+The next example shows the XML output produced from the DataWeave script:
 
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
-
-.Input
-[source,xml,linenums]
-----
-<users>
-  <user>Mariano</user>
-  <user>Martin</user>
-  <user>Leandro</user>
-</users>
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "users": [
-    "Mariano",
-    "Martin",
-    "Leandro"
-  ]
-}
-----
-=====
-
-=== Flow Control Expressions
-
-==== When Otherwise
-
-The keyword *when* conditionally evaluates a part of your DataWeave code, depending on if an expression evaluates to true or to false. You can make a single line conditional, or enclose a whole section in curly brackets. In case the *when* expression evaluates to *false*, its corresponding part of the code is ignored, and the code that corresponds to the *otherwise* expression is executed.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  currency: "USD"
-} when payload.country == "USA"
-otherwise
-{
-      currency: "EUR"
-}
-----
-
-You can also chain several *otherwise* expressions together, like in the example below:
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-	currency: "USD"
-} when payload.country =="USA"
-otherwise
-{
-	currency: "GBP"
-} when payload.country =="UK"
-otherwise
-{
-	currency: "EUR"
-}
-----
-
-
-[TIP]
-Check the <<Precedence Table>> to see what expressions are compiled before or after this one.
-
-==== Unless Otherwise
-
-The keyword *unless* conditionally evaluates a part of your DataWeave code, depending on if an expression evaluates to true or to false. You can make a single line conditional, or enclose a whole section in curly brackets. In case the *unless* expression evaluates to *true*, its corresponding part of the code is ignored, and the code that corresponds to the *otherwise* expression is executed.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  currency: "EUR"
-} unless payload.country == "USA"
-otherwise
-{
-      currency: "USD"
-}
-----
-
-[TIP]
-Check the <<Precedence Table>> to see what expressions are compiled before or after this one.
-
-==== Default
-
-Assigns a default value in case no value is found in the input field.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-    currency: payload.currency default "USD"
-}
-----
-
-[TIP]
-Check the <<Precedence Table>> to see what expressions are compiled before or after this one.
-
-
-==== Pattern matching
-
-Pattern matching executes on the first pattern that matches the specified expression.
-DataWeave supports four different types of patterns:
-
-* literal
-* type/traits
-* regex
-* expression
-
-Each pattern type can be either named or unnamed. The example below is not actual DataWeave code, but rather a model for how matching works, you can see more concrete examples on each of the sections that follow:
-
-[source,dataweave,linenums]
-----
-value match {
-  (<name>:)?<pattern> -> <when matched>,
-  (<name>:)?<pattern> -> <when matched>,
-  default -> <when none of them matched>
-}
-----
-
-[TIP]
-For simpler use cases where all you need is a boolean result based on if a value matches or not, see the xref:dataweave-operators.adoc#matches[Matches Operator].
-
-[TIP]
-Check the <<Precedence Table>> to see what expressions are compiled before and after this one.
-
-===== Literal Pattern
-
-Matches when the evaluated value equals a simple literal value.
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-a: payload.string match {
-   "Emiliano" -> true,
-   "Mariano" -> false
- },
- b: payload.string match {
-   str: "Emiliano" -> { "matches": true, value: str },
-   str: "Mariano" -> { "matches": false, value: str }
- }
-----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
-----
-{
-  "string": "Emiliano"
-}
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": true,
-  "b": {
-      "matches": true,
-      "value": "Emiliano"
-  }
-}
-----
-=====
-
-
-In this example, the first field simply matches the value in 'payload.string' and returns a boolean, the second field performs the same match, but returns an object that contains both a boolean and a reference to the validated value.
-
-===== Expression Pattern
-
-Matches when running a certain expression over the evaluated value returns true.
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  a: payload.string match {
-    str when str == "Mariano" -> str ++ " de Achaval",
-    str when str == "Emiliano" -> str ++ " Lesende"
-  },
-  b: payload.number match {
-    n when n < 3 -> "lower",
-    n when n > 3 -> "higher"
-  }
-}
-----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
-----
-{
-  "string": "Emiliano",
-  "number": 3.14
-}
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": "Emiliano Lesende",
-  "b": "higher"
-}
-----
-=====
-
-
-In this example, the first field matches the value of 'payload.string' against two alternatives and conditionally appends a different string to it; the second field evaluates if the value in 'payload.number' is larger or smaller than 3 and returns "lower" or "higher" accordingly.
-
-===== Match Type
-
-Matches when the evaluated value is of the specified type
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  a: payload.a match {
-    :object -> "OBJECT",
-    :string -> "STRING",
-    :number -> "NUMBER",
-    :boolean -> "BOOLEAN",
-    :array -> "ARRAY",
-    :null -> "NULL"
-  },
-  b: payload.b match {
-    y is :object -> { type: "OBJECT", y: y },
-    y is :string -> { type: "STRING", y: y },
-    y is :number -> { type: "NUMBER", y: y },
-    y is :boolean -> { type: "BOOLEAN", y: y },
-    y is :array -> { type: "ARRAY", y: y },
-    y is :null -> { type: "NULL", y: y }
-  }
-}
-----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
-----
-{
-  "a": "Emiliano",
-  "b": 3.14
-}
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": "STRING",
-  "b": {
-    "type": "NUMBER",
-    "y": 3.14
-  }
-}
-----
-=====
-
-
-
-In this example, the first field evaluates the type of 'payload.a' and returns a different string with the type name depending on what type it matches with (this could be easier done through the xref:dataweave-operators.adoc#type-of[Type Of operator]), the second field returns an object with the same type name as a string and a reference to the evaluated value.
-
-===== Match Regex
-
-Matches when the evaluated value fits a given regular expression
-
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  a: payload.phones map ($ match {
-     /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: $[0], area: $[1], number: $[2] },
-     /\((\d+)\)\s(\d+\-\d+)/ -> { area: $[1], number: $[2] }
-   }),
- b: payload.phones map ($ match {
-   phone: /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[0], area: phone[1], number: phone[2] },
-   phone: /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
- })
-}
-----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
-----
-{
-  "phones": [
-    "+1 (415) 229-2009",
-    "(647) 456-7008"
-  ]
-}
-----
-
-[discrete.view]
-=== Output: JSON
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": [
-    {
-      "country": "+1 (415) 229-2009",
-      "area": "1",
-      "number": "415"
-    },
-    {
-      "area": "647",
-      "number": "456-7008"
-    }
-  ],
-  "b": [
-    {
-      "country": "+1 (415) 229-2009",
-      "area": "1",
-      "number": "415"
-    },
-    {
-      "area": "647",
-      "number": "456-7008"
-    }
-  ]
-}
-----
-=====
-
-
-
-
-In this example, the payload includes two elements in an array, and in both cases the xref:dataweave-operators.adoc#map[Map operator] to cycle through the array. It then evaluates each element against a regular expression and outputs a different object depending on what kind of match is found.
-
-
-
-== System Values
-
-DataWeave provides a set of values that are automatically assigned by the system.
-
-=== Now
-
-Returns the present moment in xref:dataweave-types.adoc#dates[(:datetime)] type.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  a: now,
-  b: now.day,
-  c: now.minutes
-}
-----
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": "2015-12-04T18:15:04.091Z",
-  "b": 4,
-  "c": 15
-}
-----
-
-[TIP]
-See xref:dataweave-selectors.adoc[DataWeave Selectors] for a list of possible selectors to use here.
-
-
-=== Random
-
-Returns a random number of type xref:dataweave-types.adoc#number[(:number)] between 0 and 1
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  price: random * 1000
-}
-----
-
-
-
-== Calling External Flows
-
-From a DataWeave transform, you can trigger the calling of a different flow in your Mule application, and whatever the flow returns is what the expression returns.
-
-You can do this through the following expression:
-
-`lookup(“flowName”,$)`
-
-Which takes two parameters:
-
-* The name of the flow that must be called
-* The payload to send to this flow, as a map
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  a: lookup("mySecondFlow",{b:"Hello"})
-}
-----
-
-.Mule Flow
-[source,xml,linenums]
-----
-<flow name="mySecondFlow">
-    <set-payload doc:name="Set Payload" value="#[payload.b + ' world!' ]"/>
-</flow>
-----
-
-.Output
-[source,json,linenums]
-----
-{
-  "a": "Hello world!"
-}
-----
-
-Please note that only the payload returned by the invoked flow will be assigned (i.e. all other message's properties such as flowVars and sessionVars will not be overridden when using the lookup function).
-
-[NOTE]
-The `lookup` function does not support calling xref:flows-and-subflows.adoc#types-of-flows[subflows].
-
-== Calling Global MEL Functions from DataWeave Code
-
-If you define a global xref:mule-expression-language-mel.adoc[Mule Expression Language] (MEL) function in your Mule project, you can then invoke it anywhere in your DataWeave code, without need for any special syntax.
-
-To create one such global function, you must edit your Mule project's XML file and enclose any functions that you wish to define in the following set of tags, which must be placed in the global elements section, before any of the flows are defined.
-
-[source,xml,linenums]
-----
-<configuration doc:name="Configuration">
-     <expression-language>
-         <global-functions>
-
-         </global-functions>
-     </expression-language>
- </configuration>
-----
-
-
-In this space you can use any MEL expression to define custom functions, for example:
-
-[source,xml,linenums]
-----
-<configuration doc:name="Configuration">
-     <expression-language>
-         <global-functions>
-             def newUser() {
-                 return ["name" : "mariano"]
-             }
-             def upperName(user) {
-                 return user.name.toUpperCase()
-             }
-         </global-functions>
-     </expression-language>
- </configuration>
-----
-
-
-With that in place, in the DataWeave code of your Transform Message element you can just refer to these functions. Note that the inputs and outputs of these functions can even be objects and arrays.
-
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  "foo" :  newUser(),
-  "bar":  upperName(newUser())
-}
-----
-
-
-Even with these external functions in place, you should be able to preview the output of this transform, updated in real time as you edit it.
-
-
-== Read
-
-.(content :string, mimeType :string,readerOptions :object) => :any
-
-The read function returns the result of parsing the content parameter with the specified mimeType reader.
-
-The first argument points the content that must be read, the second is the format in which to write it. A third optional argument lists reader configuration properties.
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-output: read(payload.root.xmlblock, "application/xml").foo
-----
-
-
-[.ex]
-=====
-[discrete.view]
-=== Input: XML
-
-.Input
+.Example: XML Output
 [source,xml,linenums]
 ----
 <?xml version='1.0' encoding='UTF-8'?>
-<root>
-    <xmlblock><![CDATA[<foo>bar</foo>]]></xmlblock>
-</root>
+<message>Hello world!</message>
 ----
 
-[discrete.view]
-=== Output: XML
+The script above successfully transforms the JSON input to XML output.
 
-.Output
+== Errors (Scripting versus Formatting Errors)
+
+A DataWeave script can throw errors due to DataWeave coding errors and due to formatting errors. So when transforming one data format to another, it is important to keep in mind the constraints of both the language and the formats. For example, XML requires a single root node. If you use the <<script_output_xml, DataWeave script above>> in the attempt to transform this JSON input to XML, you will receive an error (`Unexpected internal error`) because the JSON input lacks a single root:
+
+[[json_input]]
+.Example: JSON Input
+[source,json,linenums]
+----
+{
+    "size" : 1,
+    "person": {
+      "name": "Yoda"
+    }
+}
+----
+
+A good approach to the creation of a script is to normalize the input to the JSON-like <<dataweave-formats#format_dataweave, application/dw>> format. In fact, if you get an error, you can simply transform your input to `application/dw`. If the transformation is successful, then the error is likely a formatting error. If it is unsuccessful, then the error is a coding error.
+
+This example changes the output format to `application/dw`:
+
+.Example: DataWeave Script that Outputs application/dw
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+You can see that the script successfully produces `application/dw` output from the <<json_input, JSON input example>> above:
+
+.Example: application/dw Output
+----
+{
+  size: 1,
+  person: {
+    name: "Yoda"
+  }
+}
+----
+
+So you know that the previous error (`Unexpected internal error`) is specific to the format, not the coding. You can see that the `application/dw` output above does not provide a single root element, as required by the XML format. So, to fix the script for _XML_ output, you need to provide a single root element to your script, for example:
+
+.Example: Script that Outputs application/xml
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+    "myroot" : payload
+}
+----
+
+Now the output meets the requirements of XML, so when you change the output directive back to `application/xml`, the result produces valid XML output.
+
+.Example: XML Output Containing a Single XML Root
 [source,xml,linenums]
 ----
 <?xml version='1.0' encoding='UTF-8'?>
-<output>bar</output>
-----
-=====
-
-
-
-In the example above, what was in the CDATA element isn't parsed by the DataWeave reader by default, that's why the *read* operator must be used to interpret it.
-
-== Write
-
-.(value :any, mimeType :string,writerOptions :object) => :string
-
-The write function returns a string with the serialized representation of the value in the specified mimeType.
-
-The first argument points to the element that must be written, the second is the format in which to write it. A third optional argument lists writer configuration properties. See <<output-directive,Output Directive>> and its sub-sections for a full list of available configuration options for each different format.
-
-
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/xml
----
-{
- output: write(payload, "application/csv", {"separator" : "|"})
-}
+<myroot>
+  <size>1</size>
+  <person>
+    <name>Yoda</name>
+  </person>
+</myroot>
 ----
 
-
-[.ex]
-=====
-[discrete.view]
-=== Input: JSON
-
-.Input
-[source,json,linenums]
+== DataWeave Comments
+Comments that use a Java-like syntax are also accepted by DataWeave.
 ----
-"Name": "Mr White",
-"Email": "white@mulesoft.com",
-"Id": "1234",
-"Title": "Chief Java Prophet"
-},
-{
-"Name": "Mr Orange",
-"Email": "orange@mulesoft.com",
-"Id": "4567",
-"Title": "Integration Ninja"
-}
-]
+// My single-line comment here.
+
+/*
+ * My multi-line comment here.
+ */
 ----
 
-[discrete.view]
-=== Output: XML
+[[dwl_file]]
+== dwl File
 
-.Output
+In addition to specifying DataWeave scripts in the Transform and other components, you can also specify the scripts in a `.dwl` file. In Studio projects, your script files are stored in `src/main/resources`.
+
+In the Mule app XML, you can use the `${file::filename}` syntax to send a script in a `dwl` file through any XML tag that expects an expression. For example, see the `when expression="${file::logic.dwl}"` in the Choice router here:
+
 [source,xml,linenums]
 ----
-<?xml version='1.0' encoding='US-ASCII'?>
-<output>Name|Email|Id|Title
-Mr White|white@mulesoft.com|1234|Chief Java Prophet
-Mr Orange|orange@mulesoft.com|4567|Integration Ninja
-</output>
-----
-=====
-
-
-
-== Log
-
-.(prefix :string,value :any)
-
-Returns the specified value and also logs the value in the DataWeave representation with the specified prefix.
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
----
-{
-  result: log("Logging the array",[1,2,3,4])
-}
-----
-
-.Output
-[source,json,linenums]
-----
-{
-  "result": [1,2,3,4]
-}
-----
-
-.Output to Logger
-----
-Logging the array [1,2,3,4]
-----
-
-Note that besides producing the expected output, it also logs it.
-
-
-
-
-
-== Precedence Table
-
-This table lists the order in which different DataWeave expressions are compiled. The result of compiling something at one level may be used as an input for expressions in higher levels, but not vice-versa. Expressions are ordered in the table from first compiled to last.
-
-[%header,cols="30a,60a,10a"]
-|===
-|Operator                          |Description             | Level
-|using, all unary operators         |All https://en.wikipedia.org/wiki/Unary_operation[unary operators]     | 1
-|As                              |Type Coercion expression     | 2
-| &#42; /                             |Multiplicative          | 3
-|+ - >>                            |Additive                | 4
-|>= <= < >  is                   |Relational / Type Comparison | 5
-|!= ~= ==                          |Equality evaluators    | 6
-|xref:dataweave-operators.adoc#AND[AND]                              |Conditional And         | 7
-|xref:dataweave-operators.adoc#OR[OR]                                |Conditional OR          | 8
-|xref:dataweave-operators.adoc#default[Default], <<Pattern Matching>>, xref:dataweave-operators.adoc#matches[Matches], xref:dataweave-operators.adoc#map[Map], xref:dataweave-operators.adoc#map-object[Map Object], xref:dataweave-operators.adoc#group-by[Group By], xref:dataweave-operators.adoc#filter[Filter]             |Default Value / Pattern Matching / Binary Operators | 9
-|<<When Otherwise>>, <<Unless Otherwise>>             |Conditional Expressions | 10
-|===
-
-
-
-== Closer Look at an Example Transformation
-
-
-.Input
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8"?>
-<note>
-  <to>Tove</to>
-  <from>Jani</from>
-  <heading>Reminder</heading>
-  <body>Don't forget me this weekend!</body>
-</note>
-----
-
-.Transform
-[source,dataweave,linenums]
-----
-%dw 1.0
-%output application/json
-%var date='01-MAR-2015'
----
-{
-  letter : payload,
-  sent : date
-}
+<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/test">
+  <http:response >
+    <http:body ><![CDATA[#[${file::transform.dwl}]]]></http:body>
+  </http:response>
+</http:listener>
+<choice doc:name="Choice"  >
+  <when expression="${file::logic.dwl}" >
+    <set-payload value="It's greater than 4!" doc:name="Set Payload"  />
+  </when>
+  <otherwise >
+    <set-payload value="It's less than 4!" doc:name="Set Payload" />
+  </otherwise>
+</choice>
 ----
 
 
-
-.Output as JSON
-[source,json,linenums]
-----
-{
-  "letter": { # <1>
-    "note": { # <2>
-      "to": "Tove",
-      "from": "Jani",
-      "heading": "Reminder", # <3>
-      "body": "Don't forget me this weekend!"
-    }
-  },
-  "sent": "01-MAR-2015"  # <4>
-}
-----
-<1> The "payload" input is parsed into an Object.
-<2> As previously stated, Objects are sequences of key:value pairs. Note how each element name from the XML input is parsed into a key followed by a colon : and then the value.
-<3> The value may be a Simple Value, as is the case of the *heading* field, or an object, as is the case in *note* #2.
-<4> This value arises from a variable 'date', which is defined in a directive in the DataWeave header.
-
-
-
-
-[WARNING]
-Whenever you make a transformation from JSON to XML, make sure that the resulting output is valid as an XML file. Specifically, make sure that there's a single parent tag, JSON supports having multiple elements at the highest level while XML doesn't.
-Likewise, whenever you transform from XML to JSON, make sure the resulting output is valid as a JSON file. Specifically, make sure that there are no repeated keys inside the same parent. XML supports having this but JSON doesn't.
-
-
-== Next Steps
-
-
-* For a reference about all of the operators that are available for the `using` operator, see xref:dataweave-operators.adoc[DataWeave Operators]
-* For a listing and details about all of the types you can use, see xref:dataweave-types.adoc[DataWeave Types]
-* For details on the different formats you can process with DataWeave and the parameters you can configure for each format, see xref:dataweave-formats.adoc[DataWeave Formats]
-* For details on how you can select certain components of the incoming message, see xref:dataweave-selectors.adoc[DataWeave Selectors]
-* View complete example projects that use DataWeave in the https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange]
-
-
-
+[[see_also]]
 == See Also
 
-* xref:dataweave-quickstart.adoc[DataWeave quickstart guide]
-* xref:6@studio::transform-message-component-concept-studio.adoc[About Transform Message Component]
-* xref:dataweave-examples.adoc[DataWeave Examples]
-* xref:mel-dataweave-functions.adoc[MEL DataWeave Functions]
+xref:dataweave-selectors.adoc[DataWeave Selectors]
+
+xref:dw-functions.adoc[DataWeave Functions]
+
+xref:dataweave-cookbook.adoc[DataWeave Cookbook]
+
+xref:dataweave-formats.adoc[Data Formats Supported by DataWeave]
+
+xref:dataweave-types.adoc#functions-and-lambdas[Functions and Lambdas]
+
+// TODO: NEED MORE INFO HERE... show XML vs DW vs JSON
+
+////
+Note that the output of a DataWeave expression can include these data types:
+
+* Simple Values: Strings and numbers, for example: `Some String`, `18`.
+* Arrays: A sequence of comma separated values, for example: `1, 2, 3`. The values can be any supported data type.
+* Objects: A collection of key-value pairs, for example: `{"key": "some value"}`. The values can be any supported data type.
+////
+
+//== Transforming Data Formats in Inline DataWeave Scripts

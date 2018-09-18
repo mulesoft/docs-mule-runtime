@@ -1,0 +1,147 @@
+= Examples: Parsing Dates with DataWeave
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, xml, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+The examples define a function (`fun`) in the DataWeave header to normalize date separators (`/`, `.`, and `-`) within different date formats so that all of them use the same separator (`-`).
+
+The examples use these functions:
+
+* `replace` so that all dates match a single pattern.
+* `mapObject` to run through the the `date` elements. The script applies the normalizing function to each `date`.
+* `as` (in the second DataWeave script) to change the data type of the values to a Date type with a specific date format.
+
+
+== Example: Returns Dates as String Types
+
+.Input
+[source,dataweave,linenums]
+----
+<dates>
+  <date>26-JUL-16</date>
+  <date>27/JUL/16</date>
+  <date>28.JUL.16</date>
+</dates>
+----
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 2.0
+output text/xml
+fun normalize(date) date replace "/" with "-" replace "." with "-"
+---
+
+dates: (payload.dates mapObject {
+    normalized_as_string: normalize($.date)
+})
+
+----
+
+.Output (dates are String types)
+[source,dataweave,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<dates>
+  <normalized_as_string>26-JUL-16</normalized_as_string>
+  <normalized_as_string>27-JUL-16</normalized_as_string>
+  <normalized_as_string>28-JUL-16</normalized_as_string>
+</dates>
+----
+
+== Example: Returns Dates as Date Types
+
+.Input
+[source,dataweave,linenums]
+----
+<dates>
+  <date>26-JUL-16</date>
+  <date>27/JUL/16</date>
+  <date>28.JUL.16</date>
+</dates>
+----
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 2.0
+output text/xml
+fun normalize(date) date replace "/" with "-" replace "." with "-"
+---
+// Outputs date values as Date types in the specified format
+dates: (payload.dates mapObject {
+    normalized_as_date: normalize($.date) as Date {format: "d-MMM-yy"}
+})
+----
+
+.Output (dates are Date types)
+[source,dataweave,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<dates>
+  <normalized_as_date>2016-07-26</normalized_as_date>
+  <normalized_as_date>2016-07-27</normalized_as_date>
+  <normalized_as_date>2016-07-28</normalized_as_date>
+</dates>
+----
+
+////
+TODO: NEED TO GET THIS TO WORK BEFORE PUBLISHING!
+== Example: Using Conditional Date Parsing
+
+Suppose that you want to include a date field that admits different formats, and want DataWeave to be able to parse each accordingly. For this example, imagine that you want to accept these three formats:
+
+* Sun, 06 Nov 1994 08:49:37 GMT = `E, d LLL u H:m:s O`
+* Sun Nov 6 08:49:37 1994 = `cccc, d-LLL-u H:m:s O`
+* Sunday, 06-Nov-94 08:49:37 GMT = `E LLL d H:m:s u`
+
+Start out by writing a regular expression to match each of them:
+
+* Sun, 06 Nov 1994 08:49:37 GMT = `/^[A-z][A-z][A-z],/`
+* Sun Nov 6 08:49:37 1994 = `/^[A-z][A-z][A-z]\s/`
+* Sunday, 06-Nov-94 08:49:37 GMT = This will be the default
+
+You can use these regular expressions in a DW xref:dataweave-types.adoc#functions-and-lambdas[function] that first evaluates a string to see which regular expression it matches, and then converts it through the the corresponding function. This function should do the following:
+
+. Take the input string as argument
+. Match it with regular expressions in order to determine which format it's in
+. Run the coerce to date function with the corresponding properties
+// link:dw-functions-core#coerce-to-date[coerce to date]
+. Return a date time object
+
+=== Transformation Example
+
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var parseDate = (dateStr) -> (
+  if (dateStr contains /^[A-z][A-z][A-z],/)
+    dateStr as Localdatetime {format: "E, d LLL u H:m:s O"}
+  else if (dateStr contains /^[A-z][A-z][A-z]\s/)
+      (dateStr as Localdatetime {format: "E LLL d H:m:s u"})
+    else dateStr as Localdatetime {format: "cccc, d-LLL-u H:m:s O"})
+---
+date: parseDate(payload.dateString)
+----
+////
+
+== Related Examples
+
+* xref:dataweave-cookbook-add-and-subtract-time.adoc[Adding and Subtracting Dates]
+
+* xref:dataweave-cookbook-reference-multiple-inputs.adoc[Reference Multiple Inputs]
+
+
+== See Also
+
+* xref:dataweave-types.adoc[DataWeave Value Types]
+
+// * link:dw-functions-core[DataWeave Core Functions]
+
+* xref:dataweave-selectors.adoc[DataWeave Selectors]
+
+* xref:dataweave-cookbook.adoc[DataWeave Cookbook]

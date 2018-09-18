@@ -1,0 +1,33 @@
+= FAQ: Understanding Batch Job Performance
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+On a traditional on-line processing model, each request is usually mapped to a worker thread. Regardless of the processing type (either synchronous, asynchronous, one-way, request-response, or even if the requests are temporarily buffered before being processed), servers usually end up in a 1:1 relationship between a request and a running thread. +
+When it comes to a batch job, all records are first stored in a persistent queue before the Process phase begins, so the traditional threading model wouldn't apply.
+
+To improve performance, the runtime queues and schedules batch records in blocks of 100 records. This lessens the amount of I/O requests and improves an operation's load. +
+The default threading profile of the runtime is 16 threads per job. Therefore, in a default configured batch job each of the 16 threads processes a block of 100 records. +
+Each thread iterates through that block processing each record, and then each block is queued back and the process continues.
+
+Consider having 1 million records to place in a queue for a 3 step batch job. At least three million I/O operations occur as the runtime takes and requests each record as they move through the job's phases. +
+Performance requires having enough available memory to process the 16 threads in parallel, which means moving 1600 records from persistent storage into RAM. The larger your records and their quantity, the more available memory you need for batch processing. +
+
+// [TIP]
+// You can change the amount of threads per job in the threading-profile element.
+
+Although, the standard model of 16 threads, with 100 records per batch job works for most use cases, consider three use cases where you might need to increase or decrease the block size:
+
+* Assume you have 200 records to process through a batch job. With the default 100-record block size, Mule can only process two records in parallel at a time. If you request fewer than 101 records, then your processing becomes sequential. If you need to process really heavy payloads, then queueing a hundred records demands a large amount of working memory.
+
+* Consider a batch job that needs to process images, and an average image size of 3 MB. You then have 100 blocks with payloads of 3 MB, being processed in 16 threads. Hence your default threading-profile setting would require around 4.6 GB of working memory just to keep the blocks in queue. You should set a lower block size to distribute each payload through more jobs and lessen the load on your available memory.
+
+* Suppose having 5 million records with payloads so small that you can fit blocks of 500 records in your memory without problems. Setting a larger block size improves your batch job time without sacrificing working memory load.
+
+To take full advantage of this feature, you need to understand how the block sizes affect your batch job. Running comparative tests with different values and testing performance helps you find an optimum block size before moving this change into production.
+
+Remember that modifying the batch block size is optional. If you apply no changes, the default value is 100 records per block.
+
+== See Also
+
+* xref:batch-job-concept.adoc[About Batch Job]

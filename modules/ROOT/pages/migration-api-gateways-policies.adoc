@@ -1,0 +1,110 @@
+= Migrating API Policies
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+// authors: Federico Balbi and Nahuel Dalla Vecchia (assigned by Eva)
+
+// Explain generally how and why things changed between Mule 3 and Mule 4.
+In Mule 4, policies underwent major changes. A full explanation of them is available in https://docs.mulesoft.com/api-manager/custom-policy-4-reference[Custom Policy General Reference (Nov 2017)]
+
+== Defining Policy Behavior
+
+In 3.x, the logic inside a particular policy is split in two blocks, one that is executed before the next policy or flow, the other executed after it.
+
+.Mule 3 Example
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<policy online="false"
+        xmlns="http://www.mulesoft.org/schema/mule/policy"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/policy http://www.mulesoft.org/schema/mule/policy/current/mule-policy.xsd
+              http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+              http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd">
+
+    <before>
+        <mule:set-payload value="(pre)"/>
+    </before>
+
+    <after>
+        <mule:set-payload value="(post)"/>
+    </after>
+
+    <pointcut>
+        <api-platform-gw:api-pointcut apiName="sampleApi" apiVersion="1.0.0"/>
+    </pointcut>
+
+</policy>
+----
+
+In Mule 4, policies are no longer separated in a `before` and `after` block.
+They now work as a flow with an explicit jump to the next policy or flow that has to be defined in it.
+
+Same behavior can be achieved in Mule 4 with the following config:
+
+.Mule 4 Example
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http-policy="http://www.mulesoft.org/schema/mule/http-policy"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/http-policy http://www.mulesoft.org/schema/mule/http-policy/current/mule-http-policy.xsd">
+
+    <http-policy:proxy name="policy-deployment">
+        <http-policy:source propagateMessageTransformations="true">
+
+            <set-payload value="(pre)"/>
+
+            <http-policy:execute-next/>
+
+            <set-payload value="(post)"/>
+
+        </http-policy:source>
+    </http-policy:proxy>
+</mule>
+
+----
+
+A few things to notice:
+
+* Logic is placed in the same block. Injecting behavior before the flow can be achieved just by putting logic before the `execute-next` element. To injecting behavior after the flow, you put logic after that element.
+
+* `propagateMessageTransformations` attribute in the `http-policy:source`
+element: Starting in Mule 4, changes to the Mule message (payload or attributes) before executing
+the flow are not propagated to it by default. To enable this, `propagateMessageTransformations` has to be set to `true`.
+
+* `pointcut` elements are no longer defined in the policy config file. Now, they are resolved by the API Gateway
+when policies are fetched from API Manager.
+
+Endpoint and App `pointcut` elements are no longer available, and there is no replacement to them.
+
+
+== Uploading Policy Template to Exchange
+
+In 3.x, once the policy is defined, the result is an XML file that has to be uploaded to API Manager.
+
+In Mule 4, once the policy behavior is defined, the policy has to be packaged into a policy template JAR and uploaded
+to Exchange in order to make it available in API Manager.
+
+How to create a Maven project to generate the policy template JAR is explained here: https://docs.mulesoft.com/api-manager/develop-custom-policies-reference[Custom Policy Development Reference (Nov 2017)]
+
+How to upload the JAR to Exchange is explained here: https://docs.mulesoft.com/api-manager/upload-policy-exchange-task[To Upload a Policy to Exchange (Nov 2017)]
+
+Just like before, once the policy template JAR is in Exchange, it will appear in API Manager for APIs that belong
+to the same organization where the JAR was uploaded.
+
+
+== See Also
+
+xref:migration-api-gateways.adoc[Migrating API Gateways]
+
+xref:migration-api-gateways-autodiscovery.adoc[Migrating API Gateways: Autodiscovery]
+
+xref:migration-api-gateways-runtime-config.adoc[Migrating API Gateways: Mule Runtime Configuration]
+
+xref:migration-core.adoc[Migrating Core Components]
