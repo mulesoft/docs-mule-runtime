@@ -1,0 +1,72 @@
+= Batch Job Instance ID
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: connectors, anypoint, studio, batch, batch processing
+
+Users of batch processing frequently need the ability to determine a Batch job's instance ID during the execution phases of a Batch job.
+
+The Batch job instance ID is useful to:
+
+* Pass the local job instance ID to an external system for referencing and managing data
+* Improve the job’s custom logging
+* Send email or SMS notifications for meaningful events
+
+== Example
+
+Mule exposes the batch job instance ID through a flow variable of key `batchJobInstanceId`. That flow variable is available at the beginning of the input phase. The flow variable is also available in every step and in the on-complete phase.
+
+image::batch-job-instance-id-c4362.png[]
+
+The log output produces the following:
+
+com.mulesoft.mule.runtime.module.batch.internal.engine.DefaultBatchEngine: Created instance '7dc5cad0-ab09-11e8-a790-9801a7b055d3' for batch job 'CreateLeadsBatch'
+
+
+== Custom Batch Job Instance ID
+
+You can use a Mule expression to specify a unique identifier for each batch job by passing a *Job Instance Id* attribute that takes a MEL expression. +
+Note that constant values are not allowed for batch jobs and if the MEL expression returns a previously seen value, Mule throws an exception and does not create the job instance.
+If you don't set a job instance ID, Mule auto generates a UUID to assign to your instance.
+
+The UUID generated for the job instance described above is `ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d`. As you can tell, it's not a human readable identifier making it hard to correlate to an actual execution and considering you could be running multiple jobs at the same time, this ID is not meaningful at all.
+
+In order to guarantee uniqueness, you can set the Job Id to take server date through the MEL expression: +
+`#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]`.
+
+This names the execution instance `Job From 15/01/16 05:23:12`.
+
+[source,text,linenums]
+----
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Created instance Job From 15/01/16 05:23:12 for batch job contacts-to-SFDCBatch
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Starting input phase
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Input phase completed
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Starting loading phase for instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Finished loading phase for instance Job From 15/01/16 05:23:12 of job contacts-to-SFDCBatch. 3 records were loaded
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Started execution of instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+----
+
+The logs of a properly identified instance are easier to read.
+
+[source,xml,linenums]
+----
+<batch:job jobName="CreateLeadsBatch" maxFailedRecords="1000" jobInstanceId="#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]">
+	<batch:process-records >
+		<batch:step name="LeadExistsStep">
+			...
+		</batch:step>
+
+		<batch:step name="LeadInsertStep" acceptExpression="vars.leadNotFound">
+			...
+		</batch:step>
+	</batch:process-records>
+	<batch:on-complete >
+		...
+	</batch:on-complete>
+</batch:job>
+----
+
+== See Also
+
+* xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing]
+* xref:batch-code-exmaple.adoc[Complete Batch Example]
