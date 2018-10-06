@@ -1,0 +1,258 @@
+= Perform a Migration to Mule 4
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+//TODO: FOR GA, REMOVE *Beta* FROM GA VERSION
+*Beta Release: Mule Migration Tool and Compatibility Module*
+
+MuleSoft recommends that you follow this migration path from Mule 3 to Mule 4.
+
+[[min_reqs]]
+== Requirements
+
+Minimum requirements for a migrated app:
+
+* Studio 7.2.x (with support for Mule Runtime 4.1.3 or above).
++
+You can check your Studio version by navigating to
+*Anypoint Studio -> About Anypoint Studio*.
+
+The tool migrates Mule apps that use these versions of the Mule runtime:
+
+* 3.9.x
+* 3.8.x
+
+See also, <<unsupported_projects>>.
+
+[[premigration_tasks]]
+
+== Pre-Migration Tasks
+
+If your app is using DataMapper, MuleSoft recommends that you migrate to DataWeave
+before running the Mule Migration tool. See <<datamapper>>.
+
+[[run_tool]]
+== Running the Mule Migration Tool
+
+//TODO: FOR GA, REMOVE NOTE AND REVISE CONTENT TO DESCRIBE STUDIO WORKFLOW
+*Note on the Beta release*: For the Beta release, the migrator is a command-line
+utility (packaged as an executable JAR file). After the Beta program, the
+Mule Migration tool will be released as part of Studio. You will then be able
+to perform migrations through Studio, rather than from the command line.
+
+//TODO: GET A JAR NAME THAT IS MORE LIKE WHAT CUSTOMERS WILL SEE
+//TODO: LINK OUT TO STUDIO IMPORT STEPS.
+To run the Mule Migration tool:
+
+. Make sure that the required software is installed
+(see <<min_reqs, Requirements>>).
+. In your console, provide a command that specifies all the required <<options>>,
+for example:
++
+.Command-line Invocation
+[source,console,linenums]
+----
+$ java -jar mule-migration-tool-runner-0.2.0.jar \
+ -projectBasePath /Users/me/AnypointStudio/workspace-studio/my-v6-project \
+ -muleVersion 4.1.3 \
+ -destinationProjectBasePath /Users/me/my-dir/my-migrated-project
+----
++
+Note that for `-destinationProjectBasePath` option, the folder (for example,
+`my-migrated-project`) in which to place the migrated must _not_ exist. The tool
+will create it. If you point to a folder that exists already, the migration will
+fail an error like this: `Exception: Destination folder already exists.`
++
+When the migrator runs successfully, you will see a message something like this:
++
+.Successful Migration
+[source,console,linenums]
+----
+Executing migration...
+...
+========================================================
+MIGRATION SUCCESS
+========================================================
+Total time: 11.335 s
+Migration report:
+/Users/me/my-dir/my-migrated-project/report/summary.html
+----
++
+. Import the project to a supported version of Studio
+(see <<min_reqs, Requirements>>).
++
+In Studio, you can import the project by going to *File -> Import*, then from the
+dialog that opens, *Anypoint Studio -> Anypoint Studio Project from File System*.
++
+. Open and check the Migration report (`summary.html`) at the path provided in
+the console output  (under your
+  `_destinationProjectBasePath_/report/summary.html`).
++
+To understand errors and warnings in the Migration report, see
+xref:migration-report.adoc[Mule Migration Report].
++
+Also note that the same information is provided as comments in the
+Mule Configuration XML files for your project that the Mule Migration tool
+outputs.
++
+. Address the errors in the report, and address the warnings before deploying
+the migrated app to a production environment.
++
+The migrated app will not run in Studio if there are any unresolved
+errors in it.
++
+The xref:migration-tool.adoc#compatibility_module[Compatibilty module] can work
+around warnings until you or your team can address them with permanent fixes.
+However, addressing the warnings is important for improving the performance of
+the flows, so you should treat warnings the same way you treat errors before you
+deploy your app to a production environment.
++
+For guidance with errors on unsupported connectors, see <<migrating_unsupported_connectors>>.
++
+. Identify and consider additional migration steps where the automated migration
+by the tool can be improved. See
+xref:migration-tool-post-mig.adoc[Post-Migration Tasks] and
+<<devkit>>.
++
+This step includes removing Compatibility module components from the project XML.
++
+. Run any migrated MUnit tests.
++
+See <<munit, Testing the Migrated App>>.
+
+[[domains]]
+== Domains
+
+For domains and applications included in that domain, a migrator execution is needed for each artifact (the domain and each app).
+
+. For the migration of the domain, run the migrator as you would for an app:
++
+.Command-line Invocation
+[source,console,linenums]
+----
+$ java -jar mule-migration-tool-runner-0.2.0.jar \
+ -projectBasePath /Users/me/AnypointStudio/workspace-studio/my-v6-domain-project \
+ -muleVersion 4.1.3 \
+ -destinationProjectBasePath /Users/me/my-dir/my-migrated-domain-project
+----
++
+. For each application that belongs to that domain run the migrator with the additional parameter `parentDomainBasePath` pointing to the unmigrated parent domain:
++
+.Command-line Invocation
+[source,console,linenums]
+----
+$ java -jar mule-migration-tool-runner-0.2.0.jar \
+ -projectBasePath /Users/me/AnypointStudio/workspace-studio/my-v6-project \
+ -parentDomainBasePath /Users/me/AnypointStudio/workspace-studio/my-v6-domain-project \
+ -muleVersion 4.1.3 \
+ -destinationProjectBasePath /Users/me/my-dir/my-migrated-project
+----
+
+[[options]]
+== Command-line Options
+
+The migrator is a command-line tool. You simply input a Mule 3 project and
+target version and then output the results.
+
+.Command-line Options
+|===
+| `-destinationProjectBasePath <arg>` | Required. Directory for the migrated
+project that includes a destination folder for the migrated project, for
+example, `/path/to/my/destination-folder`. The tool will create the
+`destination-folder`. It will produce an error if `destination-folder` already
+exists.
+| `-help` | For displaying the help.
+| `-muleVersion <arg>` | Required. The Mule version to which you are migrating: `4.1.3`.
+| `-projectBasePath <arg>` a| Required. Directory of the project to migrate.
+
+To discover the path to your Mule 3 project from Studio, you can go to
+*File -> Switch Workspace -> Other...*, copy the path that appears in
+the *Workspace* field. You need to append the name of your project
+to that path when you use it as the `<arg>`
+to `-projectBasePath`, for example:
+
+`-projectBasePath /Users/me/AnypointStudio/workspace-studio/my-v6-project`
+|===
+
+Whenever the tool adds an entry to the report (either error or warning), the
+same information is also added as a comment in the Configuration XML file for the
+project.
+
+[[munit]]
+=== Testing the Migrated App
+
+Automatic migration of MUnit tests is supported by this tool, so the first step
+should be to run those migrated tests. Once those tests are all passing, you
+can perform any additional testing that you were already performing on the
+original version of the app.
+
+In either case, do expect some of these tests to fail. Manual intervention might
+be required to deal with additional details that are not automatically handled
+by the tool.
+
+[[datamapper]]
+== Migrating from the DataMapper to DataWeave
+
+DataMapper is not supported by the Mule Migration tool. However, you can
+use the DataWeave Migrator tool.
+
+. Before migrating to Mule 4, migrate your DataMapper transformations to
+DataWeave using the
+xref:3.8@mule-runtime::dataweave-migrator.adoc[DataWeave Migrator Tool]
+(available for Mule 3.7, 3.8, and 3.9).
+. Run the Mule Migration tool.
+
+[[migrating_unsupported_connectors]]
+== Migrating Unsupported Connectors
+
+When the Migration report produces the following ERROR, you need to
+migrate the connector manually:
+
+`The migration of _some-connector_ is not supported`
+
+To manually migrate such a connector:
+
+. xref:connectors::common-add-module-task.adoc[Add the equivalent connector] for
+Mule 4 to the app.
+. Refer to the connector documentation for both Mule 3 and Mule 4 to determine
+the correct mappings for the connector:
+.. If the connector has a `config` element, add a new configuration that is
+equivalent to that of the Mule 3 app.
+.. Migrate the sources and inbound endpoints to the source that are provided
+by the connector for Mule 4.
+.. Migrate the operations and outbound endpoints to the operations provided
+by the connector for Mule 4.
+.. Migrate any expressions that use the inbound properties that are set by a
+source or operation of a connector in Mule 3 to refer to the `attributes`,
+instead.
+
+For custom connectors built with DevKit, see <<devkit, Migrating Custom DevKit Connectors>>.
+
+[[devkit]]
+== Migrating Custom DevKit Connectors
+
+Mule apps might contain custom-made DevKit connectors. Though the
+tool cannot migrate them, the xref:1.1@mule-sdk::dmt.adoc[DevKit Migration tool]
+is available to convert these DevKit projects to Mule 4 SDK ones. After
+migrating them, you then need to:
+
+* Manually add the migrated modules to the app's `pom.xml`.
+* Manually adapt all the uses of such connectors.
+
+[[unsupported_projects]]
+== Migrating from Unsupported Runtime Versions
+
+If you want to migrate apps that are currently running on unsupported
+runtime versions such as 3.7.x, 3.6.x or before, you can still use the migrator. However, a greater ratio of migration errors, unsupported patterns, or
+incorrect code generation is to be expected.
+
+Although MuleSoft will not officially support these cases, it is probably a
+good idea to try the tool on them anyway. Dealing with limitations is likely
+to be much easier than dealing with a completely unaided migration.
+
+== See Also
+
+xref:migration-tool.adoc[Migration to Mule 4]
+
+xref:migration-tool-post-mig.adoc[Post-Migration Tasks]
