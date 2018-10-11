@@ -1,0 +1,274 @@
+= Post-Migration Tasks
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+//TODO: FOR GA, REMOVE *Beta* FROM GA VERSION
+*Beta Release: Mule Migration tool and Compatibility Module*
+
+The Migration tool performs migrations on individual components, connectors, and
+modules. In some cases, you can make improvements to the migrated application by taking into account the flow or project as a whole.
+
+This section focuses on *recommended* post-migration tasks to perform after
+using the Migration tool, incorporating the Compatibility module (see
+xref:migration-tool.adoc[Migration to Mule 4]) as needed, and
+performing any manual migration steps indicated in the Migration report.
+
+//TODO: REMOVE WHEN BETA IS OVER.
+*Note on the Beta Release:* This page might be augmented periodically during the
+Beta period based on feedback and recommendations.
+
+[[mel_expressions]]
+== MEL Expressions (Manual Post-Migration Steps)
+
+Most MEL expressions are migrated to xref:dataweave.adoc[DataWeave] by the Migration
+tool. However, some operators or MEL constructs are not supported by the migrator
+to generate the equivalent DataWeave automatically.
+
+For example, the expressions in the next Output examples receive the `mel:` prefix
+from the migrator. The Compatibility module includes the MEL language from Mule 3,
+so these expressions still work. The Manual Modification examples show how to
+manually migrate the expressions in the Output examples to Mule 4.
+
+.Example 1: Output of the Migration Tool
+[source]
+----
+#[mel:flowVars.booleanVar ? 1 : 0]
+----
+
+.Example 2: Manual Modification to the Output of the Migration Tool
+[source]
+----
+#[if (vars.booleanVar) 1 else 0]
+----
+
+.Example 1: Output of the Migration Tool
+[source]
+----
+#[mel:Map m = new HashMap<>(); m.put(“key”, “value”); return m;]
+----
+
+.Example 2: Manual Modification to the Output of the Migration Tool
+[source]
+----
+#[{‘key’, ‘value’}]
+----
+
+See also, xref:migration-mel.adoc[Migrate from MEL to DataWeave].
+
+=== Using the Scripting Module to Migrate procedural MEL Expressions
+
+Some MEL expressions are not simply expressions but actually procedural scripts,
+so they cannot be migrated seamlessly to a functional language such as DataWeave.
+For these cases, you should use the
+xref:connectors::scripting/scripting-module.adoc[Scripting module] and
+migrate the MEL script to a language supported by the Scripting module.
+
+.Example: Output of the Migration Tool
+[source,XML,linenums]
+----
+<expression-component><![CDATA[
+if(flowVars.fail) {
+    throw new IllegalStateException(“var fail is set to true”);
+} else {
+    payload = “Some Result”;
+}
+]]></expression-component>
+----
+
+.Example: Manual Modification to the Output of the Migration Tool
+[source,XML,linenums]
+----
+<script:execute engine="groovy">
+    <script:code><![CDATA[
+if(vars.fail) {
+    throw new IllegalStateException(“var fail is set to true”);
+} else {
+    payload = “Some Result”;
+}
+    ]]></script:code>
+</script:execute>
+----
+
+Note that the content might look similar because MEL and Groovy syntax are
+both Java-based, but always test that the behavior of any migrated script
+is maintained.
+
+[[inbound_properties]]
+== Inbound Properties (Manual Post-Migration Steps)
+
+Instead of relying on the Compatibility module to handle inbound properties (see
+xref:intro-mule-message.adoc#inbound-properties-are-now-attributes[Inbound Properties Are Now Attributes])
+and on the `mel:` syntax to allow MEL expressions in Mule 4, it is recommended that you follow each
+of these steps on the Migration tool output:
+
+. Remove `<compatibility:attributes-to-inbound-properties/>` elements.
+. Replace uses of `inboundProperties` in MEL expressions with a DataWeave 2.0 expression.
+. Replace uses of `vars.compatibility_inboundProperties[‘propName’]` with a reference to a Message attribute value.
+
+This example shows modifications to inbound properties from an HTTP listener:
+
+.Example: Output of the Migration Tool
+[source,XML,linenums]
+----
+<http:listener config-ref="myHttp"/>
+<compatibility:attributes-to-inbound-properties/>
+<logger message="#[vars.compatibility_inboundProperties['http.request']]">
+<logger message="#[mel:message.inboundProperties['http.request']]">
+----
+
+.Example: Manual Modification to the Output of the Migration Tool
+[source,XML,linenums]
+----
+<http:listener config-ref="myHttp"/>
+<logger message="#[message.attributes.requestPath]">
+<logger message="#[message.attributes.requestPath]">
+----
+
+[[outbound_properties]]
+== Outbound Properties (Manual Post-Migration Steps)
+
+If an outbound property is _not_ set in a flow, you can safely remove any
+usage of that outbound property (see
+xref:intro-mule-message.adoc#outbound-properties[Outbound Properties]).
+For example, you can remove the `status` attribute from an HTTP listener and
+rely on the default for the listener _if_ an `http.status` outbound property is
+never set in the flow.
+
+//TODO: A BEFORE/AFTER EXAMPLE HERE WOULD HELP NICE.
+
+If a property is set in the flow, you need to move the expression that sets the
+property into the attribute of the operation or source where it is used. For
+example, you might modify the XML output of the Migration tool:
+
+.Example: Output of the Migration Tool
+[source,XML,linenums]
+----
+<compatibility:set-property propertyName="http.method" value="#[if(get) 'GET' else 'PUT']"/>
+...
+<http:request config-ref="myHttp" method="#[vars.compatibility_outboundProperties['http.method']]"/>
+----
+
+The next example moves the expression that sets the `http.method` property
+(shown in the example above) to the `method` attribute of the `http:request`
+operation where it is used.
+
+.Example: Manual Modification to the Output of the Migration Tool
+[source,XML,linenums]
+----
+<http:request config-ref="myHttp" method="#[if(get) 'GET' else 'PUT']"/>
+----
+
+Note that in Mule 3, the outbound property can be set by any component or inside
+a referenced flow. This kind of complexity makes the manual step necessary
+because the Migration tool does not have the full context to interpret the
+semantics of an application.
+
+[[session_variables]]
+== Session Properties (Manual Post-Migration Steps)
+
+Because transport barriers do not exist in Mule 4, Session properties are no longer needed and have been removed in Mule 4. After running the Migration tool
+on a Mule app that uses Session properties, you should store data in variables (`vars`).
+
+To migrate Session properties to variables:
+
+* Migrate `compatibility:set-session-variable` processors to `set-variable`.
+* Migrate `compatibility:remove-session-variable` processors to `set-variable`.
+* Replace uses of the Session property in expressions with a variable.
+* In the connectors migrated from transports (for example, File, VM, JMS, HTTP connectors), make sure to pass these migrated variables to the operation or the response builder of the source.
++
+The way to accomplish this varies by connector. For HTTP, you can use headers. For JMS, you can use message properties. For VM, you can use the body expression.
++
+* For sources that receive Session information, read the information as it was set on the previous step and set the needed variables.
+
+.Example: Output of the Migration Tool
+[source,xml,linenums]
+----
+<flow="sessionExampleFlow">
+  <compatibility:set-session-variable variableName="token" value="1234" />
+  <compatibility:outbound-properties-to-var/>
+  <http:request config-ref="flowRequestConfig" method="GET" path="/">
+    <http:headers>
+        #[migration::HttpRequester::httpRequesterTransportHeaders(vars)]
+    </http:headers>
+  </http:request>
+  <compatibility:attributes-to-inbound-properties/>
+</flow>
+
+<flow="sessionExampleFlowListener">
+  <http:listener config-ref="flowListenerConfig" path="/">
+    <http:response statusCode="200">
+      <http:headers>#[migration::HttpListener::httpListenerResponseHeaders(vars)]</http:headers>
+    </http:response>
+  </http:listener>
+  <compatibility:attributes-to-inbound-properties/>
+  <logger message="#[mel:sessionVars['token']]"/>
+  <compatibility:remove-session-variable variableName="token" />
+  <compatibility:outbound-properties-to-var/>
+</flow>
+----
+
+.Example: Manual Modification to the Output of the Migration Tool
+[source,XML,linenums]
+----
+<flow="sessionExampleFlow">
+  <set-variable variableName="token" value="1234" />
+  <http:request config-ref="flowRequestConfig" method="GET" path="/">
+    <http:headers>
+      <!-- Because no outbound properties were set before this operation, you do
+          not need the httpRequesterTransportHeaders function anymore -->
+      #[{'token': vars.token}]
+    </http:headers>
+  </http:request>
+</flow>
+
+<flow="sessionExampleFlowListener">
+  <http:listener config-ref="flowListenerConfig" path="/">
+    <http:response statusCode="301">
+      <http:headers>#[migration::HttpListener::httpListenerResponseHeaders(vars)]</http:headers>
+    </http:response>
+  </http:listener>
+  <set-variable variableName="token" value="#[message.attributes.headers.token]" />
+  <logger message="#[vars.token]"/>
+  <remove-variable variableName="token" />
+</flow>
+----
+
+[[inbound_attachments]]
+== Inbound Attachments (Manual Post-Migration Steps)
+
+Expressions that use inbound attachments should use the DataWeave features for
+handling multipart data formats.
+
+.Example: Mule 3
+[source,MEL,linenums]
+----
+#[message.inboundAttachments.get('myAttachment').getDataSource().getInputStream()]
+#[message.inboundAttachments.get('myAttachment').getDataSource().getContentType()]
+#[message.inboundAttachments.get('myAttachment').getDataSource().getPart().getContentDispositionFilename()]
+----
+
+.Example: Mule 4 Modifications
+[source,DataWeave,linenums]
+----
+#[payload.parts.myAttachment.content]
+#[payload.parts.myAttachment.headers.'Content-Type']
+#[payload.parts.myAttachment.headers.'Content-Disposition'.filename]
+----
+
+See xref:dataweave-formats.adoc#format_form_data[Multipart (Form-Data)] in
+_Data Formats Supported by DataWeave_.
+
+[[outbound_attachments]]
+== Outbound Attachments (Manual Post-Migration Steps)
+
+Instead of configuring outbound attachments to send in the next operation of a
+flow or in the response of the source, each operation and source must make
+explicit any attachments that are sent. You can set attachments as variables
+for later reference in an expression.
+
+Refer to the documentation of each connector for details on how to declare
+attachments to be sent. For example, see
+xref:connectors::email/email-list.adoc#getting-data-from-emails[Getting Data from Emails]
+in _Listing Emails with the Email Connector_ and the section on _Attachments_
+in xref:connectors::web-service/web-service-consumer-consume.adoc[To Consume a Web Service].
