@@ -4,7 +4,23 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: lookup, properties, functions
 
-In addition to the built-in DataWeave functions, Mule Runtime and some modules, connectors, and components for Mule apps provide functions that you can use in DataWeave scripts. The functions are specific to the module, connector, and components.
+In addition to the built-in DataWeave functions, Mule Runtime and some modules, connectors, and components for Mule apps provide functions that you can use in
+DataWeave scripts. The functions are specific to the module, connector, and
+components.
+
+[IMPORTANT]
+====
+*Deprecation Notice*:
+
+The functions described in this section are deprecated as of Mule Runtime 4.1.4.
+Instead of using them, MuleSoft recommends using functions of the same name from
+the Mule function module. An important advantage of this change is that you can
+call functions in the Mule module from DataWeave functions and variables,
+instead of only being able to use them within short expressions in Mule
+components.
+
+For details, see xref:dw-mule.adoc[Mule (dw::Mule)].
+====
 
 == Mule Runtime Functions
 
@@ -39,7 +55,65 @@ The specified flow is executed using the current attributes, variables, and
 error. It only replaces the payload for the first parameter, which must be a Java
 type.
 
-Learn more about `lookup` xref:dataweave-lookup.adoc[here].
+= Use `lookup` To Call External Flows
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+From a DataWeave transform, you can trigger the calling of a different flow in your Mule application, and whatever the flow returns is what the expression returns.
+
+You can do this through the following expression:
+
+`lookup("flowName",$)`
+
+Which takes three parameters:
+
+* The name of the flow that must be called
+* The payload to send to this flow
+* The timeout in milliseconds (optional), for the execution of the target flow. +
+If the lookup takes more time than this value, an error is raised.
+If no value is specified, this parameter defaults to 2 seconds if the thread that is executing is CPU_LIGHT or CPU_INTENSIVE, or 1 minute when executing from other threads.
+
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: lookup("mySecondFlow",{b:"Hello"})
+}
+----
+
+.Mule Flow
+[source,xml,linenums]
+----
+<flow name="mySecondFlow">
+    <set-payload doc:name="Set Payload" value="#[payload.b + ' world!' ]"/>
+</flow>
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "Hello world!"
+}
+----
+
+Please note that only the payload returned by the invoked flow will be assigned.
+
+[WARNING]
+====
+Always keep in mind that a functional language like DataWeave expects the invocation of the `lookup` function to _not_ have side effects.
+As such, the internal workings of the DataWeave engine might cause a `lookup` function to be invoked in parallel with other `lookup`s, or not invoked it at all.
+
+The recommended way to invoke flows is with the Flow Ref (`flow-ref`) component, using the `target` attribute to put the result of the flow in a `var` and then referencing that `var` from within the DataWeave script.
+====
+
+Note that `lookup` function does not support calling subflows.
+
 
 === Matching Errors by Types (causedBy Function)
 
@@ -76,10 +150,16 @@ Notice that the error parameter is used both explicitly and implicitly.
 
 == Connector and Component Functions
 
-When using connectors and components in a Mule app, you can inject functions. Unlike the Runtime functions, these functions require a namespace, which usually matches the component name.
+When using connectors and components in a Mule app, you can inject functions.
+Unlike the Runtime functions, these functions require a namespace, which usually
+matches the component name.
 
 For example, in an app using Batch you can use the following expression: `#[Batch::isSuccessfulRecord()]`.
 
 == See Also
 
 xref:dw-functions.adoc[DataWeave Core Functions]
+
+xref:dataweave-types.adoc[DataWeave Types]
+
+xref:dataweave-selectors.adoc[DataWeave Selectors]
