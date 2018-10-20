@@ -1,31 +1,35 @@
-= External Functions Available In DataWeave
+= External Functions Available to DataWeave
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: lookup, properties, functions
+:keywords: lookup, causedby, p, properties, functions
 
-In addition to the built-in DataWeave functions, Mule Runtime and some modules, connectors, and components for Mule apps provide functions that you can use in
-DataWeave scripts. The functions are specific to the module, connector, and
-components.
+In addition to the built-in DataWeave functions, Mule Runtime and some Core
+components and operations in modules and connectors provide functions that
+you can use in DataWeave scripts. The functions are specific to the module,
+connector, and components.
 
-[IMPORTANT]
-====
-*Deprecation Notice*:
-
-The functions described in this section are deprecated as of Mule Runtime 4.1.4.
-Instead of using them, MuleSoft recommends using functions of the same name from
-the Mule function module. An important advantage of this change is that you can
-call functions in the Mule module from DataWeave functions and variables,
-instead of only being able to use them within short expressions in Mule
-components.
-
-For details, see xref:dw-mule.adoc[Mule (dw::Mule)].
-====
-
+[[functions_runtime]]
 == Mule Runtime Functions
 
-These functions are always available since they are injected by the Mule Runtime.
+These functions are injected by the Mule Runtime.
 
+[NOTE]
+====
+For Mule apps that running on Mule Runtime versions _prior_ to version 4.1.4,
+you cannot use Mule Runtime functions in your
+xref:dataweave-create-module.adoc[custom modules].
+
+For Mule apps running on Mule Runtime 4.1.4 and later, you can use them in
+custom modules. You simply append the `Mule` namespace before the function
+(for example, `Mule::p`, `Mule::lookup`, `Mule::causedBy`).
+
+MuleSoft recommends that you start using the Mule Runtime functions with the
+`Mule` namespace in all Mule apps that are running on Mule Runtime 4.1.4 and
+later.
+====
+
+[[function_p]]
 === Accessing Properties (p Function)
 
 The `p` function provides access to properties, whether these are:
@@ -36,31 +40,46 @@ The `p` function provides access to properties, whether these are:
 
 For more on configuring properties and how they are handled, see xref:configuring-properties.adoc[Configure Properties].
 
-The following example will log the value of the property `some.property`.
+The following example logs the value of the property `http.port`.
 
-.Example: Property Function Usage
+.Example: Property Function Usage for Mule 4.1.4 and later
 [source,xml,linenums]
 ----
 <flow name="simple">
-  <logger message="#[p('some.property')]"/>
+  <logger level="INFO" doc:name="Logger"
+    message="#[Mule::p('http.port')]"/>
 </flow>
 ----
 
-=== Executing a Flow (lookup Function)
+Note that in you can also use the function when defining a DataWeave variable
+or function. This example uses the `p` function in the `myVar` definition.
 
-The `lookup` function allows for executing a flow within your app and retrieves the
-resulting payload, taking the flow's name and an input payload as parameters.
+[source,xml,linenums]
+----
+<flow name="simple">
+  <logger level="INFO" doc:name="Logger"
+    message="#[var myVar = Mule::p('http.port') --- myVar]"/>
+</flow>
+----
 
-The specified flow is executed using the current attributes, variables, and
-error. It only replaces the payload for the first parameter, which must be a Java
-type.
+.Example: Property Function Usage for Mule 4.1.3 and Earlier
+[source,xml,linenums]
+----
+<flow name="simple">
+  <logger message="#[p('http.port')]"/>
+</flow>
+----
 
-= Use `lookup` To Call External Flows
-ifndef::env-site,env-github[]
-include::_attributes.adoc[]
-endif::[]
+[[function_lookup]]
+=== Execute a Flow (lookup Function)
 
-From a DataWeave transform, you can trigger the calling of a different flow in your Mule application, and whatever the flow returns is what the expression returns.
+Similar to the Flow Reference component, the `lookup` function enables you to
+execute another flow within your app and to retrieve the resulting payload. It
+takes the flow's name and an input payload as parameters. For example, `lookup("anotherFlow", payload)` executes a flow named `anotherFlow`.
+
+The function executes the specified flow using the current attributes,
+variables, and error. It only replaces the payload for the first parameter,
+which must be a Java type.
 
 You can do this through the following expression:
 
@@ -68,38 +87,45 @@ You can do this through the following expression:
 
 Which takes three parameters:
 
-* The name of the flow that must be called
+* The name of the flow to call
 * The payload to send to this flow
-* The timeout in milliseconds (optional), for the execution of the target flow. +
+* Optional: The timeout (in milliseconds) for the execution of the target flow.
++
 If the lookup takes more time than this value, an error is raised.
 If no value is specified, this parameter defaults to 2 seconds if the thread that is executing is CPU_LIGHT or CPU_INTENSIVE, or 1 minute when executing from other threads.
 
+==== lookup Example
 
-.Transform
-[source,dataweave,linenums]
+This example shows XML for two flows. The `lookup` function in `flow1` executes
+`flow2` and passes the object `{test:'hello '}` as its payload to `flow2`. The
+Set Payload component (`<set-payload/>`) in `flow2` then concatenates the value
+of `{test:'hello '}` with the string `world` to output and log `hello world`.
+
+.Example: Using the `lookup` Function
+[source,XML,linenums]
 ----
-%dw 2.0
+<flow name="flow1">
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config"
+    path="/source"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
 output application/json
 ---
-{
-  a: lookup("mySecondFlow",{b:"Hello"})
-}
-----
-
-.Mule Flow
-[source,xml,linenums]
-----
-<flow name="mySecondFlow">
-    <set-payload doc:name="Set Payload" value="#[payload.b + ' world!' ]"/>
+lookup('flow2', {test:'hello '})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+<flow name="flow2" >
+  <set-payload value='#[payload.test ++ "world"]' doc:name="Set Payload" />
+  <logger level="INFO" doc:name="Logger" message='#[payload]'/>
 </flow>
 ----
 
 .Output
 [source,json,linenums]
 ----
-{
-  "a": "Hello world!"
-}
+hello world
 ----
 
 Please note that only the payload returned by the invoked flow will be assigned.
@@ -109,17 +135,17 @@ Please note that only the payload returned by the invoked flow will be assigned.
 Always keep in mind that a functional language like DataWeave expects the invocation of the `lookup` function to _not_ have side effects.
 As such, the internal workings of the DataWeave engine might cause a `lookup` function to be invoked in parallel with other `lookup`s, or not invoked it at all.
 
-The recommended way to invoke flows is with the Flow Ref (`flow-ref`) component, using the `target` attribute to put the result of the flow in a `var` and then referencing that `var` from within the DataWeave script.
+MuleSoft recommends that youinvoke flows with the Flow Ref (`flow-ref`) component, using the `target` attribute to put the result of the flow in a `var` and then referencing that `var` from within the DataWeave script.
 ====
 
 Note that `lookup` function does not support calling subflows.
 
-
+[[function_causedBy]]
 === Matching Errors by Types (causedBy Function)
 
 The `causedBy` function matches an error by its type, like an error handler
 does. This is useful when matching by a super type is required but specific sub-type
-logic also needed or when handling a `COMPOSITE_ROUTING` error that contains child
+logic is also needed or when handling a `COMPOSITE_ROUTING` error that contains child
 errors of different types.
 
 The error to match against can be implicit, but the type is always a required parameter.
@@ -128,7 +154,25 @@ In the following example, a global error handler is set up to handle `SECURITY`
 errors in a general way, while specific actions are set up for `HTTP:UNAUTHORIZED`
 and `HTTP:FORBIDDEN` errors.
 
-.Example: Error Matcher Function Usage
+.Example: Error Matcher Function Usage in Mule Runtime Version 4.1.4 and Later
+[source,xml,linenums]
+----
+<error-handler name="securityHandler">
+  <on-error-continue type="SECURITY">
+    <!-- general error handling for all SECURITY errors -->
+    <choice>
+      <when expression="#[error Mule::causedBy 'HTTP:UNAUTHORIZED']">
+        <!-- specific error handling only for HTTP:UNAUTHORIZED errors -->
+      </when>
+      <when expression="#[Mule::causedBy('HTTP:FORBIDDEN')]">
+        <!-- specific error handling only for HTTP:FORBIDDEN errors -->
+      </when>
+    </choice>
+  </on-error-continue>
+</error-handler>
+----
+
+.Example: Error Matcher Function Usage in Mule Runtime Version 4.1.3 and Earlier
 [source,xml,linenums]
 ----
 <error-handler name="securityHandler">
