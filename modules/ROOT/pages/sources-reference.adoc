@@ -1,0 +1,69 @@
+= Mule Sources
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, flow, source, sources, redelivery, policy
+
+Sources are a very important part of any Mule Application. When added to a flow, they serve as the entry point for information,
+linking any external communication protocol with internal Mule processing.
+
+Examples of sources are:
+
+* HTTP:Listener
+* FILE:Inbound-endpoint
+* AMQP:Consume
+
+== Configuring Sources
+
+Even though each source implementation will have different configuration parameters, there are some common ones worth mentioning.
+
+=== Redelivery Policy
+
+Each source can be configured with a redelivery policy. That way, an user can add some logic on how to handle messages that arrive at the source multiple times and cause exceptions.
+
+For example:
+[source,xml]
+----
+<http:listener path="exhaustRedelivery" config-ref="listenerConfig">
+    <redelivery-policy maxRedeliveryCount="${maxRedeliveryCount}" idExpression="#[vars.idExpression]"/>
+</http:listener>
+----
+
+==== Redelivery Policy Configuration Parameters
+
+[%header,cols="20a,20a,20a,60a"]
+|===
+|Field |Type |Default Value |Description
+|*Max Redelivery Count* |Number |5 |The maximum number of times a message can be redelivered and processed unsuccessfully before triggering process-failed-message
+|*Use Secure Hash* |Boolean |True |Whether to use a secure hash algorithm to identify a redelivered message.
+|*Message Digest Algorithm* |String |SHA-256 |The secure hashing algorithm to use.
+|*ID Expression* |Expression|- | Defines one or more expressions to use to determine when a message has been redelivered.This property may only be set if useSecureHash is false.
+|*Object Store* |String |An Object Store created by the ObjectStoreManager. Non-persistent, with an entryTtl of 300 SECONDS and an expiration interval of 6 SECONDS |The object store where the redelivery counter for each message is going to be stored. It can be a reference of a private-object-store can be created as child element.
+|===
+
+==== Redelivery policy functionality
+
+The redelivery policy configured will work as follows:
+
+Each time a new message is received by the source, it will be digested (A key will be generated from the message), either by using the configured Message Digest Algorithm or by evaluating the ID Expression. +
+If the message causes an exception, a counter associated with it will be incremented. Once the counter reaches a value bigger than the configured maxRedeliveryCount, an `MULE:REDELIVERY_EXHAUSTED` error will be thrown. +
+If the message does not cause an exception, it's counter will be reset.
+
+==== Examples
+
+Suppose that we want to log some information when a maxRedeliveryCount is reached.
+
+[source,xml]
+----
+<flow name="logOnRedeliveryExhausted">
+    <http:listener path="test" config-ref="listenerConfig">
+        <redelivery-policy maxRedeliveryCount="2" useSecureHash="true"/>
+    </http:listener>
+    <flow-ref name="processData"/>
+    <error-handler>
+        <on-error-continue type="MULE:REDELIVERY_EXHAUSTED">
+            <logger message="Redelivery exhausted in http listener" level="ERROR"/>
+        </on-error-continue>
+    </error-handler>
+</flow>
+----
