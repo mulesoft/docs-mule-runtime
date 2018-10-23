@@ -1,60 +1,218 @@
-= About Mule Runtime 4.x
+= Mule Runtime Overview
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: mule, getting started, transform, message, payload
 
-// This guide offers information about how to use Mule Runtime, commonly called Mule, or Mule ESB to integrate systems, orchestrate web services and configure the runtime environment.
+Mule Runtime (or Mule) is a lightweight integration engine that runs Mule apps.
+Rather than creating multiple point-to-point integrations between systems,
+services, APIs, and devices, Mule apps manage message routing, data mapping,
+orchestration, reliability, security, and scalability between nodes.
 
-Mule is a lightweight integration engine that runs Mule apps. Rather than creating multiple point-to-point integrations between systems, services, APIs, and devices, you use Mule to create apps that manage message routing, data mapping, orchestration, reliability, security, and scalability between nodes.
+== Event-Driven Architecture
 
-The runtime defines the rules for how event data is handled in an application.  Mule apps receive events, then process and route them to other endpoints.
+Mule works by responding to events that are initiated by external or internal
+resources. Mule works with a variety sources, including listeners for external
+events, and schedulers for internally triggered events.
 
-Developing with Mule You Can...
+Mule processes events as messages through Event processors. Mule can also
+handle a high volume of messages in batches through Batch processors.
 
-* Deploy or integrate apps or systems on premise or in the Cloud.
-* Employ out-of-the-box connectors to create SaaS integration apps.
-* Build and expose APIs.
-* Consume APIs.
-* Create Web services that orchestrate calls to other services.
-* Create interfaces to expose apps for mobile consumption.
-* Integrate B2B with solutions that are secure, efficient, and quick to build and deploy.
-* Shift apps to the Cloud.
-* Connect B2B e-commerce activities.
+This behavior reflects Mule's event-driven architecture (EDA). For more
+on this topic, see xref:about-mule-event.adoc[Mule Events].
 
-== About the Non-blocking Execution Engine
+[[flows]]
+== Flows
 
-The Mule execution engine is based on a non-blocking runtime. This is a task-oriented execution model that allows you to take advantage of non-blocking IO calls and to avoid performance problems.
+Within a Mule app, event processing components are arranged into one or
+more container-like components, called flows.
 
-Flows always function synchronously. If you need to achieve asynchronous patterns, such as Fire-and-Forget, you can use the Async (`<async>`) component.
+Understanding basic flow architecture is key to understanding Mule.
+Essentially, every Mule flow contains a series of components that
+receive or process messages.
 
-Each Mule event processor can inform the runtime if it is CPU intensive, CPU light, or an IO intensive operation. This helps the runtime self-tune for different workloads dynamically, removing the need for you to manage thread pools manually to achieve optimum performance.
+.Simple Flow in Design Center
+image::flow-example.png[Simple Flow in Design Center]
 
-== About Thread Pool Executor (Schedulers) Configuration
+At the simplest level, flows are sequences of Event processors. A message
+that enters a flow can pass through a variety of processors. In a typical
+flow, a Mule app receives a message through an Event source (such as an
+HTTP listener), transforms that message into a new format, and processes
+any business logic before writing the processed message to an external
+system in a format that the system can read.
 
-You can configure schedulers (thread pool executors) through the well-commented `schedulers.conf` file in the standalone Mule EE installation.
+To break up processing into more manageable units, Mule apps often contain
+multiple, interrelated flows, instead of just a single flow. A flow can call
+another flow as a direct reference.
 
-// TODO: NOT SURE IF THIS WILL BE READY FOR RC: It is also possible to configure the same attributes in the Mule EE XSD file.
+For more on this topic, see xref:about-flows.adoc[Flows and Subflows] and
+xref:mule-application-about.adoc[Mule Applications].
 
+== Event Sources
 
-// == Mule Reference Material
-//
-// Learn more about Mule features and configuring applications that run on Mule.
-//
-// * link:reference[Reference]
-// * link:publishing-and-consuming-apis-with-mule[Publishing and Consuming APIs with Mule]
-// * xref:business-events.adoc[Business Events]
-// * link:using-maven-with-mule[Using Maven with Mule]
-// * link:improving-performance-with-the-kryo-serializer[Improving Performance with the Kryo Serializer]
-// * xref:error-handling.adoc[About Error Handling]
-// * link:batch-processing[Batch Processing]
-// * xref:transaction-management.adoc[Transaction Management]
-// * link:adding-and-removing-user-libraries[Adding and Removing User Libraries]
-// * xref:shared-resources.adoc[Shared Resources]
-// * link:mule-versus-web-application-server[Mule versus Web Application Server]
+An Event source (or trigger) is the first component in a flow. It
+receives a triggering event, creates a corresponding Mule event object,
+and forwards that event on for processing by the next component in the flow.
 
-== See Also
+External clients can trigger processing in a Mule flow through a number of
+communication protocols and methods, such as JMS, HTTP, FTP, JDBC, or File.
+Mule translates these communication protocols and methods into a standard
+Message format, which passes through the flow's Event processors.
 
-* xref:mule-application-about.adoc[About the Mule Application]
-//COMBAK: Enable download link when standalone beta is available
-//* link:downloading-and-starting-mule-esb[Download and Start Mule Runtime]
+Event sources in Mule can connect to specific external sources, either through
+a standard protocol or a third-party API. It is also possible to set a Scheduler.
+Some schedulers can poll for specific changes to external resources, such as new files
+or table rows in an external resource. Examples of listeners and connector operations
+that can trigger a flow include these:
+
+* HTTP, JMS, VM listeners in their associated connectors
+* On Table Row operation in the Database connector
+* On New or Updated File operation in the File and FTP connectors
+* Scheduler
+
+Note that you can also create your own Event source using the
+xref:1.1@mule-sdk::index.adoc[Mule SDK].
+
+== Event Processors
+
+Once a flow is triggered through an Event source, subsequent components process
+the Mule event as it travels through the flow. By default, each Event processor
+that receives a Mule event returns a new Mule message, typically with a set
+of attributes and the message payload that the processor returns. The processor
+passes on the new message as output to the next processor in the flow.
+
+Event processors available to Mule apps include these:
+
+* Operations from modules and connectors. Examples include reading from and
+writing to an external resource and validating data in the Mule app.
++
+Some operations can make client requests to external resources and services
+(including external databases and systems, such as Salesforce, Workday,
+ServiceNow, and many others) and to other Mule apps. Others can run your
+custom code, support OAuth configurations, and handle communication through
+asynchronous queues, for example. A variety of other operations are
+available.
++
+* Core components can route data, perform data transformations, handle errors
+that might occur when processing the event, and perform other tasks in a
+Mule app.
++
+Transformers (such as the Transform Message, Set Variable, and others) are
+key to exchanging data between nodes. Transformers enable Mule to convert
+message data in the Mule event to a format that another app or service can
+read.
++
+Mule also enables content enrichment of messages (through
+xref:target-variables.adoc[Target Parameters]) so that you can retrieve
+additional data and attach it to the message.
+
+Note that you can also create your own Event processors using the
+xref:1.1@mule-sdk::index.adoc[Mule SDK].
+
+For more on this topic, see xref:about-components.adoc[Core Components]
+and xref:connectors::index.adoc[Connectors and Modules].
+
+//image::flow1-1.png[Flow1-1]
+
+=== Anypoint Studio and Design Center
+
+You can design Mule apps in Anypoint Studio, in Design Center, or even with
+handwritten XML. Studio and Design Center UIs represent message processors as
+icons within flow components. Studio also represents them as XML elements in a
+Configuration XML.
+
+////
+The example below is a simple flow created in Anypoint Studio's visual editor;
+click the *XML Editor* tab to view the XML of a Mule project that holds the same
+flow.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::simple-flow2.png[simple+flow2]
+
+[discrete.view]
+=== XML Editor
+
+[source,xml,linenums]
+----
+include::{examplesdir}/mule-concepts.xml[]
+----
+=====
+////
+
+For more on this topic, see
+xref:design-center::about-designing-a-mule-application.adoc[Mule Flow Design (Design Center)]
+and xref:7.2@studio::index.adoc[Anypoint Studio].
+
+[[dataweave]]
+== DataWeave
+
+DataWeave is the primary language used for formulating expressions in Mule.
+Within fields of many message processing components, in addition to the
+Transform Message component, you can use DataWeave to access, manipulate,
+transform, and extract data from the Mule event.
+
+At runtime, Mule evaluates expressions while executing a flow to:
+
+* Extract data needed to process the current message.
+* Set or manipulate a value in the message.
+
+For more on this topic, see xref:dataweave.adoc[DataWeave Language].
+
+== Batch Processing
+
+Mule supports batch jobs, which split messages into individual records,
+act on each record, then report the results and, if necessary, push the processed
+output to other systems or queues. This functionality is particularly useful when
+working with streaming input or when engineering "near real-time" data integration
+between SaaS applications.
+
+Studio and Design Center provide various batch components that you can use to
+configure batch processes. For more on this topic, see
+xref:batch-processing-concept.adoc[Batch Processors].
+
+== Non-blocking Execution Engine
+
+The Mule execution engine is based on a non-blocking runtime. This is a
+task-oriented execution model that allows you to take advantage of non-blocking
+IO calls and to avoid performance problems.
+
+Flows always function synchronously. If you need to achieve asynchronous
+patterns, such as Fire-and-Forget, you can use the Async (`<async>`) component.
+
+Mule Event processors indicate to the runtime whether they are CPU intensive,
+CPU light, or IO intensive operations. These workload types help the runtime tune
+for different workloads, removing the need for you to manage thread pools manually
+to achieve optimum performance. Instead, the runtime introspects the available
+resources (such as memory and CPU cores) in the system to tune thread pools
+automatically.
+
+=== Thread Pool Configuration
+
+You can configure thread pools to be used by schedulers through the
+well-commented `schedulers.conf` file in the standalone Mule EE
+installation. For example, you can modify the formulas for the
+different kinds of pool sizes.
+
+////
+Generally speaking, event processing components process business logic, such as
+checking customer and inventory databases. These components route messages to the
+correct application, such as an order fulfillment system. Importantly,
+event processors do not necessarily require Mule-specific code. For example,
+MuleSoft provides event processing components that support POJOs, Spring beans,
+Java beans, Groovy scripts, and web services that contain the business logic
+for processing data. It is also possible to develop custom modules to
+support other languages, such as Python, JavaScript, Ruby, or PHP. MuleSoft's
+catalog event processing components support the most commonly used
+Enterprise Integration Patterns.
++
+Some event processors provide ways to filter source data (such as files or
+email) so that you only deal with the data that your use cases require. Some
+event processors also serve as scopes that "wrap" around other event
+processors and cache the result of their processing. You can use routers to
+send messages on different paths in your app, depending on the content of
+the message payload.
+////
