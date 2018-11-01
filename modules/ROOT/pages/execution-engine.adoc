@@ -1,0 +1,104 @@
+= Execution Engine
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: mule, threading, scheduler, non-blocking
+
+The Mule execution engine is implemented on top of 
+https://projectreactor.io[Project Reactor], providing the foundation for the 
+non-blocking runtime. This implementation is a task-oriented execution model, 
+where each operation inside a flow is a task that provides metadata about its 
+execution, and the engine makes tuning decisions based on that metadata.
+
+[[processing_types]]
+== Processing Types
+
+Mule Event processors indicate to the runtime what kind of work they do, which 
+may be one of:
+* *CPU Light*: For quick operations, or Non-Blocking IO. (i.e.: `logger`, 
+`http:request`)
+* *Blocking IO*: For IO that blocks the calling thread. (i.e.: `db:select`)
+* *CPU Intensive*: For CPU-bound computations. (i.e.: `ee:transform`)
+
+Please refer to the documentation of a specific component to know what kind of 
+processing type it has. If none is specified, the default is *CPU Light*.
+
+// link to https://docs.mulesoft.com/mule-sdk/1.1/non-blocking-operations#execution-types
+For connectors done with the Mule SDK, the SDK will determine the most 
+appropriate processing type based on how the connector is implemented. For 
+details on that mechanism, please refer to the SDK documentation.
+
+[[threading]]
+== Threading
+
+Based on the Processing type of a component, the runtime will execute that 
+component on a thread pool specifically tuned for that kind of work. These 
+thread pools are managed by the runtime and shared across all apps in the same 
+runtime. When started, the runtime introspects the available resources (such 
+as memory and CPU cores) in the system to tune thread pools automatically for 
+the environment where it is running.
+
+This different thread pools allows the runtime to be efficient, requiring a 
+lot less of threads (and its inherent memory footprint) to handle a given work 
+load compared to Mule 3.
+
+In the case where the default thread pools configuration is not fit for a 
+particular usage, they can be configured through the well-commented 
+`schedulers.conf` file in the `conf` folder of the standalone Mule EE 
+installation. For example, you can modify the formulas for the different kinds 
+of pool sizes.
+
+The key aspects of each thread pool are:
+
+=== CPU Light
+
+It is a relatively small thread pool (2 threads per available core by default).
+
+Apart from executing the `CPU_LIGHT` processors, this pool performs the handoff
+of the event between processors in the flow (including the routers) and the 
+response handling for non-blocking IO. 
+
+In an app throughput drops or becomes unresponsive, it may be due to some code 
+misusing the `CPU Light` thread pool. This may be quickly checked by taking a 
+thread dump of the runtime and looking for `WAITING` or `BLOCKED` or long 
+running processes in the `CPU Light` threads. 
+
+=== CPU Intensive
+
+This is also a small thread pool (2 threads per available core by default), 
+but has a queue for being able to accept more tasks.
+
+=== IO
+
+This is an elastic thread pool that grows as needed.
+
+Tasks running in this pool should spend most of its time `WAITING` or `BLOCKED`
+instead of doing CPU work, so they don't compete with the other pools.
+
+Also, when a transaction is active, since many transaction managers require all
+steps of a same transaction to be handled by the same thread, the `IO` pool 
+will be used. 
+
+=== Others
+
+Apart from the 3 core thread pools, some other pools are created by the runtime 
+or some standard usage in some connectors:
+* *Flow ring-buffer*: Performs the handoff between the source of a flow and the
+flow itself. There is one pool for each flow.
+* *NIO Selectors*: Enables Non-Blocking IO. Each connector may create as many 
+as required.
+
+[[backpressure]]
+== Back-pressure
+
+Under heavy load, there will be a situation where the runtime has no resources 
+available to handle a specific event. This might be because the `CPU_LIGHT` 
+threads are all busy and cannot do the handoff of the newly arrived event, or 
+because the current flow's `maxConcurrency` has been already exceeded.
+
+In that case, a message will be logged stating this condition, and the source 
+of the flow will be notified to perform any required actions.
+
+The actions to be performed on back-pressure are specific to each connector's 
+source. Please refer to the documentation of each connector for details on how 
+its sources handle back-pressure.
