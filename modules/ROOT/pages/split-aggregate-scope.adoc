@@ -7,16 +7,16 @@ endif::[]
 The Split Aggregate scope splits a collection and processes each part with the components within it in parallel (subject to any limitation in concurrency that has been configured).
 After all messages have been processed they will be aggregated before continuing with the flow in the same order they were before splitting the defined collection. 
 
-The Split Aggregate scope provides fields described in this table:
+The Split Aggregate scope can be configured through the following fields described in this table:
 
 [%header,cols="1,3"]
 |===
 |Attribute |Description
-|Collection (`collection`) | Specifies the expression that define the collection of parts to be processed in parallel. By default, it will use the incoming payload.
-|Timeout (`timeout`) | Specifies the timeout for each parallel route. The default behaviour is that of no timeout set.
+|Collection (`collection`) | Specifies the expression that defines the collection of parts to be processed in parallel. By default, it will use the incoming payload.
+|Timeout (`timeout`) | Specifies the timeout for each parallel route. By default there is no timeout.
 |Max Concurrency (`maxConcurrency`) | Specifies the maximum level of parallelism that will be used by this router. By default, all routes will run in parallel.
-|Target Variable (`target`) | Specifies the variable where to save the processed payload. 
-|Target Value (`targetValue`) | Specifies an expression to evaluate against the operation's output value. The outcome of this expression will be stored in the target variable. 
+|Target Variable (`target`) | Specifies the variable where to save the processed payload. By default the output will be saved in the flow's payload. 
+|Target Value (`targetValue`) | Specifies an expression to evaluate against the operation's output value. The outcome of this expression will be stored in the target variable. By default, this will be the same as the operation's output value.
 |===
 
 This XML example adds to every element in the collection the string `"-result"`: 
@@ -58,14 +58,39 @@ The next example shows that the variables can also be aggregated:
 <!-- After aggregation, the variables will be: {var1: "newValue", var2: ["val1, val2, val3"]} -->
 ----
 
-=== Differences between Split Aggregate scope and For Each scope
+=== Differences between Split Aggregate and For Each scopes
 
-There is an obvious similarity between the Split Aggregate scope and the xref:for-each-scope-concept.adoc[For Each scope]: both split the defined collection and process each part it with the components within the scope. Also, in both cases each route runs with the same initial context.
+There is an obvious similarity between the Split Aggregate and the xref:for-each-scope-concept.adoc[For Each]: both split the defined collection and process each element in it with the components within the scope. Also, in both cases, each route runs with the same initial context.
 The difference with these two scopes are:
 
 1. For Each works sequentially, while the Split Aggregate does it in parallel.
-1. The For Each output payload is exactly the same as the input payload, while the Split Aggreate will output a collection of the output messages of each iteration.
-1. Error handling: since the first mentioned difference, For Each will finish executing after the first encountered error (and invokes the Error Handler), while Split Aggregate will process each route and then invoke the xref:intro-error-handlers.adoc[Error Handler].
+1. The For Each does not modify the payload, while the Split Aggreate will output a collection of the output messages of each iteration.
+1. Error handling: since the first mentioned difference, For Each execution will be interrupted when an error is raised (and the Error Handler will be invoke), while Split Aggregate will process each route and then invoke the xref:intro-error-handlers.adoc[Error Handler], with the aggregation of the results and erros of all the routes. For example:
+
+----
+<split-aggregate collection="#['banana', 'apple']">
+	<choice>
+		<when expression="#[payload == 'banana']">
+			<!-- Processor that throws exception -->
+		</when>
+		<otherwise>
+			<set-payload value="#[payload ++ '-result']"/>
+		</otherwise>
+	</choice>
+</split-aggregate>
+<error-handler>
+	<on-error-continue type="COMPOSITE_ROUTING">
+		<!-- This will have the error thrown by the above processor --> 
+		<logger message="#[error.errorMessage.payload.failures['0']"/>
+		<!-- This will be a null value --> 
+		<logger message="#[error.errorMessage.payload.failures['1']"/>
+		<!-- This will be a null value --> 
+		<logger message="#[error.errorMessage.payload.results['0']"/>
+		<!-- This will have the result of this (correctly executed) route --> 
+		<logger message="#[error.errorMessage.payload.results['1']"/>
+	</on-error-continue>
+</error-handler>
+----
 
 ==== Throws
 
