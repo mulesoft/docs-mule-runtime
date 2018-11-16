@@ -1,0 +1,189 @@
+= Custom configuration properties provider
+:keywords: anypoint, studio, on premises, on premise, properties, custom configuration properties, configuration properties provider
+
+A custom configuration properties provider can be created using the Mule API. Using this API you can provide to an application a new mechanism to discovery configuration properties values.
+
+== API
+
+The main interfaces of the API are:
+
+* ConfigurationPropertiesProviderFactory: This interface is used to discover custom implementations of configuration properties provider. When a configuration element is found that matches the namespace and name provided by the method _getSupportedComponentIdentifier()_ then the runtime will request the factory to create a ConfigurationPropertiesProvider using configuration defined by the user using the method _createProvider(..)_. The runtime will discover instances of ConfigurationPropertiesProviderFactory by using SPI.
+
+* ConfigurationPropertiesProvider: When the runtime finds a configuration property it will invoke this interface to resolve it's value.
+
+
+== Example 
+
+As an exmaple let's review the security module which uses the mentioned API. 
+
+Security module implementation of _ConfigurationPropertiesProviderFactory_:
+
+[source,java]
+----
+public class SecureConfigurationPropertiesProviderFactory implements ConfigurationPropertiesProviderFactory {
+
+  public static final String EXTENSION_NAMESPACE = "secure-properties";
+  public static final String SECURE_CONFIGURATION_PROPERTIES_ELEMENT = "config";
+  public static final ComponentIdentifier SECURE_CONFIGURATION_PROPERTIES =
+      builder().namespace(EXTENSION_NAMESPACE).name(SECURE_CONFIGURATION_PROPERTIES_ELEMENT).build();
+
+  ...
+  
+  @Override
+  public ComponentIdentifier getSupportedComponentIdentifier() {
+    return SECURE_CONFIGURATION_PROPERTIES;
+  }
+
+  @Override
+  public SecureConfigurationPropertiesProvider createProvider(ConfigurationParameters parameters,
+                                                              ResourceProvider externalResourceProvider) {
+    String file = parameters.getStringParameter("file");
+    ..
+
+    String key = parameters.getStringParameter("key");
+    ...
+
+    return new SecureConfigurationPropertiesProvider(..);
+  }
+
+}
+----
+
+The _ComponentIdentifier_ returned by _getSupportedComponentIdentifier()_ will match against the following configuration component:
+
+[source,xml]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+    <secure-properties:config key="decryption-key" file="file1.yaml" name="test">
+        <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+    </secure-properties:config>
+
+</mule>
+----
+
+While processing the configuration, when the runtime finds the component *secure-properties:config* it will invoke the method _SecureConfigurationPropertiesProvider.createProvider(..)_ to create an instance of _SecureConfigurationPropertiesProvider_ that will by used to resolved configuration properties. 
+
+[source,java]
+----
+public class SecureConfigurationPropertiesProvider extends DefaultConfigurationPropertiesProvider {
+
+  private final static String SECURE_PREFIX = "secure::";
+  private final static Pattern SECURE_PATTERN = Pattern.compile("\\$\\{" + SECURE_PREFIX + "[^}]*}");
+
+  private final EncryptionAlgorithm algorithm;
+  private final EncryptionMode mode;
+  private final boolean fileLevelEncryption;
+  private final SecurePropertyPlaceholderModule securePropertyPlaceholderModule = new SecurePropertyPlaceholderModule();
+
+
+  public SecureConfigurationPropertiesProvider(ResourceProvider resourceProvider, String file, EncryptionAlgorithm algorithm,
+                                               String key, EncryptionMode mode, String encoding, boolean fileLevelEncryption) {
+      ...                                        
+  }
+
+  @Override
+  public Optional<ConfigurationProperty> getConfigurationProperty(String configurationAttributeKey) {
+    if (configurationAttributeKey.startsWith(SECURE_PREFIX)) {
+      String effectiveKey = configurationAttributeKey.substring(SECURE_PREFIX.length());
+
+      ConfigurationProperty originalConfigurationProperty = configurationAttributes.get(effectiveKey);
+      if (originalConfigurationProperty == null) {
+        return empty();
+      }
+      String originalString = ((String) originalConfigurationProperty.getRawValue());
+      String encryptedValue = originalString.substring(originalConfigurationProperty.getKey().length() + 1,
+                                                       originalString.length() - algorithm.name().length() - mode.name().length()
+                                                           - 2);
+      final String decryptedValue = resolveInnerProperties(securePropertyPlaceholderModule.convertPropertyValue(encryptedValue));
+      return of(new ConfigurationProperty() {
+
+        @Override
+        public Object getSource() {
+          return originalConfigurationProperty.getSource();
+        }
+
+        @Override
+        public Object getRawValue() {
+          return decryptedValue;
+        }
+
+        @Override
+        public String getKey() {
+          return originalConfigurationProperty.getKey();
+        }
+      });
+    } else {
+      return empty();
+    }
+  }
+
+  @Override
+  public String getDescription() {
+    ComponentLocation location = (ComponentLocation) getAnnotation(LOCATION_KEY);
+    return format("<secure-properties file=\"%s\"> - file: %s, line number: %s", fileLocation,
+                  location.getFileName().orElse(UNKNOWN),
+                  location.getLineInFile().map(String::valueOf).orElse("unknown"));
+  }
+
+  ...
+}
+----
+
+It is recommended to define a prefix (with the format PREFIX::) unique to this resolver. By having a prefix the user can target and specific resolver. This is implemented in _SecureConfigurationPropertiesProvider_ by using the prefix defined by *SECURE_PREFIX*.
+
+In the config the prefix must be used in the following way:
+
+[source,xml]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+    <secure-properties:config key="decryption-key" file="file1.yaml" name="test">
+        <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+    </secure-properties:config>
+
+    <flow name="main">
+        <set-payload value="${secure::property.key2}"/>
+    </flow>
+
+</mule>
+----
+
+See how the value attribute of set-payload is using the resolver for secure properties by using the *secure::* prefix.
+
+== Sample project
+
+In order to make the _ConfigurationPropertiesProviderFactory_ accessible to the runtime and be able to use it within Studio there's some infrastructure code that needs to be added.
+
+You can download or checkout the https://github.com/mulesoft/mule-custom-properties-providers-module-example[example project] which contains all the infrastucture code to get started implementing your custom configuration properties resolver extension.
+
+The same project will create an Mule SDK module that can be added to any application (or domain). To configure the sample project:
+
+. Import the project in your favorite IDE.  See https://docs.mulesoft.com/mule-sdk/1.1/getting-started[Getting started with the Mule SDK]
+. Open _pom.xml_ and define the GAV of your module and give it a proper name
+. Give a proper package name to your code
+. Open _resources/META-INF/mule-artifact.json_
+.. Change *type* field with value *com.my.company.custom.provider.api.CustomConfigurationPropertiesExtensionLoadingDelegate* to match the package name you changed previously.
+.. Change *name* field with value *custom-properties-provider* to match the name you want to give to the module
+.. Change *exportedPackages* field to match the package name you change previously. This should be the _.api_ package only.
+. Open _resources/META-INF/services/org.mule.runtime.config.api.dsl.model.properties.ConfigurationPropertiesProviderFactory_ and change the content to match the package you changed previously.
+. Open _CustomConfigurationPropertiesExtensionLoadingDelegate_ class
+.. Change the EXTENSION_NAME constant to the name of your module
+.. Change *fromVendor* method parameter to your company name
+.. Customize the section at the end to define the parameters that can be configured in the config element of your module
+. Open _CustomConfigurationPropertiesProviderFactory_ class
+.. Change *CUSTOM_PROPERTIES_PREFIX* to a meaningful prefix for the configuration properties that your module must resolve 
+.. Change the class implementation to lookup the properties from your custom source.
+. Update _CustomPropertiesProviderOperationsTestCase_ with more test cases to cover your new module functionality.
+
+
