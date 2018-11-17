@@ -136,7 +136,7 @@ Mule 4 offers an improved way of doing that. The `<ftp:listener>` and `<sftp:lis
 ----
 
 [[ftp_write]]
-== Migrating and outbound endpoint
+== Migrating an outbound endpoint
 
 The Mule 3 transport uses the `<ftp:outbound-endpoint>` component to write the current payload to a file. The Mule 4 connector uses the `<ftp:write>` operation instead.
 The most important differences are:
@@ -186,6 +186,78 @@ To use the FTP of SFTP connector, simply add it to your application using the St
     <version>1.1.0</version> <!-- or newer -->
     <classifier>mule-plugin</classifier>
 </dependency>
+----
+
+[[sftp-addSeqNo]]
+=== SFTP outbound 'addSeqNo' duplicate handling
+
+In Mule 3, using `duplicateHandling="addSeqNo"` iterated though the file names until an unused index was found.
+
+In Mule 4, this should be replaced by an actual unique index, maybe relying on an Object Store; or an UUID.
+
+.Mule 3 Example: Outbound SFTP endpoint `addSeqNo`
+
+[source,xml,linenums]
+----
+<flow name="sftpSeqNumberOutbound">
+    <sftp:outbound-endpoint
+        address="sftp://.../data"
+        outputPattern="fileName.dat" duplicateHandling="addSeqNo"/>
+</flow>
+----
+
+.Mule 4 Example: `sftp:write` with `uuid()` in the `path`
+
+[source,xml,linenums]
+----
+<flow name="sftpSeqNumberOutbound">
+    <sftp:write config-ref="sftpConfig" path="#['data/fileName_' ++ uuid() ++ '.dat']"/>
+</flow>
+----
+
+[[sftp-temp-dir]]
+== Migrating SFTP tempDir
+
+In Mule 3, the SFTP transport allowed to configure temporary directories to use when reading/writing files. The properties that allowed this were:
+
+* In the `sftp:connector`:
+** `tempDirInbound`
+** `tempDirOutbound`
+** `useTempFileTimestampSuffix`
+
+* In the `sftp:inbound-endpoint`:
+** `tempDir`
+** `useTempFileTimestampSuffix`
+
+* In the `sftp:outbound-endpoint`:
+** `tempDir`
+** `useTempFileTimestampSuffix`
+
+These configurations are not allowed in the Mule 4 SFTP connector. However, the connector provides the `sftp:move` operation that may be used to replace this kind of configuration.
+
+.Mule 3 Example: Inbound SFTP endpoint `tempDir`
+
+[source,xml,linenums]
+----
+<flow name="sftpListener">
+    <sftp:inbound-endpoint address="sftp://.../testdir"
+        tempDir="tmp_sending" useTempFileTimestampSuffix="true"/>
+
+    ...
+</flow>
+----
+
+.Mule 4 Example: `sftp:move` to temporary directory
+
+[source,xml,linenums]
+----
+<flow name="sftpListener">
+    <sftp:listener config-ref="sftpConfig" directory="testdir"/>
+
+    <!-- This DataWeave generates the same filename as the Mule 3 transport when using the tempDir attribute -->
+    <sftp:move config-ref="sftpConfig" sourcePath="#['testdir/' ++ attributes.name]" targetPath="#['tmp_sending/' ++ joinBy(flatMap(splitBy(attributes.name, '.'), (item, index) -> (if (index == 0) item ++ '_' ++ now() as String{format: 'yyyyMMddHHmmssSSS'} else item)), '.')]"/>
+    ...
+</flow>
 ----
 
 == See also
