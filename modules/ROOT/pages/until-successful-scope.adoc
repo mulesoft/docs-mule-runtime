@@ -30,3 +30,83 @@ This XML example allows for up to five retries each second.
     <!-- One or more processors here -->
 </until-successful>
 ----
+
+==== Throws
+
+* `MULE:RETRY_EXHAUSTED`
+
+////
+== See Also
+
+xref:about-components.adoc[About Mule Components]
+xref:connectors::index.adoc[About Connectors]
+////
+
+////
+== Success and Failure
+[cols="30a,70a"]
+|===
+|FAILURE |A message processor within the Until Successful scope throws an exception or contains an exception payload. Also, if an expression is provided in the attribute `failureExpression` and it evaluates to `true`.
+|SUCCESS |None of the message processors within the Until Successful scope throw any exceptions or contain an exception payload, or they do not return any message at all (that is, the flow ends in a one-way outbound endpoint).
+|_conditional_ |If you configure a failure expression, Mule evaluates the return message against the expression to dynamically determine if the action has failed or succeeded.
+|===
+
+=== Configuring failureExpression
+
+If the scope fails, a `RetryPolicyExhaustedException` is created, wrapped as a `MessagingException` and passed to the exception handler of the flow that contains the `Until Successful` element.
+
+The following illustrates how to configure the `failureExpression` returned by an Until Successful scope:
+
+[source,xml,linenums]
+----
+<Until Successful objectStore-ref="objectStore"
+   failureExpression="#[message.inboundProperties['http.status'] != 202]"
+   maxRetries="6" secondsBetweenRetries="600">
+   <http:request config-ref="HTTP_Request_Configuration" path="flakey"
+     method="POST" doc:name="HTTP"/>
+</Until Successful>
+----
+
+=== When all Else has Failed
+
+If message processing keeps failing and the maximum number of retries is exceeded, the default behavior of the Until Successful message processor consists in logging the message details and dropping it.
+
+Should you want to perform a specific action on the discarded message (for example, storing it in a file or database), it is possible to configure a Dead Letter Queue endpoint” where dropped messages are sent.
+
+For more information, see <<Configuring a Dead Letter Queue>>.
+
+=== Configuring a Dead Letter Queue
+
+To manage messages which have exhausted the number of `maxRetries` within the Until Successful scope, you can define a DLQ (dead letter queue) endpoint to which Mule can send such messages. The following code sample shows how a VM endpoint can be used to receive messages that have been discarded.
+
+[source,xml,linenums]
+----
+<vm:endpoint name="dlqChannel" path="dlq" />
+
+<Until Successful objectStore-ref="objectStore"
+                  dlqEndpoint-ref="dlqChannel"
+                  maxRetries="3"
+                  secondsBetweenRetries="10">
+...
+</Until Successful>
+----
+
+One common option in configuring a DLQ is to do a Global endpoint:
+
+[source,xml,linenums]
+----
+<vm:inbound-endpoint exchange-pattern="one-way" path="dlqChannel" name="dlqChannel" doc:name="dlqChannel"/>
+----
+
+Then have a flow:
+
+[source,xml,linenums]
+----
+<flow name="dead-letter-queue-testFlow2" doc:name="dead-letter-queue-testFlow2">
+<vm:inbound-endpoint exchange-pattern="one-way" ref="dlqChannel" doc:name="VM"/>
+<logger level="WARN" doc:name="logger"/>
+</flow>
+----
+
+So the `deadLetterQueue-ref="dlqChannel"` in Until Successful refers to the global endpoint.
+////
