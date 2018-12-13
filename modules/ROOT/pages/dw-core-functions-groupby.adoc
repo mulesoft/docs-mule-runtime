@@ -8,52 +8,71 @@ endif::[]
 [[groupby1]]
 == groupBy&#40;Array<T&#62;, &#40;item: T, index: Number&#41; &#45;&#62; R&#41;: { &#40;R&#41;: Array<T&#62; }
 
-Classifies the elements of a list (array) using the specified `criteria` function.
+Returns an object that groups items from an array based on specified
+criteria, such as an expression or matching selector.
 
-This function returns an object containing the grouping criteria as keys.
+
+This version of `groupBy` groups the elements of an array using the
+`criteria` function. Other versions act on objects and handle null values.
 
 === Parameters
 
 [%header, cols="1,3"]
 |===
 | Name   | Description
-| `items` | The list (`Array` type) to classify in groups.
-| `criteria` | Function that receives the `item` and `index` of the element to group and should return the criteria to group by.
+| `items` | The array to group.
+| `criteria` | Expression providing the criteria by which to group the items in the array.
 |===
 
 === Example
 
+This example groups items from the input array `["a","b","c"]` by their
+indices. Notice that it returns the numeric indices as strings and that items
+(or values) of the array are returned as arrays, in this case, with a single
+item each. The items in the array are grouped based on an anonymous function
+`(item, index) -> index` that uses named parameters (`item` and `index`).
+Note that you can produce the same result using the anonymous parameter
+`&#36;&#36;` to identify the indices of the array like this:
+`["a","b","c"] groupBy &#36;&#36;`
+
+==== Source
+
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/json
+---
+["a","b","c"] groupBy (item, index) -> index
+----
+
+==== Output
+
+[source,JSON,linenums]
+----
+{ "2": [ "c" ], "1": [ "b" ], "0": [ "a" ] }
+----
+
+=== Example
+
 This example groups the elements of an array based on the language field.
-Notice that it uses the `item.language` selector to specify the criteria.
+Notice that it uses the `item.language` selector to specify the grouping
+criteria. So the resulting object uses the "language" values (`"Scala"` and
+`"Java"`) from the input to group the output. Also notice that the output
+places the each input object in an array.
 
 ==== Source
 
 [source,DataWeave, linenums]
 ----
 %dw 2.0
+var myArray = [
+   { "name": "Foo", "language": "Java" },
+   { "name": "Bar", "language": "Scala" },
+   { "name": "FooBar", "language": "Java" }
+]
 output application/json
 ---
-payload groupBy (item) -> item.language
-----
-
-==== Input
-
-[source,JSON,linenums]
-----
-[
-    {
-      "name": "Foo",
-      "language": "Java"
-    },
-    {
-      "name": "Bar",
-      "language": "Scala"
-    },
-    {
-      "name": "FooBar",
-      "language": "Java"
-    }
-]
+myArray groupBy (item) -> item.language
 ----
 
 ==== Output
@@ -62,29 +81,58 @@ payload groupBy (item) -> item.language
 ----
 {
   "Scala": [
-    {
-      "name": "Bar",
-      "language": "Scala"
-    }
+    { "name": "Bar", "language": "Scala" }
   ],
   "Java": [
-    {
-      "name": "Foo",
-      "language": "Java"
-    },
-    {
-      "name": "FooBar",
-      "language": "Java"
-    }
+    { "name": "Foo", "language": "Java" },
+    { "name": "FooBar", "language": "Java" }
   ]
 }
 ----
 
 
-[[groupby2]]
-== groupBy&#40;{ &#40;K&#41;?: V }, &#40;value: V, key: K&#41; &#45;&#62; R&#41;: { &#40;R&#41;: Array<T&#62; }
+=== Example
 
-Groups elements of an object based on a supplied key.
+This example uses `groupBy "myLabels"`to return an object where `"mylabels"`
+is the key, and an array of selected values
+(`["Open New", "Zoom In", "Zoom Out", "Original View" ]`) is the value. It
+uses the selectors (`myVar.menu.items.*label`) to create that array. Notice
+that the selectors retain all values where `"label"` is the key but filter
+out values where `"id"` is the key.
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+var myVar = { menu: {
+    header: "Move Items",
+    items: [
+        {"id": "internal"},
+        {"id": "left", "label": "Move Left"},
+        {"id": "right", "label": "Move Right"},
+        {"id": "up", "label": "Move Up"},
+        {"id": "down", "label": "Move Down"}
+    ]
+}}
+output application/json
+---
+(myVar.menu.items.*label groupBy "myLabels")
+----
+
+==== Output
+
+[source,JSON,linenums]
+----
+{ "myLabels": [ "Move Left", "Move Right", "Move Up", "Move Down" ] }
+----
+
+
+[[groupby2]]
+== groupBy&#40;{ &#40;K&#41;?: V }, &#40;value: V, key: K&#41; &#45;&#62; R&#41;: { &#40;R&#41;: { &#40;K&#41;?: V } }
+
+Groups elements of an object based on criteria that the `groupBy`
+uses to iterate over elements in the input.
 
 
 === Parameters
@@ -92,14 +140,18 @@ Groups elements of an object based on a supplied key.
 [%header, cols="1,3"]
 |===
 | Name   | Description
-| `object` | The object to group.
-| `criteria` | The `key` and/or `value` of the object to use for grouping.
+| `object` | The object containing objects to group.
+| `criteria` | The grouping criteria to apply to elements in the input object, such as a `key` and/or `value` of the object to use for grouping.
 |===
-
 
 === Example
 
-The example groups an object based on its value (`$$`).
+This example groups objects within an array of objects using the anonymous
+parameter `&#36;` for the value of each key in the input objects. It applies
+the DataWeave `upper` function to those values. In the output, these values
+become upper-case keys. Note that you can also write the same example using
+a named parameter for the within an anonymous function like this:
+`{ "a" : "b", "c" : "d"} groupBy (value) -> upper(value)`
 
 ==== Source
 
@@ -108,18 +160,39 @@ The example groups an object based on its value (`$$`).
 %dw 2.0
 output application/json
 ---
-{ "a" : "b"} groupBy $
+{ "a" : "b", "c" : "d"} groupBy upper($)
 ----
 
 ==== Output
 
 [source,JSON,linenums]
 ----
-{
-  "b": {
-    "a": "b"
-  }
-}
+{ "D": { "c": "d" }, "B": { "a": "b" } }
+----
+
+=== Example
+
+This example uses `groupBy "costs"` to produce a JSON object from an XML object
+where `"costs"` is the key, and the selected values of the XML element `prices`
+becomes the JSON value (`{ "price": "9.99", "price": "10.99" }`).
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+var myRead =
+read("<prices><price>9.99</price><price>10.99</price></prices>","application/xml")
+output application/json
+---
+myRead.prices groupBy "costs"
+----
+
+==== Output
+
+[source,JSON,linenums]
+----
+{ "costs" : { "price": "9.99", "price": "10.99" } }
 ----
 
 
