@@ -4,7 +4,7 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: configuration, deploy, mule
 
-Following is an introduction to configuring Mule via the Spring XML file. For details on this file, see xref:3.9@mule-runtime::about-the-xml-configuration-file.adoc[About the XML Configuration File].
+Following is an introduction to configuring Mule via it's XML DSL file. For details on this file, see xref:about-the-xml-configuration-file.adoc[About the XML Configuration File].
 
 == Mule Configuration File Overview
 
@@ -18,86 +18,74 @@ Missing image -- no file name is close to this:
 image::<missing>muleConfig.png[muleConfig]
 ////
 
-Each of these elements provides access to a configuration object within Mule:
+Each of the elements sets up a configuration object within Mule, for example:
 
-* xref:3.9@mule-runtime::custom-message-processors.adoc[Custom Message Processors] - Observe a message, or modify either a message or the message flow. Examples include transformers and filters.
+* xref:global-settings-configuration.adoc[Mule Global Configuration] - Global settings, such as the default transaction time-out, that apply to the entire Mule configuration.
 
-* xref:3.9@mule-runtime::using-flows-for-service-orchestration.adoc[Flows] - Use message processors to define message flow between a source and a target.
+* link:/mule-user-guide/v/4.1/configuring-properties[Properties] - Configuration Properties, message properties, and system properties.
 
-* Mule Global Configuration - Global settings, such as the default transaction time-out, that apply to the entire Mule configuration
+* xref:connectors::index.adoc[Connectors and Modules Configurations] - Declare configurations for any connectors and modules components used.
 
-* xref:3.9@mule-runtime::configuring-a-transport.adoc[Connectors] - Non-default configuration of any transports used
+* xref:about-flows.adoc[Flows] - Combine components to define a message flow.
 
-* xref:3.9@mule-runtime::endpoint-configuration-reference.adoc[Endpoints] - Define the channel and address or path where messages are sent or received. You can define them globally and use them in multiple flows.
+* xref:about-event-source.adoc[Sources] - Trigger a flow.
 
-* xref:3.9@mule-runtime::using-transformers.adoc[Transformers] - Convert data from one format to another. You can define them globally and use them in multiple flows.
+* xref:about-routers.adoc[Routers] - Control the flow execution.
 
-* Filters - Filter out the messages that don't match specific criteria. You can define them globally and use them in multiple flows.
+* xref:about-operations.adoc[Operations] - Apply specific actions within a flow.
 
-Following is an example of a simple Mule configuration file:
+Following is an example of a simple Mule configuration file for an application:
 
 *Simple Mule Configuration*
 
 [source,xml,linenums]
 ----
-<mule xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:email="http://www.mulesoft.org/schema/mule/email"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+	    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	  	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+		http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd">
 
-    <vm:connector name="vmConnector" queueTimeout="5000"/>
+    <http:listener-config name="http.listener.config" basePath="mule">
+        <http:listener-connection host="0.0.0.0" port="${http.port}" protocol="HTTP"/>
+    </http:listener-config>
 
-    <vm:endpoint name="CustomerRequests" path="customer.requests"/>
-    <vm:endpoint name="CustomerResponses" path="customer.responses"/>
+    <http:request-config name="http.request.config" basePath="mule">
+        <http:request-connection host="127.0.0.1" port="${http.port}"/>
+    </http:request-config>
 
-    <custom-transformer name="ThisToThat" class="com.acme.transformer.ThisToThat"/>
+    <email:smtp-config name="email.config">
+        <email:smtp-connection host="${email.host}" port="${email.smtp.port}"/>
+    </email:smtp-config>
 
-    <flow name="myBasicFlow">
-        <inbound-endpoint ref="CustomerRequests"/>
-        <component class="com.acme.service.BasicService"/>
-        <outbound-endpoint ref="CustomerResponses" transformer-refs="ThisToThat"/>
+    <flow name="integration-routing-contentFlow">
+        <http:listener config-ref="https.listener.config" path="routing/main"/>
+        <logger level="INFO" message="#[attributes.headers]"/>
+
+        <choice>
+            <when expression="#[attributes.headers.'content-type' contains 'application/json']">
+                <http:request config-ref="http.request.config" path="routing/http" method="POST"/>
+            </when>
+            <otherwise>
+                <set-payload value="Error: Unexpected unmapped choice element when trying to route the request."/>
+                <email:send config-ref="email.config" subject="Email routing">
+                    <email:to-addresses>
+                        <email:to-address value="routing@mulesoft.com"/>
+                    </email:to-addresses>
+                    <email:body contentType="text/plain">
+                        <email:content>#[payload]</email:content>
+                    </email:body>
+                </email:send>
+            </otherwise>
+        </choice>
     </flow>
+
 </mule>
-----
-
-Other, more advanced things you may configure at this level:
-
-* xref:3.9@mule-runtime::configuring-security.adoc[Security Manager] - Authenticates requests based on one or more security providers
-
-* xref:3.9@mule-runtime::mule-agents.adoc[Agents] - Agents are typically used for cross-cutting concerns such as logging or management
-
-* xref:3.9@mule-runtime::mule-server-notifications.adoc[Notifications] - Allow you to be notified upon certain lifecycle events
-
-* xref:3.9@mule-runtime::transaction-management.adoc[Transaction Management] - Mule transactions are configured on inbound endpoints, where an endpoint can be configured to start a new transaction or join an existing one.
-
-* link:/mule-user-guide/v/4.1/configuring-properties[Properties] - Configuration Properties, message properties, and system properties.
-
-== Global Configuration Settings
-
-You can configure global configuration settings such as the default transaction timeout and default threading profile in the `<configuration>` element. For example:
-
-[source,xml,linenums]
-----
-<mule>
-...
-  <configuration defaultTransactionTimeout="31337">
-    <default-threading-profile poolExhaustedAction="RUN"/>
-...
-  </configuration>
-----
-
-For a list of the available global configuration settings, see xref:3.9@mule-runtime::global-settings-configuration-reference.adoc[Global Settings Configuration Reference].
-
-== Accessing the Configuration Programmatically
-
-All Mule configuration is accessible from a single object: org.mule.api.config.MuleConfiguration.
-
-Configurations in a MuleConfiguration are set when a `MuleContext` is created. The object becomes immutable after it is started and can be accessed using the following:
-
-[source,java,linenums]
-----
-// implement MuleContextAware to have the reference injected
-MuleConfiguration configuration = context.getConfiguration();
 ----
