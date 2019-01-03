@@ -1,0 +1,134 @@
+= Migrating the JSON Module
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+A new JSON module in Mule 4 replaces the one that was bundled in with Mule 3 for schema validation.
+
+To migrate transformations involving JSON, MuleSoft recommends that you use DataWeave.
+
+[[transformers]]
+== Migrating Transformers
+
+In Mule 3, many components required the payload to be a POJO so that its fields could be accessed. In Mule 4, DataWeave can be used as a query language directly on the JSON payload, which completely avoids the need to convert the payload to a POJO as an intermediate step.
+
+For mapping rules that are configured for the `json:json-to-object-transformer`, you can express the rules in DataWeave.
+
+In Mule 3:
+
+.Mule 3 Example: Mixin used in the Mapper Configuration
+[source,java,linenums]
+----
+public abstract class AppleMixin
+{
+    AppleMixin(@JsonProperty("bitten") boolean wasBitten)
+    {
+        super();
+    }
+
+}
+----
+
+.Mule 3 Example: Transformer Referencing the Mapper
+[source,xml,linenums]
+----
+<json:mapper name="myMapper">
+    <json:mixin mixinClass="org.mule.module.json.transformers.AppleMixin"
+                    targetClass="org.mule.tck.testmodels.fruit.Apple"/>
+</json:mapper>
+
+<flow name="flow">
+    <json:json-to-object-transformer returnClass="org.mule.tck.testmodels.fruit.Apple"
+                                     mapper-ref="myMapper"/>
+</flow>
+----
+
+In Mule 4:
+
+.Mule 4 Example: Using DataWeave as the Mapper
+[source,xml,linenums]
+----
+<flow name="flow">
+    <ee:transform>
+        <ee:message>
+            <ee:set-payload>
+                <![CDATA[%dw 2.0
+                    type apple = Object { class: "org.mule.tck.testmodels.fruit.Apple"}
+                    output application/java
+                    ---
+                    {
+                        wasBitten = bitten
+                    } as apple
+                ]]>
+            </ee:set-payload>
+        </ee:message>
+    </ee:transform>
+</flow>
+----
+
+The same pattern applies for `json:object-to-json-transformer`:
+
+In Mule 3:
+
+.Mule 3 Example: Transformer with Mixins
+[source,xml,linenums]
+----
+<flow name="flow">
+    <json:object-to-json-transformer returnClass="org.mule.tck.testmodels.fruit.Apple">
+        <json:serialization-mixin mixinClass="org.mule.module.json.transformers.AppleMixin"
+                                  targetClass="org.mule.tck.testmodels.fruit.Apple"/>
+    
+    </json:object-to-json-transformer>
+</flow>
+----
+
+In Mule 4:
+
+.Mule 4 Example: Using DataWeave as the Mapper
+[source,xml,linenums]
+----
+<flow name="flow">
+    <ee:transform>
+        <ee:message>
+            <ee:set-payload>
+                <![CDATA[%dw 2.0
+                    output application/json
+                    ---
+                    {
+                        bitten = wasBitten 
+                    }
+                ]]>
+            </ee:set-payload>
+        </ee:message>
+    </ee:transform>
+</flow>
+----
+
+[[xslt]]
+== Migrating XSLT Operations
+
+In Mule 4, the JSON module does not provide a component that transforms the JSON based on an XSLT mapping. Possible ways to handle this case are:
+
+* Migrate the XSLT to a DataWeave transformation (recommended)
+* Use XSLT support of the XML module, first converting the payload to XML.
+
+.Mule 4 Example: Using XSLT to Transform JSON
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+	<xml-module:xslt-transform>
+	    <xml-module:content>#[output application/xml --- payload]</xml-module:content>
+	    <xml-module:xslt>
+	        (the XSLT transformation) ...
+	    </xml-module:xslt>
+	</xml-module:xslt-transform>
+	...
+</flow>
+----
+
+== See also
+
+* xref:connectors::json/json-module.adoc[JSON Module]
+* xref:dataweave.adoc[DataWeave Language]
+* xref:connectors::xml/xml-module.adoc[XML Module]
