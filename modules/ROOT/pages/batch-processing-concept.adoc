@@ -1,4 +1,4 @@
-= Batch Processors
+= Batch Processing
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
@@ -8,22 +8,166 @@ endif::[]
 Batch processing is exclusive to Mule Enterprise runtimes.
 
 Mule allows you to process messages in batches. +
-Within an application, you can initiate a batch job scope that splits large or streamed messages into individual records, performs actions upon each record, reports on the results, and potentially pushes the processed output to other systems or queues.
+Within an application, you can initiate a batch job scope, which is a block of code that splits messages into individual records, performs actions upon each record, then reports on the results and potentially pushes the processed output to other systems or queues.
 
 //_TODO: Check this
 // *Are there any message processors that you cannot use in batch processing?* +
 // The only element you cannot use in batch processing is a *request-response inbound connector.* Otherwise, you are free to leverage any and all Mule message processors to build your batch processing flow.
 
-Batch processing is particularly useful when:
+For example, you can use batch processing when:
 
-* Integrating data sets, small or large, streaming or not, to parallel process records.
-
-* Synchronizing data sets between business applications, such as syncing contacts between NetSuite and Salesforce in "near real-time" data integration.
-
+* Synchronizing data sets between business applications, such as syncing contacts between NetSuite and Salesforce.
 * Extracting, transforming and loading (ETL) information into a target system, such as uploading data from a flat file (CSV) to Hadoop.
-
 * Handling large quantities of incoming data from an API into a legacy system.
+
+If you are already familiar with batch processing in Mule 3.x, you can get an overview of the differences with batch in Mule 4.x in the xref:migration-core-batch.adoc[Migrating the Batch Module] article.
+
+== Overview
+
+Within a Mule application, polling for the input) to process them in chunks.
+
+image::batch-main3.png[]
+
+== Basic Anatomy
+
+The heart of Mule's batch processing lies within the batch job. A batch job is a scope that splits large messages into records that Mule processes asynchronously. +
+The same way flows process messages, batch jobs process records.
+
+image::batch-processing-concept-d1bdd.png[]
+
+The Batch XML structure was modified on Mule 4.0. The example below shows abbreviated details to highlight batch elements.
+
+[source,xml,linenums]
+----
+<flow name="flowOne">
+	<batch:job jobName="batchJob">
+		<batch:process-records>
+
+			<batch:step name="batchStep1">
+				<event processor/>
+				<event processor/>
+			</batch:step>
+
+			<batch:step name="batchStep1">
+				<event processor/>
+				<event processor/>
+			</batch:step>
+		</batch:process-records>
+	</batch:job>
+</flow>
+----
+
+A batch job contains one or more batch steps that act upon records as they move through the batch job. +
+Each batch step in a batch job contains processors that act upon a record to transform, route, enrich, or otherwise process data contained within it. By leveraging the functionality of existing Mule processors, the batch step offers a lot of flexibility regarding how a batch job processes records. +
+See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
+
+A batch job executes when the flow reaches the process-records section of the batch job. When triggered, Mule creates a new batch job instance. +
+When the batch job starts executing, Mule splits the incoming message into records, stores them in a persistent queue, and queries and schedules those records in blocks of records to process. By default, the runtime stores 100 records in each batch step. You can customize this size according to the performance you require. +
+See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information. +
+After all the records have passed through all batch steps, the runtime ends the batch job instance and reports the batch job result indicating which records succeeded and which failed during processing.
+
+=== Error Handling
+
+Batch jobs can handle any record-level failure that might occur in processing to prevent the failure of a complete batch job. Further, you can set or remove variables on individual records so that during batch processing, Mule can route or otherwise act upon records in a batch job according to a record variable. +
+See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for more information.
+
+
+=== Batch Job vs. Batch Job Instance
+
+Though defined in context the above, it’s worth elaborating upon the terms _batch job_ and _batch job instance_ as they relate to each other.
+
+* A batch job is the scope element in an application in which Mule processes a message payload as a batch of records. The term batch job is inclusive of all three phases of processing: Load and Dispatch, Process, and On Complete.
+* A batch job instance is an occurrence in a Mule application whenever a Mule flow executes a batch job. Mule creates the batch job instance in the Load and Dispatch phase. Every batch job instance is identified internally using a unique String known as batch _job instance id_. +
+This identifier is useful if you want, for example, to pass the local job instance ID to an external system for referencing and managing data, improve the job’s custom logging, or even send an email or SMS notifications for meaningful events around that specific batch job instance. See xref:batch-job-instance-id.adoc[Batch Job Instance ID] to learn more about this identifier and how to customize it.
+
+
+== Batch Job Processing Phases
+
+Each batch job contains three different phases:
+
+. Load and Dispatch.
+. Process.
+. On Complete.
+
+
+=== Load and Dispatch
+
+This first phase is implicit. During this phase, the runtime performs all the "behind the scenes" work to create a batch job instance. Essentially, this is the phase during which Mule turns a serialized message payload into a collection of records for processing as a batch. You don't need to configure anything for this activity to occur, though it is useful to understand the tasks Mule completes during this phase.
+
+. Mule splits the message using Dataweave. This first step creates a new _batch job instance_. +
+Mule exposes the batch job instance ID through the `batchJobInstanceId` variable. This variable is available in every step and the on-complete phase.
++
+. Mule creates a persistent queue and associates it with the new batch job instance.
+. For each item generated by the splitter, Mule creates a record and stores it in the queue. This activity is "all or nothing" – Mule either successfully generates and queues a record for every item, or the whole message fails during this phase.
+. Mule presents the batch job instance, with all its queued-up records, to the first batch step for processing.
+
+After this phase completes, the flow will continue. +
+The next phase, "Process" is asynchronous, meaning that the flow will not wait for the batch job to finish processing all records.
+
+=== Process
+
+During the "Process" phase, the runtime begins processing the records in the batch asynchronously. Each record moves through the processors in the first batch step, then is sent back to the original queue while it waits to be processed by the second batch step and so on until every record has passed through every batch step. Only one queue exists, and records are picked out of it for each batch step, processed, and then sent back to it; each record keeps track of what stages it has been processed through while it sits on this queue. Note that a batch job instance does not wait for all its queued records to finish processing in one batch step before pushing any of them to the next batch step. Queues are persistent.
+
+Mule persists a list of all records as they succeed or fail to process through each batch step. If a record should fail to be processed by an event processor in a batch step, the runtime continues processing the batch, skipping over the failed record in each subsequent batch step.
+
+At the end of this phase, the batch job instance completes and, therefore, ceases to exist.
+
+image::batch-diagram.jpg[batch+diagram]
+
+Beyond simple processing of records, there are several things you can do with records within a batch step.
+
+* You can apply filters by adding acceptExpressions within each batch step to prevent the step from processing certain records. +
+For example, you can set a filter to prevent a step from processing any records which failed to process in the preceding step.
+
+* You can use a batch aggregator processor to aggregate records in groups, sending them as bulk upserts to external sources or services. +
+For example, rather than upserting each contact (that is, a record) in a batch to Google Contacts, you can configure a batch aggregator to accumulate, say, 100 records, then upsert all of them to Google Contacts in one chunk.
+
+See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
+
+=== On Complete
+
+During this phase, you can optionally configure the runtime to create a report or summary of the records it processed for the particular batch job instance. This phase exists to give system administrators and developers some insight into which records failed to address any issues that might exist with the input data.
+
+[source,xml,linenums]
+----
+<batch:job name="Batch3">
+        <batch:input>
+            <poll doc:name="Poll">
+                <sfdc:authorize/>
+            </poll>
+            <set-variable/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Step1">
+                <batch:record-variable-transformer/>
+                <data-mapper:transform/>
+            </batch:step>
+            <batch:step name="Step2">
+                <logger/>
+                <http:request/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger/>
+        </batch:on-complete>
+</batch:job>
+----
+
+After Mule executes the entire batch job, the output becomes a batch job result object (`BatchJobResult`). Because Mule processes a batch job as an asynchronous, one-way flow, the results of batch processing do not feed back into the flow which may have triggered it, nor do the results return as a response to a caller. Any event source that feeds data into a batch job must be one-way, not request-response. +
+You have two options for working with the output:
+
+* Create a report in the On Complete phase, using DataWeave using information such as the number of failed records and successfully processed records, and in which step any errors might have occurred.
+* Reference the batch job result object elsewhere in the Mule application to capture and use batch metadata, such as the number of records which failed to process in a particular batch job instance.
+
+If you leave the On Complete phase empty and do not reference the batch job result object elsewhere in your application, the batch job simply completes, whether failed or successful. +
+
+[TIP]
+--
+As a good practice, you should configure some mechanism for reporting on failed or successful records to facilitate further action where required.
+--
+
 
 == See Also
 
-* xref:batch-job-concept.adoc[Batch Job Component]
+* xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing]
+* xref:migration-core-batch.adoc[Migrating the Batch Element]
