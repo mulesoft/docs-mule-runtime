@@ -222,6 +222,107 @@ Following is an example of a simple Mule configuration file for an application:
 </mule>
 ----
 
+== Full Policy Example
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ip-filter="http://www.mulesoft.org/schema/mule/ip"
+      xmlns:http-policy="http://www.mulesoft.org/schema/mule/http-policy"
+      xmlns:http-transform="http://www.mulesoft.org/schema/mule/http-policy-transform"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/http-policy http://www.mulesoft.org/schema/mule/http-policy/current/mule-http-policy.xsd
+               http://www.mulesoft.org/schema/mule/ip http://www.mulesoft.org/schema/mule/ip/current/mule-ip.xsd
+               http://www.mulesoft.org/schema/mule/http-policy-transform http://www.mulesoft.org/schema/mule/http-policy-transform/current/mule-http-policy-transform.xsd
+               http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+    {{#if encrypted}}
+    <secure-properties:config key="${anypoint.platform.encryption_key}" file="${encryptedPropertiesFile}" name="encryptionConfiguration">
+        <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+    </secure-properties:config>
+    {{/if}}
+
+    <http-policy:proxy name="{{{policyId}}}-ip-whitelist">
+        <http-policy:source>
+            <try>
+                <ip-filter:whitelist config-ref="whitelist_config" ipAddress="{{{ipExpression}}}" />
+                <http-policy:execute-next/>
+
+                <error-handler>
+                    <on-error-continue type="IP:REJECTED" logException="false">
+                        {{#if isWsdlEndpoint}}
+                        <try>
+                            <http-transform:set-response statusCode="500">
+                                <http-transform:body>#[
+                                    output application/xml
+                                    ---
+                                    Soap::clientErrorMessage(payload, 'Forbidden', '$(error.description)')
+                                    ]</http-transform:body>
+                            </http-transform:set-response>
+                            <error-handler>
+                                <on-error-continue logException="true" >
+                                    <http-transform:set-response statusCode="500">
+                                        <http-transform:body>#[
+                                            output application/xml
+                                            ---
+                                            Soap::soap11ClientErrorMessage('Bad request', 'Problem processing the request payload. Check for parsing errors.')
+                                            ]</http-transform:body>
+                                    </http-transform:set-response>
+                                </on-error-continue>
+                            </error-handler>
+                        </try>
+                        {{else}}
+                        <http-transform:set-response statusCode="403">
+                            <http-transform:body>#[
+                                output application/json
+                                ---
+                                {"error": "$(error.description)"}
+                                ]</http-transform:body>
+                        </http-transform:set-response>
+                        {{/if}}
+                    </on-error-continue>
+                </error-handler>
+            </try>
+        </http-policy:source>
+    </http-policy:proxy>
+
+    <ip-filter:config name="whitelist_config">
+        <ip-filter:ips>
+            {{#each ips}}
+            <ip-filter:ip value="{{.}}"/>
+            {{/each}}
+        </ip-filter:ips>
+    </ip-filter:config>
+----
+
+
+== Full Domain Example
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<domain:mule-domain
+        xmlns:http="http://www.mulesoft.org/schema/mule/http"
+        xmlns="http://www.mulesoft.org/schema/mule/core"
+        xmlns:domain="http://www.mulesoft.org/schema/mule/ee/domain"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/ee/domain http://www.mulesoft.org/schema/mule/ee/domain/current/mule-domain-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <!-- configure here resource to be shared within the domain -->
+
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="e252ad6a-220d-4c1f-865b-d7aec30bfc30" basePath="/api" >
+  		<http:listener-connection host="0.0.0.0" port="8081" />
+  	</http:listener-config>
+
+</domain:mule-domain>
+----
+
 
 == See Also
 
