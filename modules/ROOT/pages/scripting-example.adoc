@@ -1,0 +1,86 @@
+= Scripting Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This example demonstrates how to invoke a JSR-223 Script from Mule ESB. It also illustrates how to use custom transformers, routing based on the content type of the payload and how to use JVM environment variables in your Mule configuration. The script implements a http://en.wikipedia.org/wiki/Greedy_algorithm[Greedy Algorithm] for giving change.
+
+== Running the Application
+
+. Make sure you have met the prerequisites and installed Mule according to the nstalling Mule instructions.
+. At the command line, navigate to the `examples/scripting` directory under your Mule home directory.
+. Copy the pre-built example zip to the applications folder ($MULE_HOME/apps).
+. Open one of the following URLs in your browser: +
+ `+http://localhost:47493/change-machine?amount=2.42&currency=USD+` +
+ `+http://localhost:47493/change-machine?amount=2.42&currency=GBP+`
+. To stop Mule, type 'CTRL-C' in the Mule console window.
+
+== Building the Application
+
+You can build the example by either running `ant` or `mvn` from the current directory.
+
+== How it Works
+
+The example takes input from a HTTP request and transforms the request's body to a Map using the HttpRequestToMap transformer. It then extracts the currency from that Map to determine the script to call. Before actually calling the script the amout will be extracted from the Map, converted into a number and normalized into an integer amout of cents.
+
+*Input*
+
+[source,xml]
+----
+<flow name="http-inbound">
+ <http:inbound-endpoint host="0.0.0.0" port="47493" path="change-machine"
+   exchange-pattern="request-response" transformer-refs="HttpRequestToMap">
+  <not-filter>
+   <wildcard-filter pattern="/favicon.ico"/>
+  </not-filter>
+ </http:inbound-endpoint>
+ <choice>
+  <when expression="payload.currency == 'USD'" evaluator="groovy">
+   <processor-chain>
+    <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
+    <script:component>
+      <script:script file="greedy.groovy">
+        <property key="currency" value="USD"/>
+       </script:script>
+     </script:component>
+   </processor-chain>
+ </when>
+ <when expression="payload.currency == 'GBP'" evaluator="groovy">
+ <processor-chain>
+ <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
+ <script:component>
+  <script:script file="greedy.py">
+   <property key="currency" value="GBP"/>
+  </script:script>
+ </script:component>
+ </processor-chain>
+ </when>
+</choice>
+</flow>
+----
+
+The actual script is loaded from an external file and is passed a variable called `currency`, which is bound to a local script variable according to the JSR-223 spec.
+
+*Entry Point for Groovy Script*
+
+[source,java]
+----
+switch (currency) {
+ case "USD": return change(USD, payload)
+ case "GBP": return change(GBP, payload)
+ default: throw new AssertionError("Unsupported currency: $currency")
+}
+----
+
+*Entry point for Python script*
+
+[source,java]
+----
+c = Change(currency, payload)c.recursive_change(c.amount)result = "[" + c.result + "]"
+----
+
+== References
+
+The Groovy algorithm is adapted from the https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy[Groovy Cookbook] and the Python algorithm is adapted from an article at http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html[O'Reilly's ONLamp Blog]
+
+Any language that has a JSR 223-compliant engine can be used with Mule in this manner.

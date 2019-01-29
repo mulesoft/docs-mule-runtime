@@ -1,0 +1,147 @@
+= Component Bindings
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Components can use bindings to call an external service during execution. The bindings used with a Java component bind a Java interface, or single interface method, to an outbound endpoint. The external service to be called should implement the same interface, and the component should encapsulate a reference to that interface, which is initialized during the bootstrap stage by the Mule configuration builder. The reference will be initialized using a reflective proxy class.
+
+image::pattern-bindings.png[pattern_bindings]
+
+With component bindings, you can configure multiple interfaces or a single interface with an endpoint bound to one or more Mule endpoints.
+
+Mule currently supports component bindings for Java components (the default components in Mule) and script components, such as Groovy or JRuby. This page describes how to configure each.
+
+== Java Component Binding Configuration
+
+Bindings can be used by components to call out to an external service. The bound interface is added to the component as a field with the usual bean getter and setter methods. In the binding configuration for the component, you can bind this interface along with a method in the interface to a Mule endpoint. When that method is called, the call parameters are sent over the Mule endpoint to another service, which may be local or remote. A result may be returned from the service and passed back to the component using the return argument of the method. This model is very similar to traditional RPC calls. Here is an example:
+
+[source,java,linenums]
+----
+public class InvokerComponent
+{
+    private HelloInterface hello;
+
+    public String invoke(String s)
+    {
+        return "Received: " + hello.sayHello(s, "English");
+    }
+    public void setHello(HelloInterface hello)
+    {
+        this.hello = hello;
+    }
+    public HelloInterface getHello()
+    {
+        return hello;
+    }
+}
+----
+
+In this example, the component `InvokerComponent` has a field `hello`, which is of type `HelloInterface`, with getter and setter methods for the field. The `invoke` method will be called on the service and calls the `hello.sayHello()` method. This call will result in another service call.
+
+The HelloInterface is very simple with a single method `sayHello`.
+
+[source,java,linenums]
+----
+public interface HelloInterface
+{
+    public String sayHello(String to, String language);
+}
+----
+
+[TIP]
+As of Mule 3.x, you are able to set the interface return type to `MuleMessage` to give your component access to the full message, not just the payload.
+
+Now, you simply configure your component to bind the `sayHello` method to the endpoint that will invoke another service.
+
+[source,xml,linenums]
+----
+<service name="InvokerComponent">
+    <inbound>
+        <jms:inbound-endpoint queue="Invoker.in"/>
+    </inbound>
+
+    <component class="org.mule.examples.bindings.InvokerComponent">
+        <binding interface="org.mule.examples.bindings.HelloInterface" method="sayHello">
+            <axis:outbound-endpoint use="LITERAL" style="WRAPPED"
+                  address="http://myhost.com:81/services/HelloWeb?method=helloMethod" synchronous="true"/>
+        </binding>
+    </component>
+
+    <outbound>
+        <pass-through-router>
+            <jms:outbound-endpoint queue="Invoker.out"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+The call to the external web service is synchronous, because you want a result returned and need to block until the call is finished.
+
+Note that component bindings will not work with Java Proxy objects, unless the proxy explicitly handles the binding interface method. If using Spring components, ensure that you use CGLib proxies. For more information on the Spring-AOP proxying behavior, see http://static.springsource.org/spring/docs/3.0.x/spring-framework-reference/html/aop.html#aop-introduction-proxies. If you're using the annotation-processors, such as for transactions, you would specify the following:
+
+[source,xml,linenums]
+----
+<tx:annotation-driven proxy-target-class="true"/>
+----
+
+=== Handling Data Types
+
+You can handle data conversion when making a call and receiving a result using the normal transformer configuration on the endpoint. In the above example, assume the web service was expecting an `org.mule.examples.bindings.WebHelloRequest` object and returned an `org.mule.examples.bindings.WebHelloResponse` object. You don't want your component to know about these external data types, so you can configure transformers to do the conversion when the call is made:
+
+[source,xml,linenums]
+----
+<component class="org.mule.examples.bindings.InvokerComponent">
+    <binding interface="org.mule.examples.bindings.HelloInterface" method="sayHello">
+        <axis:outbound-endpoint use="LITERAL" style="WRAPPED"
+                  address="http://myhost.com:81/services/HelloWeb?method=helloMethod" synchronous="true">
+            <transformers>
+                <custom-transformer class="org.mule.examples.bindings.StringsToWebRequest"/>
+            </transformers>
+            <response-transformers>
+                <custom-transformer class="org.mule.examples.bindings.WebResponseToString"/>
+            </response-transformers>
+        </axis:outbound-endpoint>
+    </binding>
+</component>
+----
+
+=== Exceptions
+
+If the remote service call triggers an exception of fault, this exception will get serialized back to the local service call and thrown. If your service wants to handle this exception, you must add the exception (or `java.lang.Exception`) to the bound method signature and use a try catch block as usual.
+
+[TIP]
+Currently, the `invoke()` method of org.mule.routing.binding.BindingInvocationHandler always throws an `UndeclaredThrowableException` when there is an exception, even when the bound method/interface throws one of its declared exceptions. As of Mule 3.x, the declared exception will be returned if the cause is known and the type matches one of the exceptions declared in the given method's "throws" clause.
+
+== Script Component Bindings
+
+Similar to the Java component bindings, script bindings enable the same behavior for your scripting components. When using a scripting component, the binding is bound to the scripting context and is accessible by using the binding interface class name.
+
+[source,xml,linenums]
+----
+<service name="ScriptService">
+    <inbound>
+        <vm:inbound-endpoint ref="inboundEndpoint"/>
+    </inbound>
+    <script:component>
+        <script:script engine="groovy">
+            return "Total: " + AdditionService.add(1,2)
+        </script:script>
+        <script:java-interface-binding interface="org.mule.tck.services.AdditionService" method="add">
+            <vm:outbound-endpoint path="addition.service" synchronous="true"/>
+        </script:java-interface-binding>
+    </script:component>
+    <outbound>
+        <pass-through-router>
+            <vm:outbound-endpoint ref="receivedEndpoint"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+
+The implementation for the component is contained within the `<script:script>` element:
+
+[source,text,linenums]
+----
+return "Total: " + AdditionService.add(1,2)
+----
+
+We refer to the binding interface using the short class name `AdditionService` and invoke the `add` method, which will call a local addition service.

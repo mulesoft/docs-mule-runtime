@@ -1,0 +1,144 @@
+= Echo Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[ <<Running the Application>> ] [ <<Building the Example>> ] [ <<The Echo Component>> ] [ Configuring the Flow ] [ Invoking the Flow ] [ Exposing as a Web Service with CXF ] [ Adding a STDIO endpoint ] [ Adding multiple inbound endpoints ] [ Configuring using a Service ]
+
+The example demonstrates how to expose a Mule ESB component using a simple web service flow. In this example, the component is exposed as a JAX-WS web service using CXF.
+
+image::https://images.mulesoft.org/echoexample.gif[image]
+
+== Running the Application
+
+Simply copy the pre-built application archive (mule-example-echo.zip) to the application folder ($MULE_HOME/apps) and start Mule. To access the web service invoke
+
+http://localhost:65082/services/EchoUMO/echo/text/hello
+
+from your browser.
+
+To stop Mule, type 'CTRL-C' in the Mule console window.
+
+== Building the Example
+
+Depending on the build tool you are using (Ant or Maven), you can build the example by simply running "ant" or "mvn". This will compile the example classes, produce an application zip file and copy it to $MULE_HOME/apps.
+
+== The Echo Component
+
+The Echo service is based on a POJO component that has been annotated with JAX-WS annotations to expose it as a web service over Mule using flow-based configuration. The component initially looks like this:
+
+[source,java]
+----
+public class Echo{    public String echo(String string)    {        return string;    }}
+----
+
+By adding JAX-WS annotations, we can publish the class method as a web service and specify how the input parameter and response are mapped.
+
+[source,java]
+----
+@WebServicepublic class Echo{    @WebResult(name="text")    public String echo(@WebParam(name="text") String string)    {        return string;    }}
+----
+
+== Configuring the Flow
+
+To configure the service, you add a <flow> element to your Mule XML configuration file and provide the `name` attribute. You specify the class of the service component with the <component> element. To reference objects from the Spring registry, you would use the nested <spring-object> element instead.
+
+[source,xml]
+----
+    <flow name="EchoFlow">        <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>    </flow>
+----
+
+
+The `class` attribute must be the fully qualified path name to the class. The `name` attribute must be a unique name for the service.
+
+== Invoking the Flow
+
+Currently your flow is valid but has no entry point. Try to execute it using the URL and you will get no response. First, you need to configure an endpoint on the service so that it can be invoked. When you ran the example, you sent a request over HTTP which invoked EchoFlow and a response was returned back to you over that HTTP channel. The Mule HTTP transport manages this interaction.
+
+To configure this flow, we have created an <inbound-endpoint> that implements request-response. Following is the configuration for EchoFlow with the endpoint included.
+
+[source,xml]
+----
+    <flow name="EchoFlow">        <inbound-endpoint address="http://localhost:65082/services/EchoUMO" exchange-pattern="request-response"/>        <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>    </flow>
+----
+
+
+If you now try to trigger the flow again, you will get a response. It will return the URL path to you. EchoFlow does not yet know how to process the web service call. First you need to introduce a filter using CXF.
+
+== Exposing as a Web Service with CXF
+
+CXF has built-in support for understanding GET requests, using the following syntax:
+
+----
+http://host/service/OPERATION/PARAM_NAME/PARAM_VALUE
+----
+
+Therefore, you could run this example by entering the following URL:
+
+----
+http://localhost:65082/services/EchoUMO/echo/text/hello
+----
+
+
+To enable CXF to process the message, update your EchoFlow to look like this:
+
+[source,xml]
+----
+    <flow name="EchoFlow">        <inbound-endpoint address="http://localhost:65082/services/EchoUMO" exchange-pattern="request-response"/>        <cxf:jaxws-service serviceClass="org.mule.example.echo.Echo"/>        <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>    </flow>
+----
+
+
+Now if you trigger the URL again, you should get the proper response message. You can also now query the WSDL. That's all the configuration needed to get the component running. To see the configuration file in its entirety, open `mule-config.xml` in the `examples/echo/src/main/app/` directory under your Mule installation directory.
+
+== Adding a STDIO endpoint
+
+In previous versions of Mule, the echo example supported a prompt to enter something at the command line. When you entered something, you were invoking the service by providing input data from System.in, and then the data you entered was echoed back to you via System.out. The Mule STDIO transport manages this interaction.
+
+To configure STDIO support for this flow, you need to add the STDIO namespace to your configuration and then specify the inbound and outbound endpoints using the "one-way" exchange pattern.
+
+[source,xml]
+----
+    <flow name="EchoFlow">        <stdio:inbound-endpoint system="IN" exchange-pattern="one-way"/>         <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>        <stdio:outbound-endpoint system="OUT" exchange-pattern="one-way"/>    </flow>
+----
+
+
+The <outbound> element allows one or more outbound router elements to be configured that control how and where message are sent once they have been processed by the component. In this example, all message are sent via System.out.
+
+Lastly, you can configure a connector if you want to override the default configuration used by the transport specified on an inbound endpoint. In this example, let's override the STDIO transport's default connector configuration so that it will prompt the user for input:
+
+[source,xml]
+----
+<stdio:connector name="SystemStreamConnector"                 promptMessage="Please enter something: "                 messageDelayTime="1000"/>
+----
+
+
+== Adding multiple inbound endpoints
+
+There are several ways to add multiple inbound endpoints to a flow. If they are all following the same processor chain, you may use a <composite-source> like this:
+
+[source,xml]
+----
+    <flow name="EchoFlow">        <composite-source>            <stdio:inbound-endpoint system="IN" exchange-pattern="one-way"/>             <vm:inbound-endpoint path="echo" exchange-pattern="request-response"/>        </composite-source>        <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>    </flow>
+----
+
+
+However, if you have endpoint-specific message processors to apply, like with CXF, an alternative is to use composite flows where you reference one flow from another. This way you can break down the flows by endpoint. See the example below:
+
+[source,xml]
+----
+    <flow name="EchoStdio">        <stdio:inbound-endpoint system="IN" exchange-pattern="one-way"/>    <flow-ref name="EchoComponent"/>        <stdio:outbound-endpoint system="OUT" exchange-pattern="one-way"/>    </flow>    <flow name="EchoComponent">        <component>            <singleton-object class="org.mule.example.echo.Echo" />        </component>    </flow>    <flow name="EchoWebService">        <inbound-endpoint address="http://localhost:65082/services/EchoUMO" exchange-pattern="request-response"/>        <cxf:jaxws-service serviceClass="org.mule.example.echo.Echo"/>    <flow-ref name="EchoComponent"/>    </flow>
+----
+
+
+EchoStdio and EchoWebService provide two different inbound endpoints. They both then execute the EchoComponent flow by reference.
+
+== Configuring using a Service
+
+Alternatively, the flow could be configured using a service. To configure the service, you add a <service> element to your Mule XML configuration file and provide the `name` attribute. You specify the class of the service component with the <component> element. You then add the HTTP endpoint and CXF message processor as before.
+
+[source,xml]
+----
+    <model name="echoSample">        <service name="EchoUMO">            <inbound>                <inbound-endpoint address="http://localhost:65082/services/EchoUMO"                                  exchange-pattern="request-response">                    <cxf:jaxws-service />                                  </inbound-endpoint>            </inbound>            <component>                <singleton-object class="org.mule.example.echo.Echo"/>            </component>        </service>    </model>
+----
+
+In the service configuration, the serviceClass attribute for CXF is NOT required. This is because in this configuration CXF is able to discover the component automatically. Flow-based configuration does not currently support this and so the serviceClass must be specified explicitly.

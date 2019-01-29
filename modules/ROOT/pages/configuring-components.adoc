@@ -1,0 +1,118 @@
+= Configuring Components
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Service components contain the business logic for working with the messages passed through Mule ESB. A service component can be any type of object, including a xref:using-spring-beans-as-service-components.adoc[Spring bean], xref:configuring-java-components.adoc[POJO], xref:scripting-module-reference.adoc[script], xref:using-web-services.adoc[web service].
+
+Because they are highly specific to your implementation, you will typically xref:developing-components.adoc[create your own custom components], or simply use an existing POJO. Mule also ships with some standard components you can use or extend as needed. This page describes how to configure the different types of components.
+
+For detailed information on the elements you configure for components, see xref:component-configuration-reference.adoc[Component Configuration Reference].
+
+== Simple Components
+
+There are several simple components included with Mule that are useful for testing or bypassing component execution.
+
+[%header,cols="10a,90a"]
+|===
+|Configuration Element |Description
+|*<log-component/>* |Logs component invocations, outputting the received message as a string. This component does not return a response.
+|*<echo-component/>* |Extends the log component to log and echo the incoming message. The message is transformed before being returned, so transformations on inbound endpoints will be applied.
+|*<null-component/>* |Throws an exception when invoked. This is useful for testing use cases that use a forwarding consumer inbound router.
+|*<test:component/>* |Configures the Mule `FunctionalTestComponent`, which allows more complex testing scenarios to be created. For more information, see xref:functional-testing.adoc[Functional Testing].
+|===
+
+== Java Components
+
+Java components specify a Java class to be used as the service component or configure a reference to an implementation in a container such as Spring. They also configure the way in which Mule should manage the Java service component's life-cycle, invoke it, and (if pooled) manage the pool of instances.
+
+Java components can be configured quickly and easily by simply specifying the service component implementation class name on the `<component>` or `<pooled-component>` element. The `<pooled-component>` element allows you to establish a pooling profile for the service (see xref:tuning-performance.adoc[Tuning Performance]). In both cases, the `PrototypeObjectFactory` will be used by default and a new object instance will be created for each request or (for pooled components) for each new object in the pool.
+
+[source,xml,linenums]
+----
+<component class="org.my.ServiceComponentImpl"/>
+...
+<pooled-component class="org.my.ServiceComponentImpl"/>
+----
+
+Alternatively, you can explicitly specify object factories, such as the `SingletonObjectFactory` that creates a single instance of the object:
+
+[source,xml,linenums]
+----
+<component>
+     <singleton-object class="org.my.ServiceComponentImpl"/>
+</component>
+----
+
+The explicit syntax is required instead of the shortcut `<component class>` syntax if you add interceptors to the component. For further configuration options and information on the default settings that are applied, see xref:configuring-java-components.adoc[Configuring Java Components].
+
+== Other Components
+
+These are several other components available that allow you to use different technologies such as xref:using-web-services.adoc[web services] for your service components. These components are often included as part of xref:transports-reference.adoc[transports] or xref:modules-reference.adoc[modules].
+
+[%header,cols="40a,60a",width=90%]
+|===
+|Configuration |Description
+|*<http:rest-service-component/>* |Proxies a remote call to a REST-style web service.
+|*<cxf:wrapper-component/>* |Proxies a remote call to a web service using xref:building-web-services-with-cxf.adoc[CXF].
+|*<script:component/>* |Configures a JSR-223 xref:scripting-module-reference.adoc[script] for the service component.
+|===
+
+== Customizing Behavior with Interceptors
+
+Mule interceptors are useful for attaching behaviors to multiple service components. The interceptor pattern is often referred to as practical AOP (Aspect Oriented Programming), as it allows the developer to intercept processing on an object and potentially alter the processing and outcome. For complete information, see xref:using-interceptors.adoc[Using Interceptors].
+
+== Lifecycle
+
+Components have a lifecycle like any other object in the Mule registry. Lifecycle can be configured by adding one or more lifecycle interfaces to your component. Since Mule 3.0 http://en.wikipedia.org/wiki/JSR_250[JSR-250] annotations can be used to configure initialise and destroy methods. The following list describes in order the lifecycle phases for component objects.
+
+[%header,cols="5a,45a,30a,20a"]
+|===
+|Lifecycle |Description |Interface |Annotation
+|initialise |The first lifecycle method called once any injectors on the component have been called. This means any properties on the component will be set before the initialise lifecycle is called. |`org.mule.api.lifecycle.Initialisable` |`javax.annotation.PostConstruct`
+|start |This is called when the MuleContext is started. |`org.mule.api.lifecycle.Startable` |
+|stop |This is called when the MuleContext is stopped, or the service that owns this component is stopped. |`org.mule.api.lifecycle.Stoppable` |
+|dispose |Called as the object is being disposed off. Typically this happens because either the MuleContext is shutting down or the service that wraps this component was unregistered. |`org.mule.api.lifecycle.Disposible` |`javax.annotation.PreDestroy`
+|===
+
+=== Lifecycle examples
+
+==== Full lifecycle:
+
+[source,text,linenums]
+----
+org.my.ServiceComponentImpl implements org.my.ServiceComponent, org.mule.api.lifecycle.Lifecycle
+{
+    public void initialise() throws InitialisableException { }
+
+    public void start() throws MuleException { }
+
+    public void stop() throws MuleException { }
+
+    public void dispose() { }
+}
+----
+
+==== Initialise-only lifecycle:
+
+[source,text,linenums]
+----
+org.my.ServiceComponentImpl implements org.my.ServiceComponent, org.mule.api.lifecycle.Initialisable
+{
+    public void initialise() throws InitialisableException { }
+}
+----
+
+==== Initialise/Dispose lifecycle using http://en.wikipedia.org/wiki/JSR_250[JSR-250] annotations:
+
+[source,text,linenums]
+----
+org.my.ServiceComponentImpl implements org.my.ServiceComponent
+{
+    @PostConstruct
+    public void init() { }
+
+    @PreDestroy
+    public void destroy() { }
+}
+----

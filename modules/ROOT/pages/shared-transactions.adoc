@@ -1,0 +1,55 @@
+= Transactions Can Now Be Shared
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introducing Shared Transactions
+
+One of the strengths of the Mule ESB is its ability to share many kinds of resources with the rest of the software environment: libraries, Spring beans, transaction managers, and many more. Starting in Mule 2.2.6 and 3.0, there's another thing Mule can share: transactions.
+
+== New Attribute interactWithExternal on <xa-transaction>
+
+In JTA, the Java Enterprise Edition API for transaction processing, transactions are tied to threads. When Mule is entered from user code it's possible that a transaction has already been started on the current thread, and Mule might want to join it rather than starting a new (nested) transaction. You can control this with a new, optional boolean attribute on the *<xa-transaction>* element called *interactWithExternal*. The default value is *false*, which make Mule act like it did in previous versions. The way that the two transaction-controlling attributes *action* and *interactWithExternal* combine is straightforward if you keep in mind what the two *interactWithExternal* settings mean:
+
+* true – pay attention to transactions started outside of Mule
+* false – ignore transactions started outside of Mule
+
+== Rules on Transaction Sharing
+
+The complete set of rules is below. For simplicity, we call a transaction started by Mule a "Mule Transaction", and a transaction started by user code a "non-Mule transaction".
+
+* action = NONE
+** interactWithExternal=true
+*** Throw an exception if any transaction is active.
+** interactWithExternal=false
+*** Throw an exception if a Mule transaction is active..
+* action = ALWAYS_BEGIN
+** interactWithExternal=true
+*** If no transaction is active, begin a new one.
+*** Otherwise, throw an exception.
+** interactWithExternal=false
+*** If no Mule transaction is active, begin a new one. If a non-Mule transaction was active, this new transaction will be nested inside it.
+*** Otherwise, begin a new transaction.
+* action = BEGIN_OR_JOIN
+** interactWithExternal=true
+*** If any transaction is active is started, join it.
+*** Otherwise, begin a new transaction.
+** interactWithExternal=false
+*** If a Mule transaction is active, join it.
+*** Otherwise, begin a new transaction. If a non-Mule transaction was active, this new transaction will be nested inside it.
+* action = ALWAYS_JOIN
+** interactWithExternal=true
+*** If any transaction is active, join it.
+*** Otherwise, throw an exception.
+** interactWithExternal=false
+*** If a Mule transaction is active, join it.
+*** Otherwise, throw an exception.
+* action = JOIN_IF_POSSIBLE
+** interactWithExternal=true
+*** If any transaction is active, join it.
+** interactWithExternal=false
+*** If a Mule transaction is active, join it.
+
+== More Information
+
+This is documented at xref:transaction-management.adoc[Transaction Management], along with other information about managing transactions with Mule. In particular, the entire section on XA Transactions is extremely useful.

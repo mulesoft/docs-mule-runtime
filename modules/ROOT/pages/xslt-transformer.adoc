@@ -1,0 +1,193 @@
+= XSLT Transformer
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Example
+
+The following example demonstrates how to configure an inline XSLT transformer pulling parameters from the current message.
+
+To use the XSLT transformer, you add it to your Mule XML configuration as follows:
+
+[source,xml,linenums]
+----
+<mulexml:xslt-transformer name="xslt">
+  <mulexml:xslt-text>
+    <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+      <xsl:output method="xml"/>
+      <xsl:param name="title"/>
+      <xsl:param name="rating"/>
+      <xsl:template match="catalog">
+      <xsl:element name="cd-listings">
+        <xsl:attribute name="title">
+          <xsl:value-of select="$title"/>
+        </xsl:attribute>
+        <xsl:attribute name="rating">
+          <xsl:value-of select="$rating"/>
+        </xsl:attribute>
+        <xsl:apply-templates/>
+      </xsl:element>
+      </xsl:template>
+
+      <xsl:template match="cd">
+      <xsl:element name="cd-title">
+        <xsl:value-of select = "title" />
+      </xsl:element>
+      </xsl:template>
+    </xsl:stylesheet>
+  </mulexml:xslt-text>
+  <mulexml:context-property key="title" value="#[header:ListTitle]"/>
+  <mulexml:context-property key="rating" value="#[header:ListRating]"/>
+----
+
+This example configures a transformer using inline XSLT expressions. It also defines two context parameters:
+
+[source,xml,linenums]
+----
+<mulexml:context-property key="title" value="#[header:ListTitle]"/>
+<mulexml:context-property key="rating" value="#[header:ListRating]"/>
+----
+
+These parameters are pulled from the current message and made available in the XSLT context so that they can be referenced in your XSLT statements. You can use any valid expression. In this example, the header evaluator is used to pull a header from the current message.
+
+Your configured XSLT transformer can be referenced by an endpoint. In the following example, the result is written to `System.out`. The test data looks like this:
+
+[source,xml,linenums]
+----
+<catalog>
+    <cd>
+        <title>Empire Burlesque</title>
+        <artist>Bob Dylan</artist>
+        <country>USA</country>
+        <company>Columbia</company>
+        <price>10.90</price>
+        <year>1985</year>
+    </cd>
+    <cd>
+        <title>Hide your heart</title>
+        <artist>Bonnie Tyler</artist>
+        <country>UK</country>
+        <company>CBS Records</company>
+        <price>9.90</price>
+        <year>1988</year>
+    </cd>
+----
+
+The result written to `System.out` looks like this:
+
+[source,xml,linenums]
+----
+<cd-listings title="MyList" rating="6">
+    <cd-title>Empire Burlesque</cd-title>
+    <cd-title>Hide your heart</cd-title>
+    <!-- ... </cd-listings> -->
+----
+
+The full configuration for this example is shown below.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.0/mule-vm.xsd
+       http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/3.0/mule-stdio.xsd
+       http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/3.0/mule-xml.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+    <mulexml:xslt-transformer name="xslt">
+        <mulexml:xslt-text>
+            <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+                        <xsl:output method="xml"/>
+                        <xsl:param name="title"/>
+                        <xsl:param name="rating"/>
+                        <xsl:template match="catalog">
+                        <xsl:element name="cd-listings">
+                            <xsl:attribute name="title">
+                                <xsl:value-of select="$title"/>
+                            </xsl:attribute>
+                            <xsl:attribute name="rating">
+                                <xsl:value-of select="$rating"/>
+                            </xsl:attribute>
+                            <xsl:apply-templates/>
+                        </xsl:element>
+                        </xsl:template>
+
+                        <xsl:template match="cd">
+                        <xsl:element name="cd-title">
+                            <xsl:value-of select = "title" />
+                        </xsl:element>
+                        </xsl:template>
+                    </xsl:stylesheet>
+        </mulexml:xslt-text>
+        <mulexml:context-property key="title" value="#[header:ListTitle]"/>
+        <mulexml:context-property key="rating" value="#[header:ListRating]"/>
+    </mulexml:xslt-transformer>
+
+    <model name="main">
+        <service name="Echo">
+            <inbound>
+                <!-- this endpoint is used by the functional test -->
+                <vm:inbound-endpoint path="test.in" transformer-refs="xslt" synchronous="true"/>
+            </inbound>
+            <echo-component/>
+            <outbound>
+                <pass-through-router>
+                    <stdio:outbound-endpoint system="OUT"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+
+== Testing the Transformer
+
+This transformer can be tested using the following functional test. Note that it uses `FunctionalTestCase`, which is part of Mule's xref:functional-testing.adoc[Test support].
+
+[source,java,linenums]
+----
+public class XSLTWikiDocsTestCase extends FunctionalTestCase
+{
+    protected String getConfigResources()
+    {
+        return "org/mule/test/integration/xml/xslt-functional-test.xml";
+    }
+
+    public void testMessageTransform() throws Exception
+        {
+            //We're using Xml Unit to compare results
+            //Ignore whitespace and comments
+            XMLUnit.setIgnoreWhitespace(true);
+            XMLUnit.setIgnoreComments(true);
+
+            //Read in src and result data
+            String srcData = IOUtils.getResourceAsString(
+                    "org/mule/test/integration/xml/cd-catalog.xml", getClass());
+            String resultData = IOUtils.getResourceAsString(
+                    "org/mule/test/integration/xml/cd-catalog-result-with-params.xml", getClass());
+
+            //Create a new Mule Client
+            MuleClient client = new MuleClient(muleContext);
+
+            //These are the message roperties that will get passed into the XQuery context
+            Map<String, Object> props = new HashMap<String, Object>();
+            props.put("ListTitle", "MyList");
+            props.put("ListRating", new Integer(6));
+
+            //Invoke the service
+            MuleMessage message = client.send("vm://test.in", srcData, props);
+            assertNotNull(message);
+            assertNull(message.getExceptionPayload());
+            //Compare results
+            assertTrue(XMLUnit.compareXML(message.getPayloadAsString(), resultData).similar());
+        }
+    }
+----

@@ -1,0 +1,418 @@
+= FTP Transport Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introduction
+
+The FTP transport allows integration of the File Transfer Protocol into Mule. Mule can poll a remote FTP server directory, retrieve files and process them as Mule messages. Messages can also be uploaded as files to a directory on a remote FTP server.
+
+Mule also supports the SFTP protocol for secure file transfer. As of Mule 3, the [SFTP Transport] is included in the Mule distribution.
+
+== Namespace and Syntax
+
+Namespace (Community Edition):
+
+----
+http://www.mulesoft.org/schema/mule/ftp
+----
+
+XML Schema location (Community Edition)
+
+----
+http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd
+----
+
+Namespace (Enterprise Edition)
+
+----
+http://www.mulesoft.org/schema/mule/ee/ftp
+----
+
+XML schema location (Enterprise Edition)
+
+----
+http://www.mulesoft.org/schema/mule/ee/ftp/3.2/mule-ftp-ee.xsd
+----
+
+Syntax
+
+Straight URI example: ftp://theUser:secret@theHost:port/path
+
+XML version `<ftp:endpoint host="theHost" port="22" path="/path" user="theUser" password="secret"/>`
+
+
+[TIP]
+*Escape Your Credentials*
+ +
+If you use a URI-style endpoint and you include the user name and password, escape any characters that are illegal for URIs. Only alphabet, numeric, "-", "_", "." and "+" are allowed. For example, if the user name is `user@myco.com`, you should enter it as `user%40myco.com`.
+
+Connector and endpoint syntax `<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true"/>`
+
+== Considerations
+
+=== Features
+
+* Poll a directory on a remote FTP server for new files
+* Retrieve files an FTP server
+* Transfer binary or text files
+* Filter files at the endpoint based on filename wildcards
+* Filter files at the endpoint based on Mule expressions
+* Upload and store files on an FTP server
+* Rename output files based on Mule expressions
+* Streaming for transferring large files
+* Support for xref:configuring-reconnection-strategies.adoc[reconnection strategies]
+
+The Mule Enterprise Edition includes several additional features that allow to to filter files to be processed by file age and moving and renaming files on the source FTP server after processing.
+
+== Usage
+
+Each endpoint carries all the information for the FTP connection, that is, host, port, path, username and password at least. Additional properties (like binary or passive) can be specified on the connector and overridden at the endpoint level.
+
+The FTP transport periodically polls the FTP server. Upon each poll request, a new connection to the FTP server is opened, the specified user is logged in and all files are listed under the specified path. This means that if the FTP server goes down no special provisions need to be made - the current poll attempt fails but polling doesn't stop.
+
+If xref:configuring-reconnection-strategies.adoc[reconnection strategies] are configured, the FTP connection can be re-established automatically by Mule based on the policy you have configured.
+
+The FTP transport does not support transactions as the File Transfer Protocol itself is not transactional. Instead you should design compensating transactions into your architecture using exception strategies in Mule.
+
+== Example Configurations
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+[%header,cols="1*a"]
+|===
+^|Downloading Files from FTP Using a Flow
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <flow name="ftp2file">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+|===
+
+[discrete.view]
+=== Mule Service
+
+[%header,cols="1*a"]
+|===
+^|Downloading Files from FTP Using a Service
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <model name="example">
+        <service name="ftp2file">
+            <inbound>
+                <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+            </inbound>
+            <outbound>
+                <pass-through-router>
+                    <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+|===
+=====
+
+This example shows a simple flow that picks up all available files on the FTP server (in its root directory) and stores them into a directory on the local filesystem.
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+[%header,cols="1*a"]
+|===
+^|Filtering filenames using a Flow
+|
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <flow name="fileFilter">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+            <file:filename-wildcard-filter pattern="*.txt,*.xml"/>
+        </ftp:endpoint>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+|===
+
+[discrete.view]
+=== Mule Services
+
+[%header,cols="1*a"]
+|===
+^|Filtering filenames using a Service
+|
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <model name="example">
+        <service>
+            <inbound>
+                <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+                    <file:filename-wildcard-filter pattern="*.txt,*.xml"/>
+                </ftp:endpoint>
+            </inbound>
+            <outbound>
+                <pass-through-router>
+                    <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+|===
+=====
+
+This example shows how to pick only certain files on the FTP server. You do this by configuring filename filters to control which files the endpoint receives. The filters are expressed in a comma-separated list. Note that in order to use a filter from the file transport's schema it must be included.
+
+[%header,cols="1*a"]
+|===
+^|Filtering a file from FTP
+|
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <simple-service name="ftpProcessor"
+                address="ftp://theUser:secret@host:21/"
+                component-class="com.mycompany.mule.MyProcessingComponent"/>
+</mule>
+----
+|===
+
+This example uses a `simple-service` to route files retrieved from the FTP server to `MyProcessingComponent` for further processing.
+
+== Configuration Options
+
+=== Streaming
+
+If streaming is not enabled on the FTP connector, Mule attempts to read a file it picks up from the FTP server into a `byte[]` to be used as the payload of the `MuleMessage`. This behavior can cause trouble if large files need to be processed.
+
+In this case, enable streaming on the connector:
+
+[source,xml]
+----
+<ftp:connector name="ftpConnector" streaming="true">
+----
+
+Instead of reading the file's content into memory Mule now sends an http://download.oracle.com/javase/6/docs/api/java/io/InputStream.html[InputStream] as the payload of the MuleMessage. The name of the file that this input stream represents is stored as the
+_originalFilename_ property on the message. If streaming is used on inbound endpoints it is the responsibility of the user to close the input stream. If streaming is used on outbound endpoints Mule closes the stream automatically.
+
+== Configuration Reference
+
+=== FTP Transport
+
+The FTP transport provides connectivity to FTP servers to allow files to be read and written as messages in Mule.
+
+=== Connector
+
+The FTP connector is used to configure the default behavior for FTP endpoints that reference the connector. If there is only one FTP connector configured, all FTP endpoints will use that connector.
+
+.Attributes of <connector...>
+[%header,cols="20,10,10,10,50"]
+|===
+|Name	|Type	|Required	|Default	|Description
+|streaming |boolean	|no | |Whether an InputStream should be sent as the message payload (if true) or a byte array (if false). Default is false.
+|connectionFactoryClass	|class name	|no | |A class that extends FtpConnectionFactory. The FtpConnectionFactory is responsible for creating a connection to the server using the credentials provided by the endpoint. The default implementation supplied with Mule uses the Commons Net project from Apache.
+|pollingFrequency	|long	|no | |How frequently in milliseconds to check the read directory. Note that the read directory is specified by the endpoint of the listening component.
+|outputPattern	|string	|no | |The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector
+|binary	|boolean	|no | |Select/disable binary file transfer type. Default is true.
+|passive	|boolean	|no | |Select/disable passive protocol (more likely to work through firewalls). Default is true.
+|===
+
+.Child Elements of <connector...>
+[%header,cols="3*"]
+|===
+|Name	|Cardinality	|Description
+|file:abstract-filenameParser	|0..1	|The filenameParser is used when writing files to an FTP server. The parser will convert the outputPattern attribute to a string using the parser and the current message. To add a parser to your configuration, you import the "file" namespace into your XML configuration. For more information about filenameParsers, see the xref:file-transport-reference.adoc[File Transport Reference].
+|===
+
+=== Inbound Endpoints
+
+.Attributes of <inbound-endpoint...>
+[%header,cols="20,10,10,10,50"]
+|===
+|Name	|Type	|Required	|Default |Description
+|path	|string	|no | |A file location on the remote server.
+|user	|string	|no | |If FTP is authenticated, this is the username used for authentication.
+|password	|string	|no | |The password for the user being authenticated.
+|host	|string	|no | |An IP address (such as www.mulesoft.com, localhost, or 192.168.0.1).
+|port	|port number |no | |The port number to connect on.
+|binary	|boolean	|no | |Select/disable binary file transfer type. Default is true.
+|passive |boolean	|no | |Select/disable passive protocol (more likely to work through firewalls). Default is true.
+|pollingFrequency	|long	|no | |How frequently in milliseconds to check the read directory. Note that the read directory is specified by the endpoint of the listening component.
+|===
+
+No Child Element of <inbound-endpoint...>
+
+
+=== Outbound Endpoints
+
+.Attributes of <outbound-endpoint...>
+[%header,cols="20,10,10,10,50"]
+|===
+|Name	|Type	|Required	|Default |Description
+|path	|string	|no | |A file location on the remote server.
+|user	|string	|no | |If FTP is authenticated, this is the username used for authentication.
+|password	|string	|no | |The password for the user being authenticated.
+|host	|string	|no | |An IP address (such as www.mulesoft.com, localhost, or `192.168.0.1`).
+|port	|port number |no | |The port number to connect on.
+|binary	|boolean	|no | |Select/disable binary file transfer type. Default is true.
+|passive |boolean	|no | |Select/disable passive protocol (more likely to work through firewalls). Default is true.
+|otputPattern	|string	|no | |The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector
+|===
+
+No Child Elements of <outbound-endpoint...>
+
+
+=== Endpoint
+
+.Attribute of <endpoint...>
+[%header,cols="20,10,10,10,50"]
+|===
+|Name	|Type	|Required	|Default |Description
+|path	|string	|no | |A file location on the remote server.
+|user	|string	|no | |If FTP is authenticated, this is the username used for authentication.
+|password	|string	|no | |The password for the user being authenticated.
+|host	|string	|no | |An IP address (such as www.mulesoft.com, localhost, or 192.168.0.1).
+|port	|port number |no | |The port number to connect on.
+|binary	|boolean	|no | |Select/disable binary file transfer type. Default is true.
+|passive |boolean	|no | |Select/disable passive protocol (more likely to work through firewalls). Default is true.
+|pollingFrequency	|long	|no | |How frequently in milliseconds to check the read directory. Note that the read directory is specified by the endpoint of the listening component
+|otputPattern	|string	|no | |The pattern to use when writing a file to disk. This can use the patterns supported by the filename-parser configured for this connector
+|===
+
+No Child Element of <endpoint...>
+
+
+=== Mule Enterprise Connector Attributes
+
+The following additional attributes are available on FTP connector in Mule Enterprise only:
+
+[cols="10,90"]
+|===
+|moveToDirectory |The directory path where the file should be written after it has been read. If this property is not set, the file is deleted.
+|moveToPattern |The pattern to use when moving a read file to a new location as specified by the
+|moveToDirectory property. |This property can use the patterns supported by the filenameParser configured for this connector.
+fileAge	Do not process the file unless it's older than the specified age in milliseconds.
+|===
+
+== Schema
+
+* Community Edition FTP Schema: http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd
+* Enterprise edition FTP Schema: http://www.mulesoft.org/schema/mule/ee/ftp/3.2/mule-ftp-ee.xsd
+* FTP Schema Structure: http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-ftp_xsd/schema-overview.html
+
+== Maven
+
+The FTP transport can be included with the following dependency:
+
+Community edition
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-ftp</artifactId>
+  <version>3.2.0</version>
+</dependency>
+----
+
+Enterprise edition - Available in Mule Enterprise only
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>com.mulesoft.muleesb.transports</groupId>
+  <artifactId>mule-transport-ftp-ee</artifactId>
+  <version>3.2.0</version>
+</dependency>
+----
+
+== Extending this Module or Transport
+
+=== Custom FtpConnectionFactory
+
+The `FtpConnectionFactory` establishes Mule's connection to the FTP server. The default connection factory should be sufficient in 99% of the cases. If you need to change the way Mule connects to your FTP server use the `connectionFactoryClass` attribute on the connector:
+
+[source,xml]
+----
+<ftp:connector name="ftpConnector" connectionFactoryClass="com.mycompany.mule.MyFtpConnectionFactory"/>
+----
+
+Use the fully qualified class name of your `FtpConnectionFactory` subclass. Note that this *must* be a subclass of `FtpConnectionFactory` as the `FtpConnector` attempts to cast the factory to that class.
+
+=== Filename parser
+
+The `filenameParser` is used when writing files to the FTP server. The parser converts the output pattern configured on an endpoint to the name of the file that is written using the parser and the current message.
+
+The filename parser used in the FTP transport should be sufficient in 99% of the cases. It is an instance of link:/docs/site/current/apidocs/org/mule/transport/file/ExpressionFilenameParser.html[ExpressionFilenameParser] which allows to use xref:expressions-configuration-reference.adoc[arbitrary expressions] to compose the filename that is used when storing files on the FTP server.
+
+It is possible to configure a custom filename parser as a child element of the connector declaration:
+
+[source,xml,linenums]
+----
+<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true">
+    <file:custom-filename-parser class="com.mycompany.mule.MyFilenameParser"/>
+</ftp:connector>
+----
+
+[NOTE]
+The class you configure here must implement the link:/docs/site/current/apidocs/org/mule/transport/file/FilenameParser.html[FilenameParser] interface.
+
+== Best Practices
+
+Put your login credentials in a properties file, not hard-coded in the configuration. This also allows you to use different settings between development, test and production systems.

@@ -1,0 +1,325 @@
+= In Memory (VM) Transport Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introduction
+
+The In Memory transport can be used for intra-JVM communication between Mule xref:using-flows-for-service-orchestration.adoc[Flows] and/or xref:using-mule-services.adoc[Services]. This transport by default uses in-memory queues but can optionally be configured to use persistent queues.
+
+== Namespace and Syntax
+
+XML namespace:
+
+----
+xmlns:vm "http://www.mulesoft.org/schema/mule/vm"
+----
+
+XML schema location:
+
+[source,text,linenums]
+----
+http://www.mulesoft.org/schema/mule/vm
+http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+----
+
+Connector syntax:
+
+VM with persistent queues:
+
+[source,xml,linenums]
+----
+<vm:connector name="persistent">
+    <vm:queue-profile persistent="true" maxOutstandingMessages="500"/>
+</vm:connector>
+----
+
+VM with in-memory queues (or no queue, for request-response endpoints):
+
+[source,xml]
+----
+<vm:connector name="memory" />
+----
+
+Endpoint Syntax:
+
+. Prefixed endpoint:
++
+
+[source,xml]
+----
+<vm:outbound-endpoint path="out"/>
+----
+
+. Non-prefixed URI:
++
+
+[source,xml]
+----
+<outbound-endpoint address="vm://out">
+----
+
+== Transformers
+
+There are no specific transformers for the VM transport.
+
+== Considerations
+
+The VM transport has often been used to implement complex integrations made up of multiple services. Improvements in Mule 3 obviate the need for VM in many cases. +
+Because of the introduction of MessageProcessor in most Mule elements, you can accomplish more complex integrations without tying together services. You can use http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/flow-ref.html[Flow References] to directly reference one flow from another without a transport in the middle.
+
+VM is still useful in certain situations. Suppose, for instance, that most of the parts of your solution are local, but some need to be decoupled for testing, or because some need to be made remote.
+
+[WARNING]
+*WARNING* +
+Each application in a Mule instance has its own, unique set of VM endpoints. Thus the VM transport cannot be used to communicate between different Mule applications.
+
+== Features
+
+The in memory (VM) transport has two modes of operation: One for use with _request-response_ and another for use with _one-way_ endpoints.
+
+*_request-response:_*
+
+When using _request-response_ endpoints, messages are delivered directly from an outbound vm endpoint to the inbound vm endpoint that is listening on the same path. This delivery is blocking and occurs in the same thread. If there is no inbound _request-response_ vm endpoint in the same Mule application listening on this path, then dispatching of the message from the outbound endpoint fails.
+
+*_one-way:_*
+
+When using _one-way_ endpoints, messages are delivered to the corresponding inbound endpoint via a queue. This delivery is non-blocking. If there is no inbound _one-way_ endpoint in the same Mule application listening on this path, then, although dispatching of the message succeeds, the message remains in the queue. By default, this queue is in memory, but it is also possible to configure a persistent queue that uses the file system as its persistence mechanism.
+
+[WARNING]
+*NOTE* +
+You cannot send a message from a request-response endpoint to a one-way endpoint or the other way around. This causes the send to fail, or the message stays in the queue and never arrives at the expected destination.
+
+== Usage
+
+To use VM endpoints:
+
+. Add the MULE VM namespace to your configuration:
+* Define the VM prefix using xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+* Define the schema location with http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+. Optionally, define one or more connectors for VM endpoints.
+* Create a VM connector:
++
+[source,xml]
+----
+<vm:connector name="vmConnector"/>
+----
+
++
+If none is created, all VM endpoints use a default connector.
+. Create VM endpoints.
+* Messages are received on inbound endpoints.
+* Messages are sent to outbound endpoints.
+* Both kinds of endpoints are identified by a path name.
+
+=== Namespace Declaration
+
+To use the VM transport, you must declare the VM namespace in the header of the Mule configuration file. For example:
+
+*VM Transport Namespace Declaration*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd">
+----
+
+=== Connector Configuration
+
+The configuration of the VM connector is optional. Configuring a connector allows you to configure a http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/queue-profile.html[Queue Profile] which allows persistence to be used. You can also set the maximum queue size.
+
+=== Endpoints
+
+xref:configuring-endpoints.adoc[Endpoints] are configured as with all transports.
+
+The VM transport-specific endpoints are configured using the VM namespace and use a _path_ attribute. For example:
+
+[source,xml]
+----
+<vm:outbound-endpoint path="out" exchange-pattern="one-way"/>
+----
+
+If you need to invoke a VM endpoint from https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/module/client/MuleClient.html[Mule Client], use an xref:mule-endpoint-uris.adoc[Endpoint URI]. The format of an endpoint URI for VM is as follows:
+
+----
+vm://path
+----
+
+=== Using Transactions
+
+_one-way_ VM queues can take part in distributed xref:transaction-management.adoc[XA Transactions]. To make a VM endpoint transactional, use a configuration like the following:
+
+[source,xml,linenums]
+----
+<flow>
+  <vm:inbound-endpoint address="vm://dispatchInQueue">
+    <vm:transaction action="BEGIN_OR_JOIN"/>
+  </vm:inbound-endpoint>
+</flow>
+----
+
+Using XA requires that you add a transaction manager to your configuration. For more information, see xref:transaction-management.adoc[Transaction Management].
+
+=== Transactional Inbound VM Queues
+
+Inbound VM endpoints support fully transactional flows. For instance, the following configuration creates a VM queue (because the inbound endpoint is one-way), and process messages read from this queue synchronously and transactionally:
+
+[source,xml,linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <vm:transaction action="ALWAYS_BEGIN"/>
+    </vm:inbound-endpoint>
+    <component class="com/mycomany.ProcessOrder"/>
+</flow>
+----
+
+XA transactions are also supported:
+
+[source,xml,linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <xa-transaction action="ALWAYS_BEGIN"/>
+    </vm:inbound-endpoint>
+    <component class="com/mycomany.ProcessOrder"/>
+    <jms:outbound-endpoint ref="processedOrders">
+        <xa-transaction action="ALWAYS_JOIN"/>
+    </jms:outbound-endpoint>
+</flow>
+----
+
+== Example Configurations
+
+*Example usage of VM endpoints*
+
+[source,xml,linenums]
+----
+<vm:connector name="vmConnector"> ❶
+
+<vm:connector name="persistentVmConnector" queueTimeout="1000"> ❷
+   <queue-profile maxOutstandingMessages="100" persistent="true"/> ❸
+</vm:connector>
+
+<flow>
+    <vm:inbound-endpoint path="in" exchange-pattern="request-response" connector-ref="vmConnector" /> ❹
+    <component class="org.mule.CompoenntClass"/>
+    <vm:inbound-endpoint path="in" connector-ref="persistentVmConnector" /> ❺
+</flow>
+----
+
+The first connector ❶ uses default connector configuration. +
+The second connector ❷ configures a queue profile and queueTimeout.
+
+The flow uses two VM endpoints, the inbound endpoint ❹ uses a _request-response_ exchange pattern. The outbound endpoint ❺ use a _one-way_ endpoint as well as an alternative connector with persistence configured.
+
+== Configuration Reference
+
+=== Element Listing
+
+== VM Transport
+
+The VM transport is used for intra-VM communication between components managed by Mule. The transport provides options for configuring VM transient or persistent queues.
+
+== Connector
+
+=== Attributes of <connector...>
+
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|queueTimeout |positiveInteger |no |  |The timeout setting for the queue used for asynchronous endpoints
+|===
+
+=== Child Elements of <connector...>
+
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|queueProfile |0..1 |DEPRECATED. USE "<queue-profile>" instead.
+|queue-profile |0..1 |Configures the properties of this connector's queue (see xref:configuring-queues.adoc[Configuring Queues]).
+|===
+
+== Inbound endpoint
+
+The endpoint on which this connector receives messages from the transport.
+
+=== Attributes of <inbound-endpoint...>
+
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
+|===
+
+No Child Elements of <inbound-endpoint...>
+
+
+
+== Outbound endpoint
+
+The endpoint to which this connector sends messages.
+
+=== Attributes of <outbound-endpoint...>
+
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
+|===
+
+No Child Elements of <outbound-endpoint...>
+
+
+
+== Endpoint
+
+An endpoint "template" that can be used to construct an inbound or outbound endpoint elsewhere in the configuration by referencing the endpoint name.
+
+=== Attributes of <endpoint...>
+
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
+|===
+
+No Child Elements of <endpoint...>
+
+
+
+== Transaction
+
+The transaction element configures a transaction. Transactions allow a series of operations to be grouped together so that they can be rolled back if a failure occurs. For more information, see xref:transaction-management.adoc[Transaction Management].
+
+No Child Elements of <transaction...>
+
+
+== Schema
+
+The schema for the VM module appears http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd[here]. Its structure is http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[here].
+
+== Javadoc API Reference
+
+The Javadoc for this module can be found here: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/vm/package-summary.html[VM]
+
+== Maven
+
+The In Memory Transport can be included with the following dependency:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-vm</artifactId>
+</dependency>
+----
+
+== Best Practices
+
+Be certain that inbound request-response endpoints are paired with outbound request-response endpoints and inbound one-way endpoints are paired with outbound one-way endpoints.

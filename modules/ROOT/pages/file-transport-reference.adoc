@@ -1,0 +1,578 @@
+= File Transport Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introduction
+
+The File transport allows files on the local file system to be read from and written to. The connector can be configured to filter the file it reads and the way files are written, such as whether the output is placed in a new file or if it should be appended.
+
+== Namespace and Syntax
+
+=== XML namespace:
+
+[source,text,linenums]
+----
+xmlns:file="http://www.mulesoft.org/schema/mule/file"
+----
+
+=== XML schema location:
+
+[source,text,linenums]
+----
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+----
+
+* Schema: http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+* Schema Structure: http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-file_xsd/schema-overview.html
+
+=== Connector syntax:
+
+[source,xml,linenums]
+----
+<!-- Typical Connector for Inbound Endpoint: Read files -->
+<file:connector name="input" fileAge="500" autoDelete="true" pollingFrequency="100" moveToDirectory="/backup" moveToPattern="#[header:originalFilename].backup"/>
+
+<!-- Typical Connector for Outbound Endpoint: Write files -->
+<file:connector name="output" outputAppend="true" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+----
+
+=== Endpoint syntax:
+
+File endpoints can be expressed using standard File URI syntax:
+
+[source,text,linenums]
+----
+file://<path>[MULE:?params]
+----
+
+For example, to connect to a directory called /temp/files -
+
+*Unix*
+
+[source,text,linenums]
+----
+file:///temp/files
+----
+
+Note the extra slash to denote a path from the root (absolute path).
+
+*Windows*
+
+[source,text,linenums]
+----
+file:///C:/temp/files
+----
+
+The Unix style works in Windows if you map to a single drive (the one Mule was started from).
+
+To specify a relative path use:
+
+[source,text,linenums]
+----
+file://./temp
+----
+
+Or:
+
+[source,text,linenums]
+----
+file://temp
+----
+
+NOTE:
+Only two slashes are used for the protocol, so it's a relative path.
+
+[NOTE]
+In Unix, relative paths are relative to the root directory ( / ). For example, specifying `file://temp` indicates directory `/temp`. In Windows, relative paths are relative to the drive where Mule resides, for example `C:`.
+
+[NOTE]
+To specify a Windows relative path, use the backslash \, for example `\temp` specifies `C:\temp` if Mule resides in drive `C:`.
+
+Or:
+
+[source,text,linenums]
+----
+file://?address=./temp
+----
+
+To connect to a Windows network drive:
+
+[source,text,linenums]
+----
+file:////192.168.0.1/temp/
+----
+
+*Inbound endpoint:*
+
+[source,xml,linenums]
+----
+<file:inbound-endpoint connector-ref="input" path="/tmp/input"/>
+----
+
+*Outbound endpoint:*
+
+[source,xml,linenums]
+----
+<file:outbound-endpoint connector-ref="output" path="/tmp/output"/>
+----
+
+== Considerations
+
+As it can be seen, Mule ESB provides lots of functionality ready to use that can just be modified by changing a XML file. Everyone knows how to handle files in their programming language, but when advanced features are required, coding gets complex. Mule ESB easily allows you to rename and archive files and handles the uncomfortable task of validating when input files are completely generated.
+
+* This transport should be used to both read and write files in the filesystem. Use the inbound endpoint to read files every certain period of time, filtering input files by different name patterns and deleting, moving or leaving the file as it is once processed. The outbound endpoint allows you to generate new files (the file name can be defined in runtime) or to append content to an existing file.
+* Take into account that the account running mule (in standalone mode, the user that launched the Mule ESB server, if not, the user which runs the Application Server) should have read and/or write permissions on the directories configured for this transport.
+* Be careful not to permanently delete or overwrite input/output files. Be careful when using, for example, _autoDelete_ and _moveToDirectory_ attributes.
+* Check the examples below and find out how to copy files from one directory to another, process input files while saving a backup of the input file and creating a new file with a specific name.
+* Though most configuration parameters can be defined globally at in the connector, they can be overridden in the endpoint configuration.
+* If streaming is enabled, use a `ReceiverFileInputStream` as the payload for each file that is processed. This input stream's `close()` method takes care of moving the file or deleting it. Streams are closed by transformers reading the input stream. If you process the stream in your own component implementation make sure to properly close the stream after reading.
+
+== Features
+
+* Read files at a regular polling interval
+* Write files
+
+== Usage
+
+To use the file transport in your Mule configuration, import the file namespace and use the `<file`:`connector>`, `<file`:`inbound-endpoint>` and/or `<file`:`outbound-endpoint>` elements. Refer to the example configurations that follow.
+You also can use the following expressions inside attributes:
+
+* #[function:dateStamp]
+* #[function:datestamp:dd-MM-yy]
+* #[function:systime]
+* #[function:uuid]
+* #[header:originalFilename]
+* #[function:count]
+* #[header:_message property name_]
+
+== Example Configurations
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+[%header,cols="1*a"]
+|===
+^|Copying files in Flow
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+
+	<file:connector name="input" autoDelete="false" ❶ pollingFrequency="1000" ❷ />
+
+	<file:connector name="output" outputAppend="false"/>
+
+	<flow name="copyFile">
+		<file:inbound-endpoint connector-ref="input" path="/tmp/input"/> ❸
+		<file:outbound-endpoint connector-ref="output" path="/tmp/output"/> ❹
+	</flow>
+</mule>
+----
+|===
+
+[discrete.view]
+=== Mule Service
+
+[%header,cols="1*a"]
+|===
+^|*Copying files in Service*
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+
+	<file:connector name="input" autoDelete="false" ❶ pollingFrequency="1000" ❷ />
+
+	<file:connector name="output" outputAppend="false"/>
+
+	<model>
+		<service name="copyFile">
+			<inbound>
+				<file:inbound-endpoint connector-ref="input" path="/tmp/input"/> ❸
+			</inbound>
+			<outbound>
+				<pass-through-router>
+					<file:outbound-endpoint connector-ref="output" path="/tmp/output"/> ❹
+				</pass-through-router>
+			</outbound>
+		</service>
+	</model>
+</mule>
+----
+|===
+=====
+
+This simple example copies files from _/tmp/input_ ❸ to _/tmp/output_ ❹ every 1 second (1000 ms) ❷. As input files are not deleted ❶ they are processed every time. Changing *autoDelete* to *true* will just move files.
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+[%header,cols="1*a"]
+|===
+^|Moving files in Flow
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+
+	<file:connector name="input" autoDelete="true" ❶ fileAge="500" ❷ pollingFrequency="5000" ❸ />
+
+	<file:connector name="output" outputAppend="false"/>
+
+	<flow name="moveFile">
+		<file:inbound-endpoint connector-ref="input" path="/tmp/input"
+                      moveToDirectory="/tmp/backup"
+                      moveToPattern="#[header:originalFilename].backup"/>
+		<file:outbound-endpoint connector-ref="output" path="/tmp/output"
+                      outputPattern="#[function:datestamp]-#[header:originalFilename]"/>
+	</flow>
+</mule>
+----
+|===
+
+[discrete.view]
+=== Mule Service
+
+[%header,cols="1*a"]
+|===
+^|Moving files in Service
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+
+	<file:connector name="input" autoDelete="true" ❶ fileAge="500" ❷ pollingFrequency="5000" ❸ />
+
+	<file:connector name="output" outputAppend="false"/>
+
+	<model>
+		<service name="moveFile">
+			<inbound>
+				<file:inbound-endpoint connector-ref="input" path="/tmp/input"
+                                      moveToDirectory="/tmp/backup"
+                                      moveToPattern="#[header:originalFilename].backup"/> ❹
+			</inbound>
+			<outbound>
+				<pass-through-router>
+					<file:outbound-endpoint connector-ref="output" path="/tmp/output"
+                                              outputPattern="#[function:datestamp]-#[header:originalFilename]"/> ❺
+				</pass-through-router>
+			</outbound>
+		</service>
+	</model>
+</mule>
+----
+|===
+=====
+
+This example moves files ❶ from _/tmp/input_ to _/tmp/output_ every 5 second (5000 ms) ❸, saving a backup file of the original file (with the extension backup) in _/tmp/backup_ ❹. The new file is renamed with the current date and time as prefix ❺. Note that *fileAge* prevents moving files that are still being generated as the file has to be untouched for at least half second ❷.
+
+[%header,cols="1*a"]
+|===
+^|Different connector configurations
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd">
+
+	<file:connector name="sendConnector" outputAppend="true" outputPattern="[TARGET_FILE]" />
+
+	<file:connector name="receiveConnector" fileAge="500" autoDelete="true" pollingFrequency="100" />
+
+	<file:connector name="inboundFileConnector" pollingFrequency="10000"
+              streaming="false" autoDelete="false"> ❶
+		<service-overrides messageFactory="org.mule.transport.file.FileMuleMessageFactory"
+			inboundTransformer="org.mule.transformer.NoActionTransformer" /> ❷
+		<file:expression-filename-parser />
+	</file:connector>
+
+	<flow name="RefreshFileManager">
+		<file:inbound-endpoint connector-ref="inboundFileConnector"
+			path="C:/temp/filewatcher/inbox" moveToDirectory="C:/temp/filewatcher/history"
+			moveToPattern="#[function:datestamp]-#[header:originalFilename]" /> ❸
+
+		...
+	</flow>
+
+	...
+</mule>
+----
+|===
+
+This last example shows different connector configurations. The third example overrides parts of the transport implementation ❷ and does not delete the file after processing it ❶. The inbound endpoint moves it to a directory for archiving after it is processed ❸.
+
+== Configuration Options
+
+File Transport *inbound endpoint* attributes
+
+[%header,cols="10,80,10"]
+|===
+|Name |Description |Default
+|autoDelete |Set this attribute to false if you don't want Mule to delete the file once processed |true
+|fileAge |Setting this value (minimum age in milliseconds for a file to be processed) is useful when consuming large files, as Mule waits before reading this file until the file last modification timestamp indicates that the file is older than this value |true
+|moveToDirectory |Use this parameter if you want Mule to save a backup copy of the file it reads |
+|moveToPattern |Use this parameter together with moveToPattern if you want to rename the copy of the backup file |
+|pollingFrequency |The frequency in milliseconds that the read directory should be checked |0
+|recursive |Use this parameter if Mule should recurse when a directory is read |false
+|streaming |If you want the payload to be a byte array instead of a FileInputStream set this parameter to false |true
+|workDirectory |If you require moving input files before they are processed by Mule, then assign a working directory (in the same file system) with this parameter |
+|workFileNamePattern |Use this parameter together with workDirectory if you need to rename input files prior to processing them |
+|===
+
+The attribute available for the File Transport *outbound endpoint*:
+
+[%header,cols="10,80,10",width=10%]
+|===
+|Name |Description |Default
+|outputPattern |the pattern to use when writing a file to disk |
+|===
+
+== Configuration Reference
+
+== Connector
+
+The File connector configures the default behavior for File endpoints that reference the connector. If there is only one File connector configured, all file endpoints will use that connector.
+
+=== Attributes of <connector...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|writeToDirectory |string |no |  |The directory path where the file should be written on dispatch. This path is usually set as the endpoint of the dispatch event, however this allows you to explicitly force a single directory for the connector.
+|readFromDirectory |string |no |  |The directory path where the file should be read from. This path is usually set as the inbound endpoint, however this allows you to explicitly force a single directory for the connector.
+|autoDelete |boolean |no |true |If set to true (the default), it will cause the file to be deleted once it is read. If streaming is turned on, this occurs when the InputStream for the file is closed. Otherwise the file will be read into memory and deleted immediately. To access the java.io.File object set this property to false and specify a NoActionTransformer transformer for the connector. Mule will not delete the file, so it is up to the component to delete it when it is done. If the moveToDirectory is set, the file is first moved, then the File object of the moved file is passed to the component. It is recommended that a moveToDirectory is specified when turning autoDelete off.
+|outputAppend |boolean |no |false |Whether the output should be appended to the existing file. Default is false.
+|serialiseObjects |boolean |no |  |Determines whether objects should be serialized to the file. If false (the default), the raw bytes or text is written.
+|streaming |boolean |no |true |Whether a FileInputStream should be sent as the message payload (if true) or a byte array. (if false). The default is true.
+|workDirectory |string |no |  |(As of Mule 2.1.4) The directory path where the file should be moved to prior to processing. The work directory must reside on the same file system as the read directory.
+|workFileNamePattern |string |no |  |(As of Mule 2.1.4) The pattern to use when moving a file to a new location determined by the workDirectory property. You can use the patterns supported by the filename parser configured for this connector.
+|recursive |boolean |no |false |Whether to recurse or not when a directory is read
+|pollingFrequency |long |no |  |The frequency in milliseconds that the read directory should be checked (default is 0). Note that the read directory is specified by the endpoint of the listening component.
+|fileAge |long |no |  |Minimum age (ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed.
+|moveToPattern |string |no |  |The pattern to use when moving a read file to a new location determined by the moveToDirectory property. This can use the patterns supported by the filename parser configured for this connector.
+|moveToDirectory |string |no |  |The directory path where the file should be written after it has been read. If this is not set, the file is deleted after it has been read.
+|outputPattern |string |no |  |The pattern to use when writing a file to disk. This can use the patterns supported by the filename parser configured for this connector.
+|===
+
+=== Child Elements of <connector...>
+
+[%header,cols="10,10,80"]
+|===
+|Name |Cardinality |Description
+|abstract-filenameParser |0..1 |The abstract-filenameParser element is a placeholder for filename parser elements. The filename parser is set on the connector used when writing files to a directory. The parser will convert the outputPattern attribute to a string using the parser and the current message. The default implementation used is expression-filename-parser, but you can also specify a custom-filename-parser.
+|===
+
+== Associated Elements
+
+== Endpoint
+
+=== Attributes of <endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |A file directory location.
+|pollingFrequency |long |no |  |The frequency in milliseconds that the read directory should be checked (default is 0). Note that the read directory is specified by the endpoint of the listening component.
+|fileAge |long |no |  |Minimum age (ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed.
+|moveToPattern |string |no |  |The pattern to use when moving a read file to a new location determined by the moveToDirectory property. This can use the patterns supported by the filename parser configured for this connector.
+|moveToDirectory |string |no |  |The directory path where the file should be written after it has been read. If this is not set, the file is deleted after it has been read.
+|comparator |class name |no |  |Sorts incoming files using the specified comparator, such as comparator="org.mule.transport.file.comparator.OlderFirstComparator". The class must implement the java.util.Comparator interface.
+|reverseOrder |boolean |no |  |Whether the comparator order should be reversed. Default is false.
+|outputPattern |string |no |  |The pattern to use when writing a file to disk. This can use the patterns supported by the filename parser configured for this connector.
+|===
+
+No Child Elements of <endpoint...>
+
+== Inbound endpoint
+
+=== Attributes of <inbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |A file directory location.
+|pollingFrequency |long |no |  |The frequency in milliseconds that the read directory should be checked (default is 0). Note that the read directory is specified by the endpoint of the listening component.
+|fileAge |long |no |  |Minimum age (ms) for a file to be processed. This can be useful when consuming large files. It tells Mule to wait for a period of time before consuming the file, allowing the file to be completely written before the file is processed.
+|moveToPattern |string |no |  |The pattern to use when moving a read file to a new location determined by the moveToDirectory property. This can use the patterns supported by the filename parser configured for this connector.
+|moveToDirectory |string |no |  |The directory path where the file should be written after it has been read. If this is not set, the file is deleted after it has been read.
+|comparator |class name |no |  |Sorts incoming files using the specified comparator, such as comparator="org.mule.transport.file.comparator.OlderFirstComparator". The class must implement the java.util.Comparator interface.
+|reverseOrder |boolean |no |  |Whether the comparator order should be reversed. Default is false.
+|===
+
+No Child Elements of <inbound-endpoint...>
+
+
+== Outbound endpoint
+
+=== Attributes of <outbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|path |string |no |  |A file directory location.
+|outputPattern |string |no |  |The pattern to use when writing a file to disk. This can use the patterns supported by the filename parser configured for this connector.
+|===
+
+No Child Elements of <outbound-endpoint...>
+
+
+
+== File to byte array transformer
+
+The file-to-byte-array-transformer element configures a transformer that reads the contents of a java.io.File into a byte array (byte[]).
+
+No Child Elements of <file-to-byte-array-transformer...>
+
+
+== File to string transformer
+
+The file-to-string-transformer element configures a transformer that reads the contents of a java.io.File into a java.lang.String.
+
+No Child Elements of <file-to-string-transformer...>
+
+
+Note: This transformer does not close file streams. This prevents files from being deleted or moved if the flow is asynchronous. If you have streaming enabled for an asynchronous endpoint, use the ObjectToString transformer instead.
+
+== Filename wildcard filter
+
+The filename-wildcard-filter element configures a filter that can be used to restrict the files being processed by applying wildcard expressions to the filename. For example, you can read only .xml and .txt files by entering the following: <file:filename-wildcard-filter pattern="**.txt,**.xml"/>
+
+No Child Elements of <filename-wildcard-filter...>
+
+== Filename regex filter
+
+The filename-regex-filter element configures a filter that can be used to restrict the files being processed by applying Java regular expressions to the filename, such as pattern="myCustomerFile(.*)".
+
+No Child Elements of <filename-regex-filter...>
+
+
+== Expression filename parser
+
+The expression-filename-parser element configures the ExpressionFilenameParser, which can use any expression language supported by Mule to construct a file name for the current message. Expressions can be xpath, xquery, ognl, mvel, header, function, and more.
+
+No Attributes of <expression-filename-parser...>
+
+No Child Elements of <expression-filename-parser...>
+
+
+
+For example, an XPath expression can be defined to pull a message ID out of an XML message and use that as the file name as follows:
+
+----
+#[xpath:/message/header/@id]
+----
+
+Example of using the parser:
+
+[source,xml,linenums]
+----
+<file:connector name="FileConnector" >
+  <file:expression-filename-parser/>
+</file:connector>
+...
+<file:outbound-endpoint path="file://temp"
+outputPattern="#[header:originalFilename]--#[function:datestamp].txt"/>
+----
+
+This parser supersedes `<legacy-filename-parser>` from previous releases of Mule. The following demonstrates how to achieve the same results when using `<expression-filename-parser>` over `<legacy-filename-parser>`.
+
+* #[function:dateStamp]
+* #[function:datestamp:dd-MM-yy]
+* #[function:systime]
+* #[function:uuid]
+* #[header:originalFilename]
+* #[function:count] - Note: This is a global counter. If you want a local counter per file connector then you should use the legacy-filename-parser.
+* #[header:_message property name_]
+
+== Custom filename parser
+
+The custom-filename-parser element allows the user to specify a custom filename parser. The implementation must implement org.mule.transport.file.FilenameParser.
+
+=== Attributes of <custom-filename-parser...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|class |string |yes |  |The implementation class name that implements org.mule.transport.file.FilenameParser.
+|===
+
+No Child Elements of <custom-filename-parser...>
+
+
+== Abstract filenameParser
+
+The abstract-filenameParser element is a placeholder for filename parser elements. The filename parser is set on the connector used when writing files to a directory. The parser will convert the outputPattern attribute to a string using the parser and the current message. The default implementation used is expression-filename-parser, but you can also specify a custom-filename-parser.
+
+No Attributes of <abstract-filenameParser...>
+
+No Child Elements of <abstract-filenameParser...>
+
+== Schema
+
+* Schema: http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+* Schema Structure: http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-file_xsd/schema-overview.html
+
+== Javadoc API Reference
+
+The Javadoc for this transport can be found here: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/file/package-summary.html[File].
+
+== Maven
+
+The File Transport can be included with the following dependency:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-file</artifactId>
+</dependency>
+----
+
+== Extending this Module or Transport
+
+== Best Practices
+
+If reading input files which are generated directly in the input path, configure the _fileAge_ attribute in the connector or endpoint. In this way, Mule processes these files once they are completely written to disk.

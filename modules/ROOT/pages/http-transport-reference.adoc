@@ -1,0 +1,770 @@
+= HTTP Transport Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introduction
+
+The HTTP transport provides support for exposing services over HTTP and making HTTP client requests from Mule services to external services as part of service event flows. Mule supports inbound, outbound, and polling HTTP endpoints. These endpoints support all common features of the HTTP spec, such as ETag processing, cookies, and keepalive. Both HTTP 1.0 and 1.1 are supported.
+
+HTTP/S endpoints are synchronous by default, so you do not have to set `exchange-pattern="request-response"`. If you set `exchange-pattern="one-way"`, the messages are sent asynchronously. Note: If you're doing an asynchronous POST, streaming is disabled.
+
+== Namespace and Syntax
+
+[source,text,linenums]
+----
+http://www.mulesoft.org/schema/mule/http
+----
+
+=== XML Schema
+
+* Location:
+
+[source,text,linenums]
+----
+http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+----
+* Schema: http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+* Structure: http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-http_xsd/schema-overview.html
+
+=== Syntax
+
+*URI example*
+
+----
+http://theUser:secret@theHost:port/path?query
+----
+
+*XML version*
+
+[source,xml]
+----
+<http:endpoint host="theHost" port="8080" path="/path" user="theUser" password="secret"/>
+----
+
+[TIP]
+====
+*Escape Your Credentials*
+
+If you use a URI-style endpoint and you include the user name and password, escape any characters that are illegal for URIs. Only alphabet, numeric, "-", "_", "." and "+" are allowed. For example, if the user name is `user@myco.com`, you should enter it as `user%40myco.com`.
+====
+
+== Features
+
+* Serves as an HTTP server or client
+* Create HTTP services such as SOAP, REST or XML-RPC
+* Make HTTP requests to external services
+* Support for polling an HTTP endpoints including ETag support
+* Transfer binary or text files, including forms and attachment
+* Security including SSL, certificates and Authentication
+* Build flows to different paths on the same port
+* Support for reading and writing cookies
+* Streaming for transferring large files
+* Custom HTTP header support
+* Redirect Handling
+* Handling of Content-Type and Encoding
+* Serve up static content such as HTML, JavaScript, Images and CSS (since Mule 3.2)
+
+== Basic Usage
+
+To create a HTTP server you just need to create a flow with an inbound HTTP endpoint:
+
+[source,xml,linenums]
+----
+<flow name="testComponent">    <http:inbound-endpoint name="clientEndpoint" address="http://localhost:8080/foo"/>    <echo-component/></flow>
+----
+
+This with accept incoming HTTP requests on `http://localhost:8080/foo` and echo the response back to the client.
+
+To make a client invocation of an HTTP endpoint you need to configure an outbound endpoint on your flow or you can use the MuleClient to invoke an HTTP endpoint directly in your code.
+
+[source,xml,linenums]
+----
+<flow name="OutboundDelete">    <vm:inbound-endpoint path="doDelete"            exchange-pattern="one-way" />    <http:outbound-endpoint host="localhost" port="8080" path="foo"            method="DELETE" exchange-pattern="one-way" />    </flow>
+----
+
+Or from within your code:
+
+[source,text,linenums]
+----
+MuleClient client = muleContext.getClient();MuleMessage result = client.send("http://localhost:8080/foo", "");
+----
+
+Finally, you can reference an endpoint by name from your Mule configuration in the Mule client. From the previous example we can create a global HTTP endpoint that cna be referenced from the flow or from code:
+
+[source,xml,linenums]
+----
+<http:endpoint name="deleteEndpoint" host="localhost" port="8080" path="foo"            method="DELETE" exchange-pattern="one-way" /><flow name="OutboundDelete">    <vm:inbound-endpoint path="doDelete" exchange-pattern="one-way" />    <http:outbound-endpoint ref="deleteEndpoint"/></flow>
+----
+
+[source,text,linenums]
+----
+MuleClient client = muleContext.getClient();MuleMessage result = client.send("deleteEndpoint", "");
+----
+
+Global endpoints allow you to remove actual addresses from you code and flows so that you can move Mule applications between environments.
+
+== Security
+
+You can use the xref:https-transport-reference.adoc[HTTPS Transport Reference] to create secure connections over HTTP. If you want to secure requests to your HTTP endpoint, the HTTP connector supports HTTP Basic/Digest authentication methods (as well as the Mule generic header authentication). To configure HTTP Basic, you configure a xref:configuring-security.adoc[Security Endpoint Filter] on an HTTP endpoint.
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint address="http://localhost:4567">  <spring-sec:http-security-filter realm="mule-realm" /> </http:inbound-endpoint>
+----
+
+You must configure the security manager on the Mule instance against which this security filter authenticates. For information about security configuration options and examples, see xref:configuring-security.adoc[Configuring Security].
+
+For general information about endpoint configuration, see xref:configuring-endpoints.adoc[Configuring Endpoints].
+
+=== Sending Credentials
+
+If you want to make an HTTP request that requires authentication, you can set the credentials on the endpoint:
+
+[source,text,linenums]
+----
+http://user:password@mycompany.com/secure
+----
+
+== Cookies
+
+If you want to send cookies along on your outgoing request, simply configure them on the endpoint:
+
+[source,xml,linenums]
+----
+<http:outbound-endpoint address="http://localhost:8080" method="POST">
+  <properties>
+    <spring:entry key="cookies">
+      <spring:map>
+        <spring:entry key="customCookie" value="yes" />
+       </spring:map>
+    </spring:entry>
+  </properties>
+</http:outbound-endpoint>
+----
+
+== Polling HTTP Services
+
+The HTTP transport supports polling an HTTP URL, which is useful for grabbing periodic data from a page that changes or to invoke a REST service, such as polling an http://aws.amazon.com/sqs/[Amazon Queue].
+
+To configure the HTTP Polling receiver, you include an HTTP polling-connector configuration in your Mule configuration:
+
+[source,xml,linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="30000" reuseAddress="true" />
+----
+
+To use the connector in your endpoints, use:
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint user="marie" password="marie" host="localhost" port="61205"            connector-ref="PollingHttpConnector" />
+----
+
+== Handling HTTP Content-Type and Encoding
+
+=== Sending
+
+The following behavior applies when sending POST request bodies as a client and when returning a response body:
+
+For a String, char[], Reader, or similar:
+
+* If the endpoint has encoding set explicitly, use that
+* Otherwise, take it from the message's property `Content-Type`
+* If none of these is set, use the Mule Context's configuration default.
+* For `Content-Type`, send the message's property `Content-Type` but with the actual encoding set.
+
+For binary content, encoding is not relevant. `Content-Type` is set as follows:
+
+* If the `Content-Type` property is set on the message, send that.
+* Send "application/octet-stream" as `Content-Type` if none is set on the message.
+
+=== Receiving
+
+When receiving HTTP responses, the payload of the MuleMessage is the InputStream of the HTTP response.
+
+== Including Custom Header Properties
+
+When making a new HTTP client request, Mule filters out any existing HTTP request headers because they are often from a previous request. For example, if you have an HTTP endpoint that proxies another HTTP endpoint, you wouldn't want to copy the `Content-Type` header property from the first HTTP request to the second request.
+
+If you do want to include HTTP headers, you can specify them as properties on the outbound endpoint as follows:
+
+[source,xml,linenums]
+----
+<http:outbound-endpoint address="http://localhost:9002/events"                         connector-ref="HttpConnector" contentType="image/png">    <property key="Accept" value="*.*"/></http:outbound-endpoint>
+----
+
+or use Message Properties Transformer, as follows:
+
+[source,xml,linenums]
+----
+<message-properties-transformer scope="outbound">
+    <add-message-property key="Accept" value="*.*"/></message-properties-transformer>
+<http:outbound-endpoint address="http://localhost:9002/events"                         connector-ref="HttpConnector" contentType="image/png"/>
+----
+
+== Building the Target URL from the Request
+
+The HTTP request URL is available in the Mule header. You can access this using the header expression evaluator `#[header:http.request]`. For example, if you want to redirect the request to a different server based on a filter, you can build the target URL as shown below:
+
+[source,xml]
+----
+<http:outbound-endpoint address="http://localhost:8080#[header:http.request]" />
+----
+
+== Handling Redirects
+
+To redirect an HTTP client, you must set two properties on the endpoint. First, set the `http.status` property to '307', which instructs the client that the resource has be temporarily redirected. Alternatively, you can set the property to '301' for a permanent redirect. Second, set the `Location` property, which specifies the location where you want to redirect your client.
+
+[TIP]
+See the HTTP protocol specification for detailed information about status codes at http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html.
+
+Following is an example of a service that is listening on the local address http://localhost:8080/mine and sends a response with the redirection code, instructing the client to go to http://mulesoft.org/.
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint address="http://localhost:8080/mine" exchange-pattern="request-response">
+  <property key="http.status" value="307"/>
+  <property key="Location" value="http://mulesoft.org/"/>
+</http:inbound-endpoint>
+----
+
+Note: You must set the `exchange-pattern` attribute to `request-response`. Otherwise, a response immediately returns while the request is placed on an internal queue.
+
+To follow redirects when making an outbound HTTP call, use the `followRedirect` attribute:
+
+[source,xml,linenums]
+----
+<http:outbound-endpoint address="http://com.foo/bar" method="GET" exchange-pattern="request-response" followRedirects="true"/>
+----
+
+== Getting a Hash Map of POST body params
+
+You can use the custom transformer https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/http/transformers/HttpRequestBodyToParamMap.html[HttpRequestBodyToParamMap] on your inbound endpoint to return the message properties as a hash map of name-value pairs. This transformer handles GET and POST with `application/x-www-form-urlencoded` content type.
+
+For example:
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint ...>  <http:body-to-parameter-map-transformer /></http:inbound-endpoint>
+----
+
+== Processing GET Query Parameters
+
+GET parameters posted to an HTTP inbound endpoint are automatically available in the payload on the Mule Message in their raw form and the query parameters are also passed and stored as inbound-scoped headers of the Mule Message.
+
+For example, the following flow creates a simple HTTP server:
+
+[source,xml,linenums]
+----
+<flow name="flows1Flow1">
+    <http:inbound-endpoint host="localhost" port="8081"  encoding="UTF-8"/>
+    <logger message="#[groovy:return message.toString();]" level="INFO"/>
+</flow>
+----
+
+Doing a request from a browser using the URL:
+
+----
+http://localhost:8081/echo?reverb=4&flange=2
+----
+
+Results in a message payload of `/echo?reverb=4&flange=2` and two additional inbound headers on the message `reverb=4` and `flange=2`.
+
+These headers can then be accessed using expressions i.e. #[header:INBOUND:reverb] which can be used by filters and routers or injected into your code.
+
+== Serving Static Content
+
+The HTTP connector can be used as a web server to deliver static content such as images, HTML, JavaScript, CSS files etc. To enable this, configure a flow with an HTTP static-resource-handler:
+
+[source,xml,linenums]
+----
+<flow name="main-http">
+    <http:inbound-endpoint address="http://localhost:8080/static"/>
+    <http:static-resource-handler resourceBase="${app.home}/docroot" defaultFile="index.html"/>
+</flow>
+----
+
+The important attribute here is the `resourceBase` since it defines where on the local system that files are served from. Typically, this should be set to `${app.home}/docroot`, but it can point to any fully qualified location.
+
+The default file allows you to specify the default resource to load if none is specified. If not set the default is `index.html`.
+
+[TIP]
+When developing your Mule application, the `docroot` directory should be located at `<project.home>/src/main/app/docroot`.
+
+=== Content-Type Handling
+
+The `static-resource-handler` uses the same mime type mapping system as the JDK, if you need to add your own mime type to file extension mappings, you need to add a the following file to your application `<project home>/src/main/resources/META-INF/mime.types`. With content similar to:
+
+[source,text,linenums]
+----
+image/png                   pngtext/plain                  txt cgi java
+----
+
+This maps the mime type to one or more file extensions.
+
+== Examples
+
+The following provides some common usage examples that help you understand how to use HTTP and Mule.
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+*Polling HTTP*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"    xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">
+    <!-- We are using two different types of HTTP connector so we must declare them both in the config -->
+    <http:polling-connector name="PollingHttpConnector" pollingFrequency="30000" reuseAddress="true" />    <http:connector name="HttpConnector" />
+    <flow name="polling">
+        <http:inbound-endpoint host="localhost" port="8080" connector-ref="PollingHttpConnector" exchange-pattern="one-way">
+            <property key="Accept" value="application/xml" />
+        </http:inbound-endpoint>
+        <vm:outbound-endpoint path="toclient" exchange-pattern="one-way" />
+    </flow>
+    <flow name="polled">
+        <inbound-endpoint address="http://localhost:8080" connector-ref="HttpConnector" />        <test:component>
+            <test:return-data>foo</test:return-data>
+        </test:component>
+    </flow>
+</mule>
+----
+
+[discrete.view]
+=== Mule Service
+
+*Polling HTTP*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"      xmlns:spring="http://www.springframework.org/schema/beans"      xmlns:http="http://www.mulesoft.org/schema/mule/http"      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"      xmlns:test="http://www.mulesoft.org/schema/mule/test"      xsi:schemaLocation="       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">    <http:polling-connector name="PollingHttpConnector" pollingFrequency="30000" reuseAddress="true"/>    <http:connector name="HttpConnector"/>
+    <vm:connector name="vmQueue"/>
+    <model name="http polling test model">
+        <service name="polling">
+            <inbound>
+                <http:inbound-endpoint host="localhost" port="8080"                          connector-ref="PollingHttpConnector" exchange-pattern="one-way">
+                    <property key="Accept" value="application/xml"/>
+                </http:inbound-endpoint>
+            </inbound>
+            <test:component/>
+            <outbound>
+                <pass-through-router>
+                    <outbound-endpoint address="vm://toclient" exchange-pattern="one-way"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+        <service name="polled">
+            <inbound>
+                <inbound-endpoint address="http://localhost:8080"                                  connector-ref="HttpConnector"/>
+            </inbound>
+            <test:component>
+                <test:return-data>foo</test:return-data>
+            </test:component>
+        </service>
+    </model>
+</mule>
+----
+
+=====
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+*WebServer - Static Content*
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+      http://www.mulesoft.org/schema/mule/http
+      http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">
+    <flow name="httpWebServer">
+        <http:inbound-endpoint address="http://localhost:8080/static"/>
+        <http:static-resource-handler resourceBase="${app.home}/docroot"                defaultFile="index.html"/>
+    </flow>
+</mule>
+----
+
+=====
+
+[.ex]
+=====
+[discrete.view]
+=== Mule Flow
+
+*Setting Cookies on a Request*
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"    xmlns:spring="http://www.springframework.org/schema/beans"    xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"    xsi:schemaLocation="       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd">    <http:connector name="httpConnector" enableCookies="true" />    <flow name="testService">        <vm:inbound-endpoint path="vm-in" exchange-pattern="one-way" />        <http:outbound-endpoint address="http://localhost:${port1}"            method="POST" exchange-pattern="one-way" content-type="text/xml">            <properties>                <spring:entry key="cookies">                    <spring:map>                        <spring:entry key="customCookie" value="yes"/>                        <spring:entry key="expressionCookie" value="#[header:INBOUND:COOKIE_HEADER]"/>                    </spring:map>                </spring:entry>            </properties>        </http:outbound-endpoint>    </flow></mule>
+----
+
+[discrete.view]
+=== Mule Service
+
+*Setting Cookies on a Request*
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"    xmlns:spring="http://www.springframework.org/schema/beans"    xmlns:http="http://www.mulesoft.org/schema/mule/http"    xmlns:vm="http://www.mulesoft.org/schema/mule/vm"    xsi:schemaLocation="       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd">    <http:connector name="httpConnector" enableCookies="true"/>    <model name="main">        <service name="testService">            <inbound>                <vm:inbound-endpoint path="vm-in" exchange-pattern="one-way"/>            </inbound>            <outbound>                <pass-through-router>                    <http:outbound-endpoint address="http://localhost:${port1}" method="POST"                         exchange-pattern="one-way">                        <properties>                            <spring:entry key="Content-Type" value="text/xml" />                            <spring:entry key="cookies">                                <spring:map>                                    <spring:entry key="customCookie" value="yes"/>                                    <spring:entry key="expressionCookie"                          value="#[header:INBOUND:COOKIE_HEADER]"/>                                </spring:map>                            </spring:entry>                        </properties>                    </http:outbound-endpoint>                </pass-through-router>            </outbound>        </service>    </model></mule>
+----
+=====
+
+== Configuration Reference
+
+== Connector
+
+Allows Mule to communicate over HTTP. All parts of the HTTP spec are covered by Mule, so you can expect ETags to be honored as well as keep alive semantics and cookies.
+
+=== Attributes of <connector...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|cookieSpec |enumeration |no |  |The cookie specification to be used by this connector when cookies are enabled.
+|proxyHostname |string |no |  |The proxy host name or address.
+|proxyPassword |string |no |  |The password to use for proxy access.
+|proxyPort |port number |no |  |The proxy port number.
+|proxyUsername |string |no |  |The username to use for proxy access.
+|proxyNtlmAuthentication |boolean |no |  |Whether the proxy authentication scheme is NTLM or not. This property is required in order to use the right credentials under that scheme. Default is false
+|enableCookies |boolean |no |  |Whether to support cookies.
+|===
+
+=== Child Elements of <connector...>
+
+[%header,cols="3*",width=10%]
+|===
+|Name |Cardinality |Description
+|===
+
+This connector also accepts all the attributes from the TCP connector.
+
+For example:
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"       xmlns:spring="http://www.springframework.org/schema/beans"       xmlns:http="http://www.mulesoft.org/schema/mule/http"    xsi:schemaLocation="       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">    <http:connector name="HttpConnector" enableCookies="true" keepAlive="true"/>...</mule>
+----
+
+== Polling connector
+
+Allows Mule to poll an external HTTP server and generate events from the result. This is useful for pull-only web services.
+
+=== Attributes of <polling-connector...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|cookieSpec |enumeration |no |  |The cookie specification to be used by this connector when cookies are enabled.
+|proxyHostname |string |no |  |The proxy host name or address.
+|proxyPassword |string |no |  |The password to use for proxy access.
+|proxyPort |port number |no |  |The proxy port number.
+|proxyUsername |string |no |  |The username to use for proxy access.
+|proxyNtlmAuthentication |boolean |no |  |Whether the proxy authentication scheme is NTLM or not. This property is required in order to use the right credentials under that scheme. Default is false
+|enableCookies |boolean |no |  |Whether to support cookies.
+|pollingFrequency |long |no |  |The time in milliseconds to wait between each request to the remote HTTP server.
+|checkEtag |boolean |no |  |Whether the ETag header from the remote server is processed if the header is present.
+|discardEmptyContent |boolean |no |  |Whether Mule should discard any messages from the remote server that have a zero content length. For many services a zero length would mean there was no data to return. If the remote HTTP server does return content to say that that the request is empty, users can configure a content filter on the endpoint to filter these messages out.
+|===
+
+=== Child Elements of <polling-connector...>
+
+[%header,cols="3*",width=10%]
+|===
+|Name |Cardinality |Description
+|===
+
+This connector also accepts all the attributes from the TCP connector.
+
+For more information, see "Polling HTTP Services".
+
+== Rest service component
+
+Built-in RestServiceWrapper can be used to proxy REST style services as local Mule components.
+
+=== Attributes of <rest-service-component...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|httpMethod |enumeration |no |GET |The HTTP method to use when making the service request.
+|serviceUrl |  |yes |  |The service URL to use when making the request. This should not contain any parameters, since these should be configured on the component. The service URL can contain Mule expressions, so the URL can be dynamic for each message request.
+|===
+
+=== Child Elements of <rest-service-component...>
+
+[%header,cols="3*",width=10%]
+|===
+|Name |Cardinality |Description
+|error-filter |0..1 |An error filter can be used to detect whether the response from the remote service resulted in an error.
+|payloadParameterName |0..* |If the payload of the message is to be attached as a URL parameter, this should be set to the parameter name. If the message payload is an array of objects that multiple parameters can be set to, use each element in the array.
+|requiredParameter |0..* |These are parameters that must be available on the current message for the request to be successful. The Key maps to the parameter name, the value can be any one of the valid expressions supported by Mule.
+|optionalParameter |0..* |These are parameters that if they are on the current message will be added to the request, otherwise they will be ignored. The Key maps to the parameter name, the value can be any one of the valid expressions supported by Mule.
+|===
+
+== Inbound endpoint
+
+An inbound HTTP endpoint exposes a service over HTTP, essentially making it an HTTP server. If polling of a remote HTTP service is required, this endpoint should be configured with a polling HTTP connector.
+
+=== Attributes of <inbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL. It must not start with a slash.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <inbound-endpoint...>
+
+For example:
+
+[source,xml,linenums]
+----
+<http:inbound-endpoint host="localhost" port="63081" path="services/Echo" keep-alive="true"/>
+----
+
+The HTTP inbound endpoint attributes override those specified for the xref:endpoint-configuration-reference.adoc[default inbound endpoint attributes].
+
+== Outbound endpoint
+
+The HTTP outbound endpoint allows Mule to send requests to external servers or Mule inbound HTTP endpoints using the HTTP protocol.
+
+=== Attributes of <outbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|followRedirects |boolean |no |  |If a request if made using GET that responds with a redirectLocation header, setting this to true will make the request on the redirect URL. This only works when using GET since you cannot automatically follow redirects when perfroming a POST (a restriction according to RFC 2616).
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL. It must not start with a slash.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <outbound-endpoint...>
+
+For example:
+
+[source,xml,linenums]
+----
+<http:outbound-endpoint host="localhost" port="8080" method="POST"/>
+----
+
+The HTTP outbound endpoint attributes override those specified for the xref:endpoint-configuration-reference.adoc[default outbound endpoint attributes].
+
+== Endpoint
+
+Configures a 'global' HTTP endpoint that can be referenced by services. Services can augment the configuration defined in the global endpoint with local configuration elements.
+
+=== Attributes of <endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|followRedirects |boolean |no |  |If a request if made using GET that responds with a redirectLocation header, setting this to true will make the request on the redirect URL. This only works when using GET since you cannot automatically follow redirects when perfroming a POST (a restriction according to RFC 2616).
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL. It must not start with a slash.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <endpoint...>
+
+For example:
+
+[source,xml,linenums]
+----
+<http:endpoint name="serverEndpoint1" host="localhost" port="60199" path="test1" />
+----
+The HTTP endpoint attributes override those specified for the xref:endpoint-configuration-reference.adoc[default global endpoint attributes].
+
+== HTTP Transport
+
+The HTTP transport provides support for exposing services over HTTP and making HTTP client requests from Mule services to external services as part of service event flows. Mule supports inbound, outbound, and polling HTTP endpooints. These endpoints support all common features of the HTTP spec, such as ETag processing, cookies, and keepalive. Both HTTP 1.0 and 1.1 are supported.
+
+== Connector
+
+Allows Mule to communicate over HTTP. All parts of the HTTP spec are covered by Mule, so you can expect ETags to be honored as well as keep alive semantics and cookies.
+
+=== Attributes of <connector...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|cookieSpec |enumeration |no |  |The cookie specification to be used by this connector when cookies are enabled.
+|proxyHostname |string |no |  |The proxy host name or address.
+|proxyPassword |string |no |  |The password to use for proxy access.
+|proxyPort |port number |no |  |The proxy port number.
+|proxyUsername |string |no |  |The username to use for proxy access.
+|enableCookies |boolean |no |  |Whether to support cookies.
+|===
+
+No Child Elements of <connector...>
+
+== Inbound endpoint
+
+An inbound HTTP endpoint exposes a service over HTTP, essentially making it an HTTP server. If polling of a remote HTTP service is required, this endpoint should be configured with a polling HTTP connector.
+
+=== Attributes of <inbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <inbound-endpoint...>
+
+== Outbound endpoint
+
+The HTTP outbound endpoint allows Mule to send requests to external servers or Mule inbound HTTP endpoints using the HTTP protocol.
+
+=== Attributes of <outbound-endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|followRedirects |boolean |no |  |If a request if made using GET that responds with a redirectLocation header, setting this to true will make the request on the redirect URL. This only works when using GET since you cannot automatically follow redirects when perfroming a POST (a restriction according to RFC 2616).
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <outbound-endpoint...>
+
+== Endpoint
+
+Configures a 'global' HTTP endpoint that can be referenced by services. Services can augment the configuration defined in the global endpoint with local configuration elements.
+
+=== Attributes of <endpoint...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|followRedirects |boolean |no |  |If a request if made using GET that responds with a redirectLocation header, setting this to true will make the request on the redirect URL. This only works when using GET since you cannot automatically follow redirects when perfroming a POST (a restriction according to RFC 2616).
+|user |string |no |  |The user name (if any) that will be used to authenticate against.
+|password |string |no |  |The password for the user.
+|host |string |no |  |The host to connect to. For inbound endpoints, this should be an address of a local network interface.
+|port |port number |no |  |The port number to use when a connection is made.
+|path |string |no |  |The path for the HTTP URL.
+|contentType |string |no |  |The HTTP ContentType to use.
+|method |httpMethodTypes |no |  |The HTTP method to use.
+|keep-alive |boolean |no |  |Controls if the socket connection is kept alive. If set to true, a keep-alive header with the connection timeout specified in the connector will be returned. If set to false, a "Connection: close" header will be returned.
+|===
+
+No Child Elements of <endpoint...>
+
+
+=== Transformers
+
+These are transformers specific to this transport. Note that these are added automatically to the Mule registry at start up. When doing automatic transformations these will be included when searching for the correct transformers.
+
+[%header,cols="10,90"]
+|===
+|Name |Description
+|http-response-to-object-transformer |A transformer that converts an HTTP response to a Mule Message. The payload may be a String, stream, or byte array.
+|http-response-to-string-transformer |Converts an HTTP response payload into a string. The headers of the response will be preserved on the message.
+|object-to-http-request-transformer |This transformer will create a valid HTTP request using the current message and any HTTP headers set on the current message.
+|message-to-http-response-transformer |This transformer will create a valid HTTP response using the current message and any HTTP headers set on the current message.
+|body-to-parameter-map-transformer |This transformer parses the body of a HTTP request into a Map.
+|===
+
+=== Filters
+
+Filters can be used to control which data is allowed to continue in the flow.
+
+[%header,cols="10,90"]
+|===
+|Name |Description
+|request-wildcard-filter |(As of 2.2.2) The request-wildcard-filter element can be used to restrict the request by applying wildcard expressions to the URL.
+|===
+
+== Polling connector
+
+Allows Mule to poll an external HTTP server and generate events from the result. This is useful for pull-only web services.
+
+=== Attributes of <polling-connector...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|cookieSpec |enumeration |no |  |The cookie specification to be used by this connector when cookies are enabled.
+|proxyHostname |string |no |  |The proxy host name or address.
+|proxyPassword |string |no |  |The password to use for proxy access.
+|proxyPort |port number |no |  |The proxy port number.
+|proxyUsername |string |no |  |The username to use for proxy access.
+|enableCookies |boolean |no |  |Whether to support cookies.
+|pollingFrequency |long |no |  |The time in milliseconds to wait between each request to the remote HTTP server.
+|checkEtag |boolean |no |  |Whether the ETag header from the remote server is processed if the header is present.
+|discardEmptyContent |boolean |no |  |Whether Mule should discard any messages from the remote server that have a zero content length. For many services a zero length would mean there was no data to return. If the remote HTTP server does return content to say that that the request is empty, users can configure a content filter on the endpoint to filter these messages out.
+|===
+
+No Child Elements of <polling-connector...>
+
+== Rest service component
+
+Built-in RestServiceWrapper can be used to proxy REST style services as local Mule components.
+
+=== Attributes of <rest-service-component...>
+
+[%header,cols="10,10,10,10,60"]
+|===
+|Name |Type |Required |Default |Description
+|httpMethod |enumeration |no |GET |The HTTP method to use when making the service request.
+|serviceUrl |  |yes |  |The service URL to use when making the request. This should not contain any parameters, since these should be configured on the component. The service URL can contain Mule expressions, so the URL can be dynamic for each message request.
+|===
+
+=== Child Elements of <rest-service-component...>
+
+[%header,cols="3*",width=10%]
+|===
+|Name |Cardinality |Description
+|error-filter |0..1 |An error filter can be used to detect whether the response from the remote service resulted in an error.
+|payloadParameterName |0..* |If the payload of the message is to be attached as a URL parameter, this should be set to the parameter name. If the message payload is an array of objects that multiple parameters can be set to, use each element in the array.
+|requiredParameter |0..* |These are parameters that must be available on the current message for the request to be successful. The Key maps to the parameter name, the value can be any one of the valid expressions supported by Mule.
+|optionalParameter |0..* |These are parameters that if they are on the current message will be added to the request, otherwise they will be ignored. The Key maps to the parameter name, the value can be any one of the valid expressions supported by Mule.
+|===
+
+== Request wildcard filter
+
+(As of 2.2.2) The request-wildcard-filter element can be used to restrict the request by applying wildcard expressions to the URL.
+
+No Child Elements of <request-wildcard-filter...>

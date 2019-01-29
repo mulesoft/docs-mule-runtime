@@ -1,0 +1,299 @@
+= Outbound Routers
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Overview
+
+After a message has been processed by a component, you use outbound routers to determine where to send the message next. You configure the outbound endpoints on the outbound router, not on the `<outbound>` element. Outbound routers allow you to define multiple routing constraints for any given message. You can specify a xref:catch-all-strategies.adoc[catch-all strategy] to invoke if none of the routers accept the current message.
+
+=== Matching All Routers
+
+By default, a message is processed only by the first outbound router whose conditions it matches. If you want the message to be processed by all the outbound routers, you can set the `matchAll` attribute to true. For example, assume you always want to send a confirmation of a deposit back to the original depositor. Also assume that if the deposit was above $100,000, you want to send a notification message to the 'high net worth client manager' for possible follow-up. In this case, you would set the `matchAll` attribute on the `<outbound>` definition as follows:
+
+[source,xml,linenums]
+----
+<outbound matchAll="true">    <filtering-router>        <endpoint address="jms://deposit.queue"/>    </filtering-router>    <filtering-router>        <jms:outbound-endpoint queue="large.deposit.queue"/>        <mulexml:jxpath-filter expression="deposit/amount >= 100000"/>    </filtering-router></outbound>
+----
+
+In this example, the message will always match the first router because there is no filter on it. Additionally, the message will match the second router if the deposit amount is >= $100000, in which case both routers will have been invoked.
+
+=== Outbound Example
+
+[source,xml,linenums]
+----
+<outbound>    <catch-all-strategy>        <jms:outbound-endpoint queue="default.queue"/>    </catch-all-strategy>    <filtering-router>       <smtp:outbound-endpoint to="exceptions@muleumo.org" subject="Exception!" from="mule@mycompany.com!">            <transformer ref="ExceptionToEmail"/>       </smtp:outbound-endpoint>       <payload-type-filter expectedType="java.lang.Exception"/>    </filtering-router>    <filtering-router>        <vm:endpoint path="my.component"/>        <and-filter>            <payload-type-filter expectedType="java.lang.String"/>            <regex-filter pattern="the quick brown (.*)"/>        </and-filter>    </filtering-router></outbound>
+----
+
+The following sections describe each Mule outbound router and how to configure them. Outbound routers can be more complex to configure, as they allow different routing paths that can be selected depending on the logic defined in one or more filters. For more detailed information on outbound router configuration elements and attributes, see the xref:outbound-router-configuration-reference.adoc[Outbound Router Configuration Reference].
+
+=== ReplyTo
+
+All outbound routers can have a <<ReplyTo>> that defines where the message should be routed after the recipient of the message has finished processing it.
+
+In the following example, the first service sets up the routing, including passing the message through to an outbound endpoint and specifying the reply-to endpoint that will receive the results from the second service.
+
+[source,xml,linenums]
+----
+<service name="Requester">  <inbound>    <vm:inbound-endpoint path="IN" synchronous="true"/>  </inbound>  <outbound>    <pass-through-router>      <jms:outbound-endpoint queue="RequestQueue"synchronous="true"/>      <reply-to address="jms://ReplyQueue"/>    </pass-through-router>  </outbound></service><service name="Replier">  <inbound>    <jms:inbound-endpoint queue="RequestQueue" synchronous="true"/>  </inbound>  <echo-component/></service>
+----
+
+The `<reply-to>` endpoint is used only by the very next service in the flow. For example, assume there are three services in the flow, and the first service has an outbound router with a reply-to endpoint. The second service in the flow will send the results of its invocation to that reply-to endpoint as well as passing the message along to the third service. The third service, however, processes the message as normal without sending its results to the reply-to endpoint.
+
+The `<reply-to>` endpoint can be any valid xref:mule-endpoint-uris.adoc[Mule endpoint URI]. For information on which transports support reply-to, see xref:transports-reference.adoc[Transports Reference].
+
+Note that adding a reply-to endpoint makes the outbound endpoint asynchronous, so a response is not sent back to the caller, just to the reply-to endpoint. If you want to send a response back to the caller, you can add an xref:asynchronous-reply-routers.adoc[asynchronous reply router] in addition to the reply-to.
+
+== Pass-through Router
+
+This router always matches and simply sends or dispatches message via the one endpoint it has configured.
+
+Configuration for this router is as follows:
+
+*2.0:*
+
+[source,xml,linenums]
+----
+<outbound>  <outbound-pass-through-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>  </outbound-pass-through-router></outbound>
+----
+
+*2.1 and later:*
+
+[source,xml,linenums]
+----
+<outbound>  <pass-through-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>  </pass-through-router></outbound>
+----
+
+You can also use the pass-through router to perform protocol bridging to another outbound endpoint. For example:
+
+[source,xml,linenums]
+----
+<service name="HttpProxyService">  <inbound>    <!-- WSDL URL: +http://localhost:8888/stockquote.asmx?wsdl+ -->    <inbound-endpoint address="http://localhost:8888" synchronous="true"/>  </inbound>  <outbound>    <pass-through-router>      <outbound-endpoint address="http://www.webservicex.net#[header:http.request]" synchronous="true"/>    </pass-through-router>  </outbound></service>
+----
+
+By default, the pass-through router does not return a response. If you do need to return a response, set synchronous to true on the outbound endpoint, or use the chaining router, which returns a response by default.
+
+== Filtering Router
+
+This router uses filters to determine whether this router will be used (see Filters below). The filtering router specifies only one endpoint to which messages are routed if the filter conditions are met. If you need to specify more than one endpoint in a router, use a different outbound router and set filters on its individual endpoints.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <forwarding-catch-all-strategy>    <jms:outbound-endpoint queue="error.queue"/>  </forwarding-catch-all-strategy>  <filtering-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>      <payload-type-filter expectedType="java.lang.Exception"/>  </filtering-router>  <filtering-router>    <jms:outbound-endpoint queue="string.queue"/>    <and-filter>      <payload-type-filter expectedType="java.lang.String"/>      <regex-filter pattern="the quick brown (.*)"/>    </and-filter>  </filtering-router></outbound>
+----
+
+The filter is applied to the message first, and then the transformers are applied. If you need to transform the message before the filter is applied, you can set a transformer on this router that will be applied to the message before the filter is applied.
+
+[source,xml,linenums]
+----
+<outbound>  <filtering-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>    <payload-type-filter expectedType="java.lang.Exception"/>    <transformer ref="aTransformer"/>  </filtering-router></outbound>
+----
+
+== Recipient List Routers
+
+The recipient list routers can be used to send the same message to multiple endpoints over a single endpoint, or to implement routing-slip behavior where the next destination for the message is determined from message properties or the payload. Mule provides an abstract recipient list implementation https://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/AbstractRecipientList.html[org.mule.routing.outbound.AbstractRecipientList], which provides a thread-safe base for specialized implementations.
+
+Mule provides a static recipient list router that takes a configured list of endpoints from the current message or from a statically declared list on the endpoint.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <static-recipient-list-router>    <payload-type-filter expectedType="javax.jms.Message"/>    <recipients>      <spring:value>jms://orders.queue</spring:value>      <spring:value>jms://tracking.queue</spring:value>    </recipients>  </static-recipient-list-router></outbound>
+----
+
+Mule also provides an expression recipient list router, which allows you to create a static list as well as use an expression to determine the list.
+
+[source,xml,linenums]
+----
+<outbound>  <expression-recipient-list-router evaluator="headers-list" expression="recipient1,recipient2,recipient3"/></outbound>
+----
+
+== Multicasting Router
+
+The Multicasting router can be used to send the same message over multiple endpoints. When using this router, be sure to configure the correct transformers on the endpoints to handle the message source type.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray"/>    <payload-type-filter expectedType="java.lang.String"/>  </multicasting-router></outbound>
+----
+
+If you set the endpoints to synchronous, each endpoint processes the original message sequentially, and the results are collected into a single reply and then sent to the reply-to address. For example:
+
+[source,xml,linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage" synchronous="true"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest" synchronous="true"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray" synchronous="true"/>    <payload-type-filter expectedType="java.lang.String"/>    <reply-to address="jms:reply.queue"/>  </multicasting-router></outbound>
+----
+
+If you want the endpoints to process the message simultaneously and send back individual replies, set the endpoints to asynchronous (synchronous="false"). An individual reply will be returned from each endpoint to the caller. If you want to collect the asynchronous responses before sending the reply, use asynchronous endpoints, set a replyTo for the multicasting router, and then use the xref:asynchronous-reply-routers.adoc[Collection Asynchronous Reply Router]. For example:
+
+[source,xml,linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage" synchronous="false"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest" synchronous="false"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray" synchronous="false"/>    <payload-type-filter expectedType="java.lang.String"/>    <reply-to address="jms:reply.queue"/>  </multicasting-router></outbound><async-reply failOnTimeout="false" timeout="2000">  <jms:inbound-endpoint queue="reply.queue"/>  <collection-async-reply-router/></async-reply>
+----
+
+== Chaining Router
+
+The chaining router can be used to send the message through multiple endpoints using the result of the first invocation as the input for the next. For example, this can be useful where you want to send the results of a synchronous request-response invocation such as a Web service call to a JMS queue. Endpoint transformers can be used to transform the message to the format the next endpoint requires.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <chaining-router>    <axis:outbound-endpoint address="http://localhost:8081/services/xyz?method=getSomething"/>    <jms:outbound-endpoint queue="something.queue">      <transformer ref="SomethingToJmsMessage"/>    </jms:outbound-endpoint>  </chaining-router></outbound>
+----
+
+The endpoints specified in the chaining router are always synchronous and pass the message along in a single thread. The exception is the last endpoint, on which you can set `synchronous="false"` if you do not want to send a response to the caller.
+
+Note that if any of the endpoints in the chain return null, the router exits.
+
+== List Message Splitter
+
+A message splitter can be used to break down an outgoing message into parts and dispatch those parts over different endpoints configured on the router. The List Message Splitter accepts a list of objects that will be routed to different endpoints. The actual endpoint used for each object in the list is determined by a filter configured on the endpoint itself. If the endpoint's filter accepts the object, the endpoint will be used to route the object.
+
+By default the AbstractMessageSplitter sets a correlation ID and correlation sequence on the outbound messages so that inbound routers such as the Collection Aggregator or Correlation Resequencer are able to resequence or combine the split messages.
+
+The router configuration below expects the message payload to be a `java.util.List` and will route objects in the list that are of type `com.foo.Order`, `com.foo.Item`, and `com.foo.Customer`. The router will allow any number and combination of these objects.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <list-message-splitter-router">    <jms:outbound-endpoint queue="order.queue">      <payload-type-filter expectedType="com.foo.Order"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="item.queue">      <payload-type-filter expectedType="com.foo.Item"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="customer.queue">      <payload-type-filter expectedType="com.foo.Customer"/>    </jms:outbound-endpoint>    <payload-type-filter expectedType="java.util.List"/>  </list-message-splitter-router></outbound>
+----
+
+Note that there is also a filter on the router itself that ensures that the message payload received is of type `java.util.List`. If there are objects in the list that do not match any of the endpoint filters, a warning is written to the log and processing continues. To route any non-matching object types to another endpoint, add the endpoint at the end of the list without a filter.
+
+== Filtering XML Message Splitter
+
+This router is similar to the List Message Splitter but operates on XML documents. Supported payload types are:
+
+* `org.dom4j.Document` objects
+* `byte[]`
+* `java.lang.String`
+
+If no match is found, it is ignored and logged at the WARN level.
+
+The router splits the payload into nodes based on the `splitExpression` property. The actual endpoint used for each object in the list is determined by a filter configured on the endpoint itself. If the endpoint's filter accepts the object, the endpoint will be used to route the object. Each part returned is actually returned as a new DOM4J document.
+
+The router can optionally perform a validation against an external XML schema document. To perform the validation, set `externalSchemaLocation` to the XSD file in your classpath. Setting this property overrides whatever schema document you declare in the XML header.
+
+By default, the router fails if none of the endpoint filters match the payload. To prevent the router from failing in this case, you can set the `failIfNoMatch` attribute to `false`.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <mulexml:filter-based-splitter splitExpression="root/nodes" validateSchema="true" externalSchemaLocation="/com/example/TheSchema.xsd">    <vm:outbound-endpoint path="order">      <payload-type-filter expectedType="com.foo.Order"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="item">      <payload-type-filter expectedType="com.foo.Item"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="customer">      <payload-type-filter expectedType="com.foo.Customer"/>    </vm:outbound-endpoint>    <payload-type-filter expectedType="org.dom4j.Document"/>  </mulexml:filter-based-splitter></outbound>
+----
+
+== Expression Splitter Router
+
+This router is similar to the list message splitter router, but it splits the message based on an xref:expressions-configuration-reference.adoc[expression]. The expression must return one or more message parts to be effective.
+
+[source,xml,linenums]
+----
+<outbound>  <expression-splitter-router evaluator="xpath" expression="/mule:mule/mule:model/mule:service" disableRoundRobin="true" failIfNoMatch="false">    <outbound-endpoint ref="service1">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'service splitter'"/>    </outbound-endpoint>    <outbound-endpoint ref="service2">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'round robin deterministic'"/>    </outbound-endpoint>  </expression-splitter-router></outbound>
+----
+
+== Round Robin Message Splitter
+
+The round robin message splitter will split a DOM4J document into nodes based on the `splitExpression` property. It will then send these document fragments to the list of endpoints specified in a round-robin fashion. Optionally, you can specify a namespaces property map that contain prefix/namespace mappings.
+
+For instance, the following fragment will route the "/a:orders/a:order" nodes inside the document to the robin1 and robin2 endpoints.
+
+[source,xml,linenums]
+----
+<outbound>    <mxml:round-robin-splitter splitExpression="/a:orders/a:order" deterministic="false">        <outbound-endpoint ref="robin1"/>        <outbound-endpoint ref="robin2"/>        <mxml:namespace prefix="a" uri="http://acme.com"/>    </mxml:round-robin-splitter></outbound>
+----
+
+The router can optionally perform a validation against an external XML schema document. To perform the validation, set `externalSchemaLocation` to the XSD file in your classpath. Setting this property overrides whatever schema document you declare in the XML header.
+
+[source,xml,linenums]
+----
+<outbound>    <mxml:round-robin-splitter splitExpression="/a:orders/a:order" deterministic="false" externalSchemaLocation="mySchema.xsd" validateSchema="true">        <outbound-endpoint ref="robin1"/>        <outbound-endpoint ref="robin2"/>        <mxml:namespace prefix="a" uri="http://acme.com"/>    </mxml:round-robin-splitter></outbound>
+----
+
+== Message Chunking Outbound Router
+
+This routing pattern allows you to split a single message into a number of fixed-length messages that will all be routed to the same endpoint. It will split the message up into a number of smaller chunks according to the `messageSize` attribute that you configure for the router. If you do not configure a `messageSize`, or if it has a value of zero, the message will not be split up and the entire message will be routed to the destination endpoint as is. The router splits up the message by first converting it to a byte array and then splitting this array into chunks. If the message cannot be converted into a byte array, a `RoutingException` is raised.
+
+A message chunking router is useful if you have bandwidth problems (or size limitations) when using a particular transport. If you want to be able to route different segments of the original message to different endpoints, consider using the <<List Message Splitter>> or <<Filtering XML Message Splitter>> router instead.
+
+To put the chunked items back together again, you can use the Message Chunking Aggregator as the inbound router on the next service.
+
+=== Sample Configuration
+
+[source,xml,linenums]
+----
+<service name="chunkingService">    <inbound>        <vm:inbound-endpoint path="fromClient"/>    </inbound>    <outbound>        <message-chunking-router messageSize="4">            <vm:outbound-endpoint path="toClient"/>        </message-chunking-router>    </outbound></service>
+----
+
+In the example above, any data received on the vm `fromClient` endpoint is chunked into messages four bytes long before being sent along the vm `toClient` endpoint. If we sent "The quick brown fox jumped over the lazy dog" to this service, anything listening on the vm `toClient` endpoint would receive the following messages (the spaces have been replaced with underscores for better legibility):
+
+[%header,cols="2*",width=10%]
+|===
+|Message # |Contents
+|1 + |The_
+|2 |quic
+|3 |k_br
+|4 |own_
+|5 |fox_
+|6 |jump
+|7 |ed_o
+|8 |ver_
+|9 |the_
+|10 |lazy
+|11 |_dog
+|===
+
+== Exception Based Routers
+
+The Exception Based router can be used to send a message over an endpoint by selecting the first endpoint that can connect to the transport. This can be useful for setting up retries. When the first endpoint fails, the second will be invoked, and if that fails, it will try the next endpoint. Note that this router overrides the endpoint mode to synchronous while looking for a successful send and will resort to using the endpoint's mode for the last item in the list.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <exception-based-router>    <tcp:endpoint host="10.192.111.10" port="10001" />    <tcp:endpoint host="10.192.111.11" port="10001" />    <tcp:endpoint host="10.192.111.12" port="10001" />  </exception-based-router></outbound>
+----
+
+Another variation of this router is the `recipient-list-exception-based-router`, which uses a dynamic rather than static list of endpoints/recipients.
+
+[source,xml,linenums]
+----
+<outbound>  <recipient-list-exception-based-router evaluator="xpath" expression="//Endpoint/Address" /></outbound>
+----
+
+== Template Endpoint Router
+
+The template endpoint router allows endpoints to be altered at runtime based on properties set on the current message or fallback values set on the endpoint properties. Templated values are expressed using square brackets around a property name, such as:
+
+[source,text,linenums]
+----
+axis:http://localhost:8082/MyService?method=[SOAP_METHOD]
+----
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <template-endpoint-router>     <outbound-endpoint address="foobar://server:1234/path/path/path?param1=[header1]&param2=[header2]"/>  </template-endpoint-router></outbound>
+----
+
+The header1 and header2 parameters are substituted with the actual values from the current message. The parameters can be used only in the query string, as the square brackets are not valid characters for the authority and path URI components.
+
+== Custom Outbound Router
+
+You can configure custom outbound routers by specifying the custom router class on the `<custom-outbound-router>` element and by using Spring properties.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<outbound>  <custom-outbound-router class="org.my.CustomOutboundRouter" transformers-ref="Transformer1">    <tcp:endpoint host="10.192.111.10" port="10001" />    <tcp:endpoint host="10.192.111.11" port="10001" />    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>    <spring:properties>      <spring:property key="key1" value="value1"/>       <spring:property key="key2" value="value2"/>     </spring:properties>  </custom-outbound-router></outbound>
+----

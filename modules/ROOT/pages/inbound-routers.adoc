@@ -1,0 +1,240 @@
+= Inbound Routers
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Overview
+
+Inbound routers control and manipulate messages received by a service before passing them to the service component. Typically, an inbound router is used to filter incoming messages, aggregate a set of incoming messages, or re-sequence messages when they are received. Inbound routers are also used to register multiple inbound endpoints for a service. You can chain inbound routers together, so that each router must be matched before the message can be passed to the component. You can also configure a xref:catch-all-strategies.adoc[catch-all strategy] that is invoked if none of the routers accept the current message.
+
+Inbound routers are different from outbound routers in that the endpoint is already known (as the message has already been received), so the purpose of the router is to control how messages are given to the component.
+
+All inbound routers are configured on a service within the `<inbound>` element. If no inbound routers are configured, by default an InboundPassThroughRouter is used to simply pass the incoming message to the component.
+
+=== Matching Only the First Router
+
+By default, a message must match and be processed by *all* inbound routers in a service before it is passed to the service component. If you want to configure the service so that the message is processed only by the first router whose conditions it matches, you set the `matchAll` attribute on the `<inbound>` element to false.
+
+[TIP]
+This behavior is new as of Mule 2.0. Previously, the message was processed only by the first matching router by default.
+
+=== Inbound Example
+
+[source,xml,linenums]
+----
+<inbound>    <stdio:inbound-endpoint system="IN" />     <catch-all-strategy>        <jms:outbound-endpoint queue="failure.queue"/>    </catch-all-strategy>    <selective-consumer-router>       <mulexml:jxpath-filter pattern="(msg/header/resultcode)='success'"/>    </selective-consumer-router></inbound>
+----
+
+This example uses a selective consumer router that will accept a message if a 'resultcode' element has a value of 'success'. If the message matches this filter's criteria, the message is passed to the component. If the message does not match, the catch-all strategy is invoked, which sends the message via its configured endpoint, in this case a JMS queue called 'failure.queue'.
+
+The rest of this page describes the inbound routers you can use. For more detailed information on inbound router configuration elements and attributes, see the xref:inbound-router-configuration-reference.adoc[Inbound Router Configuration Reference].
+
+== No Router
+
+If no router is defined on the inbound, all messages received via the endpoints will be processed by the service component.
+
+[source,xml,linenums]
+----
+<inbound>    <jms:inbound-endpoint queue="foo.bar"/>    <vm:inbound-endpoint path="foo.bar.local"/></inbound>
+----
+
+== Selective Consumer
+
+A selective consumer is an inbound router that can apply one or more filters to the incoming message. If the filters match, the message is forwarded to the component. Otherwise, the message is forwarded to the catch-all strategy on the router. If no catch-all is configured, the message is ignored and a warning is logged.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <selective-consumer-router>    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </selective-consumer-router>  <forwarding-catch-all-strategy>    <jms:endpoint topic="error.topic"/>  </forwarding-catch-all-strategy></inbound>
+----
+
+For information on using filters with this router, see xref:using-filters.adoc[Using Filters]. Note that by default the filter is applied to the message after the inbound transformers are applied. If you need to execute filters on the message without applying any transformation, you can set the `transformFirst` property on this router to control whether transformations are applied.
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <forwarding-catch-all-strategy>    <jms:endpoint topic="error.topic"/>  </forwarding-catch-all-strategy>  <selective-consumer-router transformFirst="false">    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </selective-consumer-router></inbound>
+----
+
+== Idempotent Message Filter
+
+An idempotent filter ensures that only unique messages are received by a service by checking the unique message ID of the incoming message. The ID can be generated from the message using an expression defined in the `idExpression` attribute. By default, the expression used is `#[message:id]`, which means the underlying endpoint must support unique message IDs for this to work. Otherwise, a `UniqueIdNotSupportedException` is thrown.
+
+There is a simple idempotent filter implementation provided at https://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/IdempotentMessageFilter.html[org.mule.routers.IdempotentMessageFilter]. The default implementation uses a simple file-based mechanism for storing message IDs, but you can extend this class to store the IDs in a database instead by implementing the https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/store/ObjectStore.html[ObjectStore] interface.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <idempotent-receiver-router idExpression="#[message:id]-#[header:foo]">    <simple-text-file-store directory="./idempotent"/>  </idempotent-receiver-router></inbound>
+----
+
+The optional `idExpression` attribute determines what should be used as the unique message ID. If this attribute is not used, `#[message:id]` is used by default.
+
+The nested element shown above configures the location where the received message IDs are stored. In this example, they are stored to disk so that the router can remember state between restarts. If the `directory` attribute is not specified, the default value used is `${mule.working.dir}/objectstore` where `mule.working.dir` is the working directory configured for the Mule instance.
+
+If no store is configured, the InMemoryObjectStore is used by default.
+
+== Idempotent Secure Hash Message Filter
+
+This filter ensures that only unique messages are received by a service by calculating the hash of the message itself using a message digest algorithm. This approach provides a value with an infinitesimally small chance of a collision and can be used to filter message duplicates. Note that the hash is calculated over the entire byte array representing the message, so any leading or trailing spaces or extraneous bytes (like padding) can produce different hash values for the same semantic message content. Therefore, you should ensure that messages do not contain extraneous bytes. This router is useful when the message does not support unique identifiers.
+
+Configuration for this filter is as follows:
+
+[source,xml,linenums]
+----
+<inbound>    <vm:inbound-endpoint path="foo.bar.local"/>    <idempotent-secure-hash-receiver-router messageDigestAlgorithm="SHA26">        <simple-text-file-store directory="./idempotent"/>    </idempotent-secure-hash-receiver-router></inbound>
+----
+
+Idempotent Secure Hash Message Filter also uses object stores, which are configured the same way as the Idempotent Message Filter. The optional `messageDigestAlgorithm` attribute determines the hashing algorithm that will be used. If this attribute is not specified, the default algorithm SHA-256 is used.
+
+== Collection Aggregator
+
+The Collection Aggregator groups incoming messages that have matching group IDs before forwarding them. The group ID can come from the correlation ID or another property that links messages together.
+
+You can specify the `timeout` attribute to determine how long the router waits in milliseconds for messages to complete the group. By default, if the expected messages are not received by the `timeout` time, an exception is thrown and the messages are not forwarded. As of Mule 2.2, you can set the `failOnTimeout` attribute to `false` to prevent the exception from being thrown and simply forward whatever messages have been received so far.
+
+The aggregator is based on the <<Selective Consumer>>, so you can also apply filters to the messages. Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <collection-aggregator-router timeout="6000" failOnTimeout="false">    <payload-type-filter expectedType="org.foo.some.Object"/>  </collection-aggregator-router></inbound>
+----
+
+== Message Chunking Aggregator
+
+After an outbound router such as the xref:outbound-routers.adoc[List Message Splitter] splits a message into parts, the message chunking aggregator router reassembles those parts back into a single message. The aggregator uses the correlation ID, which is set by the outbound router, to identify which parts belong to the same message. This aggregator is based on the <<Selective Consumer>>, so filters can also be applied to messages.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <message-chunking-aggregator-router>    <expression-message-info-mapping correlationIdExpression="#[header:correlation]"/>    <payload-type-filter expectedType="org.foo.some.Object"/>  </message-chunking-aggregator-router></inbound>
+----
+
+The optional `expression-message-info-mapping` element allows you to identify the correlation ID in the message using an expression. If this element is not specified, `MuleMessage.getCorrelationId()` is used.
+
+The Message Chunking aggregator also accepts the `timeout` and (as of Mule 2.2) `failOnTimeout` attributes as described under Collection Aggregator.
+
+== Custom Correlation Aggregator
+
+This router is used to configure a custom message aggregator. Mule provides an abstract implementation that has a template method that performs the message aggregation. A common use of the aggregator router is to combine the results of multiple requests such as "ask this set of vendors for the best price of X".
+
+The aggregator is based on the <<Selective Consumer>>, so you can also apply filters to messages. It also accepts the `timeout` and (as of Mule 2.2) `failOnTimeout` attributes as described under Collection Aggregator.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <custom-correlation-aggregator-router class="org.mule.CustomAgregator">    <payload-type-filter expectedType="org.foo.some.Object"/>  </custom-correlation-aggregator-router></inbound>
+----
+
+There is an AbstractEventAggregator that provides a thread-safe implementation for custom aggregators, which you can can use to write a custom aggregator router. For example, the xref:loan-broker-example.adoc[Loan Broker] examples included in the Mule distribution use a custom BankQuotesInboundAggregator router to aggregate bank quotes.
+
+== Correlation Resequencer
+
+The Correlation Resequencer Router will hold back a group of messages and resequence them using the messages correlation sequence property. A `java.util.Comparator` is used to sort the messages. This router is based on the <<Selective Consumer>>, which means that filters can be applied to the incoming messages. It also accepts the `timeout` and (as of Mule 2.2) `failOnTimeout` attributes as described under Collection Aggregator.
+
+[source,xml,linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <correlation-resequencer-router>    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </correlation-resequencer-router></inbound>
+----
+
+== Forwarding Router
+
+This router allows messages to be forwarded to an outbound router without first being processed by a component. It essentially acts as a bridge between an inbound and an outbound endpoint. This is useful in situations where the developer does not need to execute any logic on the inbound message but does need to forward it on to a component residing on another destination (such as a remote Mule node or application) over the network.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<service name="FileReader">  <inbound>    <file:inbound-endpoint path="/temp/myfiles/in"/>      <forwarding-router/>  </inbound>  <echo-component/>  <outbound>    <tcp:outbound-endpoint host="192.168.0.6" port="12345">      <object-to-byte-array-transformer/>    </tcp:outbound-endpoint>  </outbound></service>
+----
+
+When a file becomes available on the local file system, an event is triggered that creates the message, which is then automatically forwarded via TCP to 192.168.0.6. Notice that there is an `outboundTransformer` configured. This will be used to transform the message's payload before it is dispatched over TCP. There is an echo component configured, but when the forwarding consumer is used, the component invocation is skipped, and the message is forwarded directly the the outbound router(s).
+
+Configuring the service as a bridge is recommended for most forwarding scenarios. However, if you need to selectively forward only some events while others are processed by the component, you will need to use this router.
+
+The Forwarding router extends the <<Selective Consumer>>, so you can configure filters on this router.
+
+== Wiretap Router
+
+The WireTap inbound router allows you to route certain messages to a different endpoint as well as to the component. image:wiretap-router.jpg[Wiretap+Router]
+
+To copy all messages to a specific component, you configure an outbound endpoint on the WireTap router:
+
+[source,xml,linenums]
+----
+<inbound>    <vm:inbound endpoint path="FromUser"/>    <wire-tap-router>        <vm:outbound-endpoint path="tapped.channel"/>    </wire-tap-router></inbound>
+----
+
+In the following scenario, no component is specified, so all data from the inbound VM channel is copied to the outbound endpoint using implicit bridging. However, let's assume you want to forward some of the data to another component called WireTapReceiver based on a filter. For the sake of illustration, this component simply prepends the message with "INTERCEPTED:" before sending it to the FromTapper VM channel. The code for the WireTapReceiver component is as follows:
+
+[source,java,linenums]
+----
+public class WireTapReceiver {    public String handleInterceptedData (String aMessage) {        //Just Prepend the message with a label        return "\nINTERCEPTED: "+aMessage;    }}
+----
+
+Following is the configuration of the Mule services:
+
+[source,xml,linenums]
+----
+<model name="default">    <service name="StdComp">        <inbound>            <vm:inbound-endpoint path="In"/>            <wire-tap-router>                <vm:outbound-endpoint path="ToTapper"/>            </wire-tap-router>        </inbound>        <outbound>            <pass-through-router>                <vm:outbound-endpoint path="ToClient"/>            </pass-through-router>        </outbound>    </service>    <service name="wiretapper">        <inbound>            <vm:inbound-endpoint path="ToTapper"/>        </inbound>        <component class="org.myclass.WireTapReceiver"/>        <outbound>            <pass-through-router>                <vm:outbound-endpoint path="FromTapper"/>            </pass-through-router>        </outbound>    </service></model>
+----
+
+Note: Mule uses a separate dispatcher thread for the wiretap endpoint.
+
+=== Using Filters with the WireTap Router
+
+The WireTap router is useful both with and without filtering. If filtered, it can be used to record or take note of particular messages or to copy messages that require additional processing to a different component. If filters aren't used, you can make a backup copy of all messages received by a component. The behavior here is similar to that of an interceptor, but interceptors can alter the message flow by preventing the message from reaching the component. WireTap routers cannot alter message flow but just copy on demand.
+
+In the previous example, the StdComp service receives messages from the In endpoint, and the router passes the message to the component and copies it to the vm://ToTapper endpoint. The WireTapper component listens on this channel and forwards the message, after processing, to the FromTapper endpoint.
+
+The WireTap router is based on the Selective Consumer router, so it can take any xref:using-filters.adoc[filters] supported by `SelectiveConsumer`. In this example, only messages that match the filter expression are copied to the vm://ToTapper endpoint.
+
+[source,xml,linenums]
+----
+<wire-tap-router>    <wildcard-filter pattern="the quick brown*"/>    <vm:outbound-endpoint path="tapped.channel"/></wire-tap-router>
+----
+
+=== Using Multiple WireTap Routers
+
+You can have multiple WireTap routers for the same service:
+
+[source,xml,linenums]
+----
+<inbound>    <endpoint address="vm://In"/>    <wire-tap-router>        <wildcard-filter pattern="the quick brown*"/>        <vm:outbound-endpoint path="ToTapper"/>    </wire-tap-router>    <wire-tap-router>        <wildcard-filter pattern="the slow green*"/>        <vm:outbound-endpoint path="ToOtherTapper"/>    </wire-tap-router></inbound>
+----
+
+In this example, input is passed to the component and also copied to one of two destinations depending on the filter.
+
+=== Method Invocation in the Wire-tapped Component
+
+You can invoke your service with a specific method. For example, if your inbound endpoint is not `vm://In` but `axis\:http://localhost\:8080/services`, or if your component StdComp is a customized component with a method `foo()`, you can invoke the web service and its method `foo()` via the following endpoint:
+
+`http\://localhost\:8080/services/StdComp?method=foo&param=bar`
+
+When this message is wire-tapped to the receiving component, Mule might fail with an exception if the receiving component does not have the method `foo()`. To avoid this problem and to ensure that the desired method is invoked, you overwrite the method of the message by specifying `?method=methodName`, or by specifying `?method=` so that the `onCall()` method will be called instead. For example:
+
+[source,xml,linenums]
+----
+<wire-tap-router>    <outbound-endpoint addres="vm://inboundEndpoint3?connector=vm2"/></wire-tap-router>...<service name="serviceComponent3">    <inbound>        <inbound-endpoint address="vm://inboundEndpoint3?connector=vm2&amp;method=" synchronous="false"/>    </inbound>    <component class="org.mule.components.simple.LogComponent"/></service>
+----
+
+=== Additional WireTap Router Features
+
+The WireTap router supports the following additional features:
+
+* Transactions are supported, so the forwarding of messages can either start or join a transaction provided that the endpoint xref:transaction-management.adoc[supports transactions].
+* Reply-To can be used to route replies from this endpoint.
+
+== Custom Inbound Router
+
+You can configure custom inbound routers by specifying the custom router class on the `<custom-inbound-router>` element and by using Spring properties. Optionally, you can also configure an outbound endpoint in case this is needed for implementing a custom wiretap router for example.
+
+Configuration for this router is as follows:
+
+[source,xml,linenums]
+----
+<inbound>    <vm:inbound-endpoint path="foo.bar.local"/>    <custom-inbound-router class="org.my.CustomInboundRouter">        <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>        <spring:properties>            <spring:property key="key1" value="value1"/>             <spring:property key="key2" value="value2"/>         </spring:properties>        <vm:outbound-endpoint path="out"/>    </custom-inbound-router></inbound>
+----

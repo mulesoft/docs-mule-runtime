@@ -1,0 +1,252 @@
+= Acegi Module Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[IMPORTANT]
+====
+*Note*: Acegi was replaced by Spring Security and deprecated. It was not supported past Mule 3.1. This configuration reference information is provided with the understanding that the if you are currently using the Mule Acegi module, upgrade from Acegi to Spring Security.
+
+*Note*: The 3.1 XSD at http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd is the last version of this schema.
+====
+
+== Introduction
+
+Acegi provides a number of authentication and authorization providers such as JAAS, LDAP, CAS (Yale Central Authentication serivce), and DAO. The Mule Acegi lsecurity manager implementation delegates to Acegi to provide authorization and authentication functions.
+
+== Namespace and Syntax
+
+XML namespace:
+
+----
+xmlns: acegi "http://www.mulesoft.org/schema/mule/acegi"
+----
+
+XML schema location:
+
+----
+http://www.mulesoft.org/schema/mule/acegi
+----
+
+== Considerations
+
+This module is documented for reference and to support existing implementations, but should not be used.
+
+== Features
+
+The Mule Acegi module enables you to hook your Mule implementation up to a number of standard security schemes. This Mule module was designed to allow you to hook into security providers, authentication and authorization services, and it is powerful enough to allow you to configure method-level authorization on components, meaning that users with different roles can only invoke certain service methods.
+
+== Usage
+
+The Mule Acegi module is deprecated.
+
+=== Securing Service Components
+
+To secure MethodInvocations, developers must add a properly configured `MethodSecurityInterceptor` into the application context. The beans requiring security are chained into the interceptor. This chaining is accomplished using Spring's `ProxyFactoryBean` or `BeanNameAutoProxyCreator`. Alternatively, Acegi security provides a `MethodDefinitionSourceAdvisor`, which you can use with Spring's `DefaultAdvisorAutoProxyCreator` to automatically chain the security interceptor in front of any beans defined against the `MethodSecurityInterceptor`.
+
+In addition to the `daoAuthenticationProvider` and `inMemoryDaoImpl` beans (see xref:configuring-security.adoc[Configuring Security]), the following beans must be configured:
+
+* `MethodSecurityInterceptor`
+* `AuthenticationManager`
+* `AccessDecisionManager`
+* `AutoProxyCreator`
+* `RoleVoter`
+
+=== The MethodSecurityInterceptor
+
+The `MethodSecurityInterceptor` is configured with a reference to an:
+
+* `AuthenticationManager`
+* `AccessDecisionManager`
+
+Following is a security interceptor for intercepting calls made to the methods of a component that has an interface `myComponentIfc ❶`, which defines two methods: `delete ❷` and `writeSomething ❸`. Roles are set on these methods as seen below in the property `objectDefinitionSource`.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:acegi="http://www.mulesoft.org/schema/mule/acegi"
+      xmlns:https="http://www.mulesoft.org/schema/mule/https"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/acegi http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd
+          http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/3.1/mule-https.xsd
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.1/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd">
+...
+  <bean id="myComponentSecurity" class="org.acegisecurity.intercept.method.aopalliance.MethodSecurityInterceptor">
+    <property name="authenticationManager" ref="authenticationManager"/>
+    <property name="accessDecisionManager" ref="accessDecisionManager"/>
+    <property name="objectDefinitionSource">
+          <value>
+        ❶       com.foo.myComponentIfc.delete=ROLE_ADMIN   ❷
+                com.foo.myComponentIfc.writeSomething=ROLE_ANONYMOUS   ❸
+          </value>
+    </property>
+  </bean>
+</mule>
+----
+
+=== The AuthenticationManager
+
+An AuthenticationManager is responsible for passing requests through a chain of `AuthenticationProvider` objects.
+
+[source,xml,linenums]
+----
+<bean id="authenticationManager" class='org.acegisecurity.providers.ProviderManager'>
+      <property name= "providers">
+            <list>
+                 <ref local="daoAuthenticationProvider"/>
+            </list>
+      </property>
+</bean>
+----
+
+=== The AccessDecisionManager
+
+This bean specifies that a user can access the protected methods if they have any one of the roles specified in the `objectDefinitionSource`.
+
+[source,xml,linenums]
+----
+<bean id="accessDecisionManager" class='org.acegisecurity.vote.AffirmativeBased'>
+      <property name="decisionVoters">
+            <list>
+                  <ref bean="roleVoter"/>
+            </list>
+      </property>
+</bean>
+----
+
+=== The AutoProxyCreator
+
+This bean defines a proxy for the protected bean. When an application asks Spring for `myComponent` bean, it gets this proxy instead.
+
+[source,xml,linenums]
+----
+<bean id="autoProxyCreator" class="org.springframework.aop.framework.autoproxy.BeanNameAutoProxyCreator">
+    <property name="interceptorNames">
+        <list>
+            <value>myComponentSecurity</value>
+        </list>
+    </property>
+    <property name="beanNames">
+        <list>
+            <value>myComponent</value>
+        </list>
+    </property>
+    <property name='proxyTargetClass' value="true"/>
+</bean>
+----
+
+When using `BeanNameAutoProxyCreator` to create the required proxy for security, the configuration must contain the property `proxyTargetClass` set to `true`. Otherwise, the method passed to `MethodSecurityInterceptor.invoke` is the proxy's caller, not the proxy's target.
+
+=== The RoleVoter
+
+The `RoleVoter` class will vote if any `ConfigAttribute` begins with `ROLE_`. The `RoleVoter` is case sensitive on comparisons as well as the `ROLE_` prefix.
+
+* It will vote to grant access if there is a `GrantedAuthority`, which returns a String representation (via the `getAuthority()` method) exactly equal to one or more `ConfigAttributes` starting with `ROlE`.
+* If there is no exact match of any `ConfigAttribute` starting with `ROLE_`, the `RoleVoter` will vote to deny access.
+* If no `ConfigAttribute` begins with `ROLE_`, the voter will abstain.
+
+[source,xml]
+----
+<bean id="roleVoter" class="org.acegisecurity.vote.RoleVoter"/>
+----
+
+=== Setting Security Properties on the Security Provider
+
+You can add any additional properties to the security provider in the `securityProperties` map. For example, this map can be used to change Aegi's default security strategy into one of the following:
+
+* `MODE_THREADLOCAL`, which allows the authentication to be set on the current thread (this is the default strategy used by Acegi)
+* `MODE_INHERITABLETHREADLOCAL`, which allows authentication to be inherited from the parent thread.
+* `MORE_GLOBAL`, which allows the authentication to be set on all threads.
+
+== Securing Components in Asynchronous Systems
+
+Acegi security strategies are particularly useful with an asynchronous system, since we have to add a property on the security provider for the authentication to be set on more than one thread.
+
+In this case, we would use `MODE_GLOBAL` as seen in the example below:
+
+[source,xml,linenums]
+----
+<acegi:security-manager>
+    <acegi:delegate-security-provider name="memory-dao" delegate-ref="daoAuthenticationProvider">
+        <acegi:security-property name="securityMode" value="MODE_GLOBAL"/>
+    </acegi:delegate-security-provider>
+</acegi:security-manager>
+----
+
+=== Configuration Reference
+
+== Acegi Module
+
+Acegi provides a number of authentication and authorization provides such as JAAS, LDAP, CAS (Yale Central Authentication service), and DAO. The Mule Acegi security manager implementation delegates to Acegi to provide authorization and authentication functions.
+
+=== Security manager
+
+.Child Elements of <security-manager...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|delegate-security-provider |0..1 |An Acegi-based security provider that delegates authorization to some other provider.
+|===
+
+=== Delegate security provider
+
+An Acegi-based security provider that delegates authorization to some other provider.
+
+.Attributes of <delegate-security-provider...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|delegate-ref |string |yes | |
+|===
+
+.Child Elements of <delegate-security-provider...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|security-property |0..* |
+|===
+
+=== HTTP Security Filter
+
+This appears to authenticate users via information in standard HTTP headers.
+
+.Attributes of <http-security-filter...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|realm |string |yes | |
+|securityProviders |string |no | |The delegate-security-provider to use for authenticating. Use this element in case you have multiple security managers defined in your configuration.
+|===
+
+== Schema
+
+* Schema: http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd
+
+== Maven
+
+The Acegi Module can be included with the following dependency:
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-module-acegi</artifactId>
+</dependency>
+----
+
+== Extending this Module or Transport
+
+Not applicable.
+
+== Best Practices
+
+See Notes below.
+
+== Notes
+
+[IMPORTANT]
+*Note*: Acegi was replaced by Spring Security and deprecated. It is not supported past version 3.1 of Mule. This configuration reference information is provided with the understanding that if you are currently using the Mule Acegi module, upgrade from Acegi to Spring Security.

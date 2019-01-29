@@ -1,0 +1,233 @@
+= Enabling WS-Security
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This page describes how to configure a client and service to use WS-Security. You should already have a basic client and server running. For a good primer on WS-Security, see http://msdn.microsoft.com/en-us/library/ms977327.aspx[Understand WS-Security] on the Microsoft site.
+
+If you are using the enterprise edition of Mule, you can use the xref:saml-module.adoc[SAML Module] to add SAML support to your configuration. See the xref:ws-security-example.adoc[WS-Security Example] for an example of working with WS-Security with Mule Enterprise Edition.
+
+== UsernameToken Scenario
+
+The UsernameToken feature in WS-Security is an interoperable way to exchange security tokens inside a SOAP message. The following section describes how to configure the client and server to exchange a username/password security token.
+
+=== Server Configuration
+
+On the server side, you do the following:
+
+* Create a Mule service for your component implementation
+* Configure the WSS4JInInterceptor and the SAAJInInterceptor. The former is responsible for checking the security of your message.
+* Write a server PasswordCallback that verifies the password.
+
+You configure the server in the Mule configuration file. Following is an example:
+
+[source,xml,linenums]
+----
+<flow name="greeterFlow">
+    <http:inbound-endpoint address="http://localhost:63081/services/greeter" exchange-pattern="request-response"/>
+    <cxf:jaxws-service serviceClass="org.apache.hello_world_soap_http.GreeterImpl">
+        <cxf:inInterceptors>
+            <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJInInterceptor" />
+            <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">
+                <spring:constructor-arg>
+                    <spring:map>
+                        <spring:entry key="action" value="UsernameToken" />
+                        <spring:entry key="passwordCallbackRef" value-ref="serverCallback" />
+                    </spring:map>
+                </spring:constructor-arg>
+            </spring:bean>
+        </cxf:inInterceptors>
+    </cxf:jaxws-service>
+    </http:inbound-endpoint>
+    <component>
+        <singleton-object class="org.apache.hello_world_soap_http.GreeterImpl" />
+    </component>
+</flow>
+----
+
+The <cxf:inInterceptors> element configures the incoming interceptors on the service. The WSS4JInInterceptor performs the security operations on the incoming SOAP message. The "action" parameter controls which actions it performs on the incoming message - in this case the "UsernameToken" action specifies that it will verify the username token via a specified password callback. The password callback is specified by the "passwordCallbackRef" property, which is detailed in the next section. The SAAJInInterceptor is also installed here. It enables the use of SAAJ, an in-memory DOM document format, which is required by WSS4J.
+
+Server callbacks verify passwords by supplying the password with which the incoming password will be compared.
+
+[source,text,linenums]
+----
+import java.io.IOException;
+
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.UnsupportedCallbackException;
+
+import org.apache.ws.security.WSPasswordCallback;
+
+public class ServerPasswordCallback implements CallbackHandler
+{
+
+    public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+
+        WSPasswordCallback pc = (WSPasswordCallback) callbacks[0];
+
+        if (pc.getIdentifer().equals("joe")) {
+            // set the password on the callback. This will be compared to the
+            // password which was sent from the client.
+            pc.setPassword("password");
+        }
+    }
+}
+----
+
+This allows you to write custom code which can load and compare passwords from custom backends, such as databases or LDAP.
+
+=== Client Configuration
+
+On the client side, you do the following:
+
+* Set up the CXF outbound endpoint
+* Configure the CXF client so that it uses ws-security
+* Set up a ClientPasswordCallback that supplies the password for the invocation
+
+Following is a simple example that configures a CXF JAX-WS client message processor:
+
+[source,xml,linenums]
+----
+<cxf:jaxws-client
+    name="clientEndpoint"
+    clientClass="org.apache.hello_world_soap_http.SOAPService"
+    port="SoapPort"
+    wsdlLocation="classpath:/wsdl/hello_world.wsdl"
+    operation="greetMe">
+    <cxf:outInterceptors>
+      <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJOutInterceptor" />
+      <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JOutInterceptor">
+          <spring:constructor-arg>
+              <spring:map>
+                  <spring:entry key="action" value="UsernameToken" />
+                  <spring:entry key="user" value="joe" />
+                  <spring:entry key="passwordType" value="PasswordDigest" />
+                  <!-- The callback supplies the password so its not stored in our config file -->
+                  <spring:entry key="passwordCallbackRef" value-ref="clientCallback" />
+              </spring:map>
+          </spring:constructor-arg>
+      </spring:bean>
+    </cxf:outInterceptors>
+</cxf:jaxws-client>
+----
+
+== Configure the CXF Client to Use WS-Security
+
+To use WS-Security, you add a configuration section to your "my-cxf-config.xml" file.
+
+*NOTE*:
+If your client and your server are on separate machines, you create two separate files and then a CXF connector configuration on each one.
+
+[source,xml,linenums]
+----
+<jaxws:client name="{http://apache.org/hello_world_soap_http}SoapPort" createdFromAPI="true">
+  <jaxws:outInterceptors>
+      <bean class="org.apache.cxf.binding.soap.saaj.SAAJOutInterceptor" />
+      <bean class="org.apache.cxf.ws.security.wss4j.WSS4JOutInterceptor">
+          <constructor-arg>
+              <map>
+                  <entry key="action" value="UsernameToken" />
+                  <entry key="user" value="joe" />
+                  <entry key="passwordType" value="PasswordDigest" />
+                  <!-- The callback supplies the password so its not stored in our config file -->
+                  <entry key="passwordCallbackRef" value-ref="clientCallback" />
+              </map>
+          </constructor-arg>
+      </bean>
+  </jaxws:outInterceptors>
+</jaxws:client>
+
+<bean id="clientCallback" class="org.mule.providers.soap.cxf.wssec.ClientPasswordCallback"/>
+----
+
+The above configuration specifies the following:
+
+* CXF should invoke the UsernameToken action.
+* The user name is "joe"
+* Send the password in digest form.
+* Use the "clientCallback" bean to supply the password. (see below)
+
+=== Client Password Callback
+
+Following is a simple example client password callback that sets the password to use for the outgoing invocation:
+
+[source,text,linenums]
+----
+import java.io.IOException;
+
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.UnsupportedCallbackException;
+
+import org.apache.ws.security.WSPasswordCallback;
+
+public class ClientPasswordCallback implements CallbackHandler
+{
+    public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+        WSPasswordCallback pc = (WSPasswordCallback) callbacks[0];
+
+        // set the password for our message.
+        pc.setPassword("yourpassword");
+    }
+}
+----
+
+== UsernameToken verification with the Mule SecurityManager
+
+If you're using the Mule xref:configuring-security.adoc[security manager], you can set up WSS4J to verify passwords with it. This allows you to easily integrate your own authentication mechanisms or use Mule's support for Spring Security.
+
+First, you'll want to set up your security manager:
+
+[source,xml,linenums]
+----
+<mule-ss:security-manager>
+      <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager"/>
+  </mule-ss:security-manager>
+
+  <spring:beans>
+      <ss:authentication-manager alias="authenticationManager"/>
+
+      <ss:authentication-provider>
+          <ss:user-service id="userService">
+              <ss:user name="joe" password="password" authorities="ROLE_ADMIN" />
+              <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+          </ss:user-service>
+      </ss:authentication-provider>
+
+  </spring:beans>
+----
+
+Next, you'll want to create a `<cxf:security-manager-callback>` element. This callback is responsible for bridging together the Mule security manager and WSS4J.
+
+[source,xml,linenums]
+----
+<spring:beans>
+       ...
+       <cxf:security-manager-callback id="serverCallback"/>
+   </spring:beans>
+----
+
+Finally, you'll want to set up your server side WSS4J handlers to use this callback:
+
+[source,xml,linenums]
+----
+<cxf:jaxws-service>
+    <cxf:inInterceptors>
+        <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJInInterceptor" />
+        <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">
+            <spring:constructor-arg>
+                <spring:map>
+                    <spring:entry key="action" value="UsernameToken" />
+                    <spring:entry key="passwordCallbackRef" value-ref="serverCallback" />
+                </spring:map>
+            </spring:constructor-arg>
+        </spring:bean>
+    </cxf:inInterceptors>
+</cxf:jaxws-service>
+----
+
+In this example, the CXF `jaxws-service} creates a WSS4JInInterceptor which performs UsernameToken verification of the message. Once it reads in the username/password, it will perform a callback to the Mule security manager using the {{<cxf:security-manager-callback>`.
+
+[WARNING]
+On the client side, you'll want to use plaintext passwords for this to work. To do this, set the "passwordType" property on the WSS4JOutInterceptor to "PasswordText".

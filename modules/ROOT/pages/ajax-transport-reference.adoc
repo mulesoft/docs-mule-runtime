@@ -1,0 +1,643 @@
+= AJAX Transport Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Introduction
+
+http://en.wikipedia.org/wiki/Ajax_%28programming%29[AJAX] (Asynchronous Java and XML) is a group of interrelated web development techniques used for creating interactive web applications or rich Internet applications. With Ajax, web applications can retrieve data from the server asynchronously in the background without interfering with the display and behavior of the existing page.
+
+The Mule AJAX connector allows Mule events to be sent and received asynchronously to and from the web browser. The connector includes a JavaScript client that can be used to listen for events, send events, and perform RPC calls. It can be deployed in Mule standalone or embedded in a servlet container such as Apache Tomcat or http://mulesoft.com/tcat[Tcat Server].
+
+The AJAX transport has server and client parts. The server part is similar to every other Mule transport. The client part is a JavaScript client that enables users to publish and subscribe to Mule messages in browser. The server connector can either run as an embedded AJAX (cometD) server or bind to a servlet container. The following provides details on configuring the server side of the AJAX support.
+
+== Namespace and Syntax
+
+XML namespace:
+
+----
+xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+----
+
+XML schema location:
+
+----
+http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.2/mule-ajax.xsd
+----
+
+XML schema structure:  http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-ajax_xsd/schema-overview.html
+
+Connector Syntax:
+
+[source,xml,linenums]
+----
+<ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/mule/ajaxServer" resourceBase="${app.home}/docroot"/>
+----
+
+Endpoint Syntax:
+
+. Inbound endpoint
+
+[source,xml]
+----
+<ajax:inbound-endpoint channel="/services/someAjaxService" />
+----
+
+. Outbound endpoint
+
+[source,xml]
+----
+<ajax:outbound-endpoint channel="/mule/notifications" cacheMessages="true"/>
+----
+
+== Considerations
+
+You should use the Mule AJAX Transport for bi-directional communication with the browser. Under the covers it uses CometD with continuations enabling higher numbers of concurrent requests and optimized server resource usage.
+
+== Features
+
+* Easily perform asynchronous calls to Mule
+* Broadcast events to browsers listening to AJAX channels
+* Perform sudo - RPC calls from the browser
+* Use stand-alone or bound to a servlet container
+
+== Usage
+
+To use the AJAX transport in your configuration, add the AJAX namespaces:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.2/mule-ajax.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd">
+...
+----
+
+== Configuring the Server
+
+The usual way of setting up the AJAX Server is to use the one embedded in Mule. This can be created by adding an _ajax:connector_ element to your config:
+
+[source,xml]
+----
+<ajax:connector serverUrl="http://0.0.0.0:8080/ajax"/>
+----
+
+This starts an AJAX server and is ready to start publishing and subscribing. Next you can create a flow that listens to AJAX messages on a channel:
+
+[source,xml,linenums]
+----
+<flow name="AjaxEcho">
+    <ajax:inbound-endpoint channel="/services/echo"/>
+    <echo-component/>
+</flow>
+----
+
+Or to publish on an AJAX channel, use an outbound endpoint:
+
+[source,xml,linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+
+    <ajax:outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+=== Embedding in a Servlet Container
+
+If you are running Mule inside a servlet container such as Apache Tomcat you probably want to bind any AJAX endpoints to the servlet container. To do this you need to add the `org.mule.transport.ajax.container.MuleAjaxServlet` to your `web.xml` in your webapp and you need to use the `<ajax:servlet-xxx-endpoint` elements.
+
+Configure your {{web.xml}} using:
+
+[source,xml,linenums]
+----
+<servlet>
+    <servlet-name>ajax</servlet-name>
+    <servlet-class>org.mule.transport.ajax.container.MuleAjaxServlet</servlet-class>
+    <load-on-startup>1</load-on-startup>
+</servlet>
+
+<servlet-mapping>
+    <servlet-name>ajax</servlet-name>
+    <url-pattern>/ajax/*</url-pattern>
+</servlet-mapping>
+----
+
+Then replace any `<ajax:inbound-endpoint>` and `<ajax:outbound-endpoint>` with `<ajax:servlet-inbound-endpoint>` and `<ajax:servlet-outbound-endpoint>` respectively. To use the footballs scores example again:
+
+[source,xml,linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+
+    <ajax:servlet-outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+Then you need to configure you connector and endpoints as described below.
+
+== Using the JavaScript Client
+
+Mule provides a powerful JavaScript client with full AJAX support that can be used to interact with Mule services directly in the browser. It also provides support for interacting directly with objects running inside the container using Cometd, a message bus for AJAX web applications that allows multi-channel messaging between the server and client.
+
+=== Configuring the Server
+
+To use the JavaScript client, you just need to have a service that has an AJAX inbound endpoint through which requests can be sent. The example below shows a simple echo service published on the `/services/echo` AJAX channel.
+
+[source,xml,linenums]
+----
+<flow name="AjaxEcho">
+    <ajax:inbound-endpoint channel="/services/echo"/>
+    <echo-component/>
+</flow>
+----
+
+=== Enabling the Client
+
+To enable the client in an HTML page, you add a single script element to the page:
+
+[source,xml,linenums]
+----
+<head>
+...
+  <script type="text/javascript" src="mule-resource/js/mule.js"></script>
+----
+
+Adding this script element makes a 'mule' client object available for your page.
+
+=== Making an RPC request
+
+Let's say there is a button defined in the body that, when clicked, sends a request to the Echo service:
+
+[source,xml]
+----
+<input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="callEcho();"/>
+----
+
+The button calls the `callEcho` function, which handles the logic of the request:
+
+[source,text,linenums]
+----
+function callEcho()
+{
+  var data = new Object();
+  data.phrase = document.getElementById('phrase').value;
+  mule.rpc("/services/echo", data, callEchoResponse);
+}
+----
+
+This function uses the `rpc` method to request data from the service. The `rpc` method sets up a private response channel that Mule publishes when the response data is available. The first argument is the channel on which you're making the request (this matches the channel that our Echo Service is listening on), the second argument is the payload object, and the third argument is the callback function that processes the response, in this case a function called callEchoResponse:
+
+[source,text,linenums]
+----
+function callEchoResponse(message)
+{
+    document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+}
+----
+
+In cases where `rpc` is to be used for a one-way request (no callback function is passed as parameter as no response is expected) it is recommended to use the `disableReplyTo` flag in the AJAX connector:
+
+[source,xml]
+----
+<ajax:connector name="ajaxServer" ... disableReplyTo="true" />
+----
+
+==== Handling Errors
+
+To check if an error occurred, set the `error` parameter in the callback function to verify that the error is null before processing. If it is not null, an error occurred and the error should be logged or displayed to the user.
+
+[source,text,linenums]
+----
+function callEchoResponse(message, error)
+{
+  if(error)
+    handleError(error)
+  else
+    document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+}
+
+function handleError(error) {
+   alert(error);
+}
+----
+
+== Listening to Server Events
+
+The Mule JavaScript client allows developers to subscribe to events from Mule services. These events just need to be published on an AJAX endpoint. Here is a service that receives events on JMS and publishes them to an AJAX channel:
+
+[source,xml,linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+
+    <ajax:outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+Now you can register for interest in these football scores by adding a subscriber via the Mule JavaScript client:
+
+[source,xml,linenums]
+----
+<script type="text/javascript">
+    mule.subscribe("/football/scores", scoresCallback);
+</script>
+----
+
+The first argument of the `subscribe` method is the AJAX path that the service publishes to. The second argument is the name of the callback function that processes the message. In this example, it's the `scoresCallback` function, which is defined next:
+
+[source,text,linenums]
+----
+function scoresCallback(message)
+{
+    console.debug("data:" + message.data);
+
+    if (!message.data)
+    {
+        console.debug("bad message format " + message);
+        return;
+    }
+
+    // logic goes here
+    ...
+}
+----
+
+[TIP]
+====
+*JSON Support*
+
+Mule 3.0 now has [JSON Support] including object/json bindings, this makes it really easy to marshal data to JSON markup before dispatching to the browser, where JSON is a native format.
+====
+
+== Sending a Message
+
+Let's say you want to send a message out without getting a response. In this case, you call the `publish` function on the Mule client:
+
+[source,xml,linenums]
+----
+<script type="text/javascript">
+    mule.publish("/services/foo", data);
+</script>
+----
+
+== Example Configurations
+
+Mule comes bundled with several examples that employ the Ajax Connector. We recommend you take a look at the "Notifications Example" and the "GPS Walker Example" (which is also explained in further detail in https://blogs.mulesoft.com/dev/mule-dev/walk-this-way-building-ajax-apps-with-mule[this blog post]). In the following typical use cases we focus on the key elements involved when using and configuring the connector.
+
+=== Publish Example Server Code
+
+First, we will set up an AJAX inbound endpoint in the Mule configuration to receives requests.
+
+[%header,cols="1*a"]
+|===
+^|Configuring an AJAX Inbound Endpoint
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.2/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd">
+
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+
+    <flow name="TestNoReply">
+        <ajax:inbound-endpoint channel="/services/serverEndpoint" /> ❹
+        <!-- From here on, the data from the browser is available in Mule. -->
+        ...
+        <component .../>
+    </flow>
+
+</mule>
+----
+|===
+
+Note the following changes:
+
+* The Mule AJAX namespace ❶ and schema location ❷ have been added to the mule element.
+* The AJAX connector ❸ creates an embedded AJAX server for this application.
+** The ‘resourceBase’ attribute specifies a directory where HTML and other resources can be published. When the browser requests pages, they are served from this location.
+T** he ${app.home} is a new placeholder available in Mule that references the root directory of your application.
+** '0.0.0.0' refers to the IP of the computer running the Mule instance.
+* An Ajax inbound endpoint ❹ has been added to a sample flow. It will create a channel named /services/serverEndpoint and listen to incoming messages from the Mule JavaScript client.
+
+=== Publish Example Client code
+
+The browser sends some information to Mule (using the JavaScript Mule client) when a button is pushed.
+
+[%header,cols="1*a"]
+|===
+^|Publishing data
+|
+[source,xml,linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+    <script type="text/javascript">
+
+        function publishToMule() { ❷
+            // Create a new object and populate it with the request data
+            var data = new Object();
+            data.phrase = document.getElementById('phrase').value;
+            data.user = document.getElementById('user').value;
+            // Send the data to the mule endpoint and do not expect a response.
+            // The "mule" element is provided by the Mule JavaScript client.
+            mule.publish("/services/serverEndpoint", data); ❸
+        }
+    </script>
+</head>
+
+<body>
+    <div>
+        Your phrase: <input id="phrase" type="text"/>
+        <select id="user">
+            <option value="anonymous">Anonymous</option>
+            <option value="administrator" selected="true">Administrator</option>
+        </select>
+        <input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="publishToMule();"/>
+    </div>
+
+</body>
+----
+|===
+
+Note the following changes:
+
+* Loading the mule.js script ❶ makes the Mule client automatically available via the ‘mule’ variable.
+* The rpcCallMule() ❷ method gathers some data from the page and submit it to the ‘/services/noReplyEndpoint’ channel we configured beforehand.
+* The mule.publish() ❸ method makes the actual call to Mule. It receives two parameters:
+** The channel name.
+** The data to publish.
+
+=== Subscribe Example Server code
+
+This is a useful and friendly way to send information to several clients at once. All they have to do is subscribe themselves to a channel where the server sends whatever needs to be broadcasted.
+
+Mule ESB provides an AJAX connector, an AJAX outbound endpoint and the required JavaScript client library to take care of this.
+
+We will add an AJAX connector that hosts the pages (HTML, CSS, etc.) using the JavaScript client and that lets them interact with Mule's AJAX endpoints. It's the same connector we used in the two previous examples.
+
+We also need to publish some content via an AJAX outbound endpoint in a channel.
+
+[%header,cols="1*a"]
+|===
+^|Configuring an AJAX Outbound Endpoint Channel
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.2/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd">
+
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+
+    <flow name="PublishUpdates">
+        <!-- ... here we create the content to be published -->
+        <ajax:outbound-endpoint channel="/mule/notifications" cacheMessages="true"/>❹
+    </flow>
+
+</mule>
+----
+|===
+
+Note the following changes:
+
+* The Mule AJAX namespace ❶ and schema location ❷ have been added to the mule element.
+* The AJAX Connector ❸ creates an embedded AJAX server for this application.
+** The ‘resourceBase’ attribute specifies a directory where HTML and other resources can be published. When the browser requests pages, they are served from this location.
+** The ${app.home} is a new placeholder available in Mule that references the root directory of your application.
+** '0.0.0.0' refers to the IP of the computer running the Mule instance.
+* An Ajax outbound endpoint ❹ has been added to a sample flow.
+** It submits the events it receives into a channel named /mule/notifications.
+** Any page listening on that channel receives a copy of the event.
+
+=== Subscribe Example Client code
+
+[%header,cols="1*a"]
+|===
+^|Listening to an AJAX Outbound Channel
+|
+[source,xml,linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+
+    <script type="text/javascript">
+
+        function init() ❷
+        {
+            mule.subscribe("/mule/notifications", notif);
+        }
+
+        function dispose() ❸
+        {
+            mule.unsubscribe("/mule/notifications", notif);
+        }
+
+        function notif(message) ❹
+        {
+            console.debug("data:" + message.data);
+
+            //... code to handle the received data
+        }
+
+    </script>
+</head>
+
+<body onload="init()" onunload="dispose()"> ❺
+
+</body>
+----
+|===
+
+Note the following changes:
+
+* Loading the mule.js script ❶ makes the Mule client automatically available via the ‘mule’ variable.
+* The init() ❷ method associates all incoming events on the ‘/mule/notifications’ with the notif() callback method.
+* The dispose() ❸ method dissociates all incoming events on the ‘/mule/notifications’ from the notif() callback method.
+* The notif() ❹ callback method processes the received messages.
+* The onload and onunload atrributes of the body HTML element ❺ should contain the calls to init() and dispose() respectively, to ensure the page is properly registered and de-registered to the ‘/mule/notifications’ channel.
+
+=== RPC Example Server code
+
+This configuration is very similar to the one in the previous example. As a matter of fact, the only significant changes are the channel name and an out-of-the-box echo componenent to bounce the request back to the caller.
+
+[%header,cols="1*a"]
+|===
+^|Configuring an AJAX Inbound Endpoint that sends a response
+|
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.2/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd">
+
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+
+    <flow name="TestEcho">
+        <ajax:inbound-endpoint channel="/services/echo" /> ❹
+        <echo-component/>
+    </flow>
+
+</mule>
+----
+|===
+
+Note the following changes:
+
+* The Mule AJAX namespace ❶ and schema location ❷ have been added to the mule element.
+* The AJAX connector ❸ creates an embedded AJAX server for this application.
+** The ‘resourceBase’ attribute specifies a directory where HTML and other resources can be published. When the browser requests pages, they are served from this location.
+** The ${app.home} is a new placeholder available in Mule that references the root directory of your application.
+** '0.0.0.0' refers to the IP of the computer running the Mule instance.
+* An AJAX inbound endpoint ❹ has been added to a sample flow.
+** It creates a channel named /services/echo and listens to incoming RPC calls from the Mule JavaScript client.
+** When a request is received, it processes by the <echo-component/> and is sent back via the AJAX channel to the client that submitted the request.
+
+=== RPC Example Client code
+
+The browser sends some information to Mule (using the JavaScript Mule client) when a button is pushed, just as it did before. This time however, a callback method displays the response.
+
+[%header,cols="1*a"]
+|===
+^|Making an RPC Call - Expecting a response
+|
+[source,xml,linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+    <script type="text/javascript">
+
+        function rpcCallMuleEcho() { ❷
+            // Create a new object and populate it with the request data
+            var data = new Object();
+            data.phrase = document.getElementById('phrase').value;
+            data.user = document.getElementById('user').value;
+            // Send the data to the mule endpoint and set a callback to handle the response.
+            // The "mule" element is provided by the Mule JavaScript client.
+            mule.rpc("/services/echo", data, rpcEchoResponse); ❸
+        }
+
+        // Display response message data.
+        function rpcEchoResponse(message) { ❹
+            document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+        }
+    </script>
+</head>
+
+<body>
+    <div>
+        Your phrase: <input id="phrase" type="text"/>
+        <select id="user">
+            <option value="anonymous">Anonymous</option>
+            <option value="administrator" selected="true">Administrator</option>
+        </select>
+        <input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="rpcCallMuleEcho();"/>
+    </div>
+    <pre id="response"></pre>
+</body>
+----
+|===
+
+Note the following changes:
+
+* Loading the mule.js script ❶ makes the Mule client automatically available via the ‘mule’ variable.
+* The rpcCallMuleEcho() ❷ method gathers some data from the page and submit it to the ‘/services/echo’ channel we configured beforehand.
+* The mule.rpc() ❸ method makes the actual call to Mule. This time, it receives three parameters:
+** The channel name.
+** The data to send.
+** The callback method to be invoked when the response is returned.
+* The rpcEchoResponse() callback method ❹ takes a single parameter, which is the response message, and displays it's data on the page.
+
+== Configuration Reference
+
+=== Element Listing
+
+== Connector
+
+Allows Mule to expose Mule Services over HTTP using a Jetty HTTP server and Cometd. A single Jetty server is created for each connector instance. One connector can serve many endpoints. Users should rarely need to have more than one AJAX servlet connector.
+
+.Attributes of <connector...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|serverURL |string |yes | |When using AJAX embedded (not within a servlet container) a URL needs to be configured to create an AJAX server hosted in Mule. The URL should be in the form of `+http://(host):(port)/(path)+` note that https can also be used, but you will need to set the TLS information on the connector.
+|rosourceBase |string |no | |Specifies a local path where files will be served from. The local path gets mapped directly to the path on the 'serverUrl'.
+|disableReplyTo |boolean |no | |By default, an asynchronous reply to the inbound endpoint is sent back. This can cause unwanted side effects in some cases, use this attribute to disable.
+|logLevel |integer |no | |0=none, 1=info, 2=debug
+|timeout |integer |no | |The server side poll timeout in milliseconds (default 250000). This is how long the server will hold a reconnect request before responding.
+|interval |integer |no | |The client side poll timeout in milliseconds (default 0). How long a client will wait between reconnects.
+|maxInterval |integer |no | |The max client side poll timeout in milliseconds (default 30000). A client will be removed if a connection is not received in this time.
+|jsonCommented |boolean |no | |If "true" (default) then the server will accept JSON wrapped in a comment and will generate JSON wrapped in a comment. This is a deference against Ajax Hijacking.
+|multiFrameInterval |integer |no | |The client side poll timeout if multiple connections are detected from the same browser (default 1500).
+|refsThreshold |integer |no | |The number of message refs at which the a single message response will be cached instead of being generated for every client delivered to. Done to optimize a single message being sent to multiple clients.
+|===
+
+.Child Elements of <connector...>
+[%header%autowidth.spread]
+|===
+|Name |Cardinality |Description
+|client |0..1 |
+|key-store |0..1 |
+|server |0..1 |
+|protocol-handler |0..1 |
+|===
+
+=== Inbound Endpoint
+
+Allows a Mule service to receive AJAX events over HTTP using a Jetty server. This is different from the equivalent `servlet-inbound-endpoint` because it uses an embedded servlet container rather than relying on a pre-existing servlet container instance. This endpoint type should not be used if running Mule embedded in a servlet container.
+
+.Attribute of <inbound-endpoint...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|channel |string |yes | |The Ajax channel to bind the service endpoint to. This channel path is independent context path that your application is deployed to in the servlet container.
+|===
+
+=== Outbound Endpoint
+
+Allows a Mule service to send AJAX events over HTTP using Bayeux. JavaScript clients can register interest in these events using the Mule JavaScript client.
+
+.Attributes of <outbound-endpoint...>
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|channel |string |yes | |The Ajax channel to bind the service endpoint to. This channel path is independent context path that your application is deployed to the servlet container.
+|cacheMessages |boolean |no | |If set to true the dispatcher will cache messages if there are no clients subscribed to this channel.
+|messageCacheSize |int |no | |If cache messages is set to true, this value determines the size of the memory cache. The cache will automatically expire older items to make room for newer items.
+|===
+
+== Maven
+
+The AJAX Transport can be included with the following dependency:
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.transports</groupId>
+    <artifactId>mule-transport-ajax</artifactId>
+</dependency>
+----
+
+== Best Practices
+
+* Use AJAX Outbound Endpoints mainly for broadcasting information to several clients simultaneously. For example, broadcasting live news updates to several browsers in real time without reloading the page.
+
+* It's recommended to subscribe and unsubscribe callback methods associated with outbound channels on <body> onload/onunload. See example above. Pay special attention to unsubscribing callback methods.
+
+* When sending information back and forth between clients and servers using AJAX you should consider using JSON. Mule provides a JSON module to handle transformations gracefully.

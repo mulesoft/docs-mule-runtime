@@ -1,0 +1,175 @@
+= WS-Security Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[ <<Starting the Example>> ] [ <<No Security>> ] [ UsernameToken ] [ Signatures ] [ Encryption ] [ SAML ]
+
+The WS-Security example demonstrates the different possibilities available for incorporating WS-Security into your Mule application.
+
+== Starting the Example
+
+The WS-Security example is in the directory $MULE_HOME/examples/security, where $MULE_HOME is the path to your installation of Mule Enterprise.
+
+First, copy the example's zip file in $MULE_HOME/examples/security into the $MULE_HOME/apps directory and then start mule.
+
+From $MULE_HOME/examples/security, run `./security` (Unix/Linux/Mac) or `security.bat` (Windows).
+
+*Tip:* Edit the example's "log4j.properties" file so that the logging level for `org.apache.cxf` classes is set to INFO. This enables logging the SOAP XML of the request/response messages in Mule's log file. The log4j.properties file can be found in $MULE_HOME/apps/mule-example-security-<version>/classes. After editing, trigger redeployment of the application by touching the example config (found in $MULE_HOME/apps/mule-example-security-<version>).
+
+After starting the `security` script, the following menu appears:
+
+----
+ 1. No security2. UsernameToken3. UsernameToken with wrong password (error)4. UsernameToken Signed5. UsernameToken missing signature (error)6. UsernameToken Encrypted7. SAMLToken8. SAMLToken wrong subject (error)q. Quit
+----
+
+Each of these options will invoke an instance of the same simple web service, each of which is protected by a different form of security. Each instance uses the configuration file in the `$MULE_HOME/examples/security/src/main/app` directory. Additional resources that are pulled in by this example can be found in `$MULE_HOME/examples/security/src/main/resources`.
+
+The rest of this page describes each of these scenarios.
+
+== No Security
+
+The basic web service we will use without any security whatsoever looks like this in our Mule configuration:
+
+[source,xml]
+----
+<flow name="UnsecureServiceFlow">    <inbound-endpoint address="http://localhost:63081/services/unsecure" exchange-pattern="request-response"/>    <cxf:jaxws-service serviceClass="com.mulesoft.mule.example.security.Greeter">        <cxf:features>            <spring:bean class="org.mule.module.cxf.feature.PrettyLoggingFeature" />            </cxf:features>        </cxf:jaxws-service>        <component class="com.mulesoft.mule.example.security.GreeterService" /></flow>
+----
+
+
+Select option #1 from the menu to call this service. We can see the simple SOAP request message sent:
+
+[source,xml]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greet xmlns:ns2="http://security.example.mule.org/">      <name>Mule</name>    </ns2:greet>  </soap:Body></soap:Envelope>
+----
+
+and the service's equally simple response message:
+
+[source,xml]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greetResponse xmlns:ns2="http://security.example.mule.org/">      <name>Hello Mule</name>    </ns2:greetResponse>  </soap:Body></soap:Envelope>
+----
+
+
+== UsernameToken
+
+Now let's add some simple security to the service. We'll start with a basic Username authentication. For this, we'll add a WSS4J interceptor to our inbound CXF endpoint:
+
+[source,xml]
+----
+<cxf:inInterceptors>    <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">        <spring:constructor-arg>            <spring:map>                  <spring:entry key="action" value="UsernameToken Timestamp" />                  <spring:entry key="passwordCallbackClass"value="org.mule.example.security.PasswordCallback" />            </spring:map>        </spring:constructor-arg>    </spring:bean></cxf:inInterceptors>
+----
+
+
+The most important thing we specify on this interceptor is the *action*, which is the list of features/aspects of WS-Security that we want to validate upon receiving an incoming message. In this case, we specify `UsernameToken`, which will check the username and password, and `Timestamp`, which will verify that the message is not too stale. We also specify a password callback so that our password is not stored in the config file itself.
+
+[source,java]
+----
+public class PasswordCallback implements CallbackHandler{    public void handle(Callback[] callbacks)      {        ...cut...        if (pc.getIdentifier().equals("joe"))         {            pc.setPassword("secret");        }...cut...
+----
+
+
+Selecting option #2 from the menu will create an appropriate WS-Security header for our SOAP request:
+
+[source,xml]
+----
+<soap:Header>  <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" soap:mustUnderstand="1">    <wsu:Timestamp xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="Timestamp-2">      <wsu:Created>2009-11-11T00:05:05.044Z</wsu:Created>      <wsu:Expires>2009-11-11T00:10:05.044Z</wsu:Expires>    </wsu:Timestamp>    <wsse:UsernameToken xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="UsernameToken-1">      <wsse:Username>joe</wsse:Username>      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">53d055aB/snZJelfToizUd5s1p8=</wsse:Password>      <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">uHT6rXehXO83lMQGKXg8uw==</wsse:Nonce>      <wsu:Created>2009-11-11T00:05:05.042Z</wsu:Created>    </wsse:UsernameToken>  </wsse:Security></soap:Header>
+----
+
+
+We can see the Username and Password as well as the Timestamp in the header. Note that the password is in digest form rather than plain text, which is the default behavior.
+
+Now select option #3 to see what happens if the wrong password is provided:
+
+----
+org.apache.ws.security.WSSecurityException: The security token could not be authenticated or authorized  at org.apache.ws.security.processor.UsernameTokenProcessor.handleUsernameToken(UsernameTokenProcessor.java:143)  at org.apache.ws.security.processor.UsernameTokenProcessor.handleToken(UsernameTokenProcessor.java:56)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:326)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:243)  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:159)
+----
+
+
+== Signatures
+
+A more advanced way of authenticating the user is via a digital signature. To validate based on a signature, we'll need to add a new Signature action to our inbound endpoint:
+
+[source,xml]
+----
+<spring:entry key="action" value="UsernameToken Signature Timestamp" /><spring:entry key="signaturePropFile" value="wssecurity.properties" />
+----
+
+Signatures are validated based on a keystore, so we'll also need to specify some information about the keystore we're using. The following properties are in the `wssecurity.properties` file:
+
+[source,java]
+----
+org.apache.ws.security.crypto.merlin.file=keystore.jksorg.apache.ws.security.crypto.merlin.keystore.password=keyStorePassword
+----
+
+We can use the Java keytool command to verify that the certificate for user "joe" exists in our keystore:
+
+----
+$ keytool -list -v -keystore ./src/main/resources/keystore.jks -alias joeEnter keystore password:  keyStorePassword Alias name: joeCreation date: Sep 24, 2009Entry type: keyEntryCertificate chain length: 1Certificate[1]:Owner: CN=joeIssuer: CN=joeSerial number: 4abb93daValid from: Thu Sep 24 11:44:26 CLT 2009 until: Wed Dec 23 12:44:26 CLST 2009Certificate fingerprints:   MD5:  24:08:D3:3B:D1:FE:E0:18:6B:12:DC:79:98:EE:62:6D   SHA1: 25:69:19:52:C9:FE:26:64:F7:C8:F3:BF:E4:9A:5B:71:B4:9E:9F:C3
+----
+
+
+Note that this certificate is self-signed. In the real world, it would be issued by a trusted third party such as Verisign.
+
+Selecting option #4 from the menu will invoke the web service using a signed SOAP message:
+
+[source,xml]
+----
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  Id="Signature-2">  <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    <ds:CanonicalizationMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />    <ds:SignatureMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1" />    <ds:Reference xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  URI="#id-3">      <ds:Transforms xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:Transform xmlns:ds="http://www.w3.org/2000/09/xmldsig#"          Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />      </ds:Transforms>      <ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"        Algorithm="http://www.w3.org/2000/09/xmldsig#sha1" />      <ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">AtIQc6I4I62MvLRJd+S8jdiS5SE=</ds:DigestValue>    </ds:Reference>  </ds:SignedInfo>  <ds:SignatureValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    VFT2zQ+wpoY/C1sTyDMYkD0Z/Vij4GM8mGaoa26aUw5WuRPUxHure7dwsGMF4ivj96cSMo/AQpFR    C/rVdwVEGbobmkrpp/IwkGIwXu2lNf5yAOalIVdLQCeSUdT8KqAHYzQbyYxOKWaroFzkws/+E4Xm    mNAoiJixK71EPmyqNe0=    </ds:SignatureValue>  <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="KeyId-FCBB1376C4DCB7E74C12579545658052">    <wsse:SecurityTokenReference      xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"      xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"      wsu:Id="STRId-FCBB1376C4DCB7E74C12579545658073">      <ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:X509IssuerSerial xmlns:ds="http://www.w3.org/2000/09/xmldsig#">          <ds:X509IssuerName xmlns:ds="http://www.w3.org/2000/09/xmldsig#">CN=joe</ds:X509IssuerName>          <ds:X509SerialNumber xmlns:ds="http://www.w3.org/2000/09/xmldsig#">1253807066</ds:X509SerialNumber>        </ds:X509IssuerSerial>      </ds:X509Data>    </wsse:SecurityTokenReference>  </ds:KeyInfo></ds:Signature>
+----
+
+
+And option #5 shows what happens if we try to send a message that isn't signed by joe:
+
+----
+org.apache.ws.security.WSSecurityException: An error was discovered processing the  header  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:238)
+----
+
+
+== Encryption
+
+Note that so far, all security information has been contained in the header of the SOAP message, but the body of the message is completely transparent. We can encrypt the body of the message by adding an Encrypt action to our service:
+
+[source,xml]
+----
+<spring:entry key="action" value="UsernameToken Timestamp Encrypt" /><spring:entry key="decryptionPropFile" value="wssecurity.properties" />Selecting option #6 will send a SOAP message with the body encrypted:<soap:Body>  <xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"    Id="EncDataId-9" Type="http://www.w3.org/2001/04/xmlenc#Content">    <xenc:EncryptionMethod xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"      Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc" />    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">      <wsse:SecurityTokenReference        xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">        <wsse:Reference          xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"          URI="#EncKeyId-FCBB1376C4DCB7E74C12579575025715" />      </wsse:SecurityTokenReference>    </ds:KeyInfo>    <xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">      <xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">4bJWs2bQKdzof3FM2U5O3qTa4EhuSdItuE6zjSfi8BNqO+y/7V3cU2T4j6ewMo/TAUyyvDNLqluL        +kaAJen3hE/KWkFKfo5CAVeE3ifbBK10lem8cGo5qwAPXZjlCYY52xv1QpW3hlv9E63J0hcbnQQr        BAcF4LwlGzIybwaeydju3Y34hU+nhVpgmiBahwKHD6R+7EuUrwby7t7pQnh53gtEvqkH0YES5dVx        yOqTtLsBTLu/Xz2IzeRiGQBqFJVHzwueOaS1L7A2mlLebmUiEQ==</xenc:CipherValue>    </xenc:CipherData>  </xenc:EncryptedData></soap:Body>
+----
+
+
+The message will not be decrypted without the user's signature, so the keystore is once again used for encryption.
+
+== SAML
+
+This scenario uses the SAML module. Since SAML is used for single sign-on, authentication of the user is assumed to have already occurred, and the SAML token simply contains one or more subjects, which provide some information understood by other systems. In this case we will configure our service to require a SAML subject of AllowGreetingServices. To our inbound endpoint we add a SAMLVerifyInterceptor with a callback, which will check for the correct SAML subject:
+
+[source,xml]
+----
+<spring:bean class="org.mule.module.saml.cxf.SAMLVerifyInterceptor">     <spring:property name="callback">          <spring:bean class="org.mule.example.security.VerifyAuthorization">               <spring:property name="subject" value="AllowGreetingServices" />          </spring:bean>     </spring:property></spring:bean>
+----
+
+
+[source,java]
+----
+public class VerifyAuthorization implements SAMLVerifyCallback{    private String subject;        public SAMLAuthenticationAdapter verify(SAMLAuthenticationAdapter samlAuthentication) throws SecurityException    {        SAMLSubject samlSubject = samlAuthentication.getSubject();        if (!samlSubject.getNameIdentifier().getName().equals(subject))        {            throw new UnauthorisedException(...cut...
+----
+
+
+Option #7 adds the expected SAML token to the WS-Security header of the message:
+
+[source,xml]
+----
+<Assertion xmlns="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" AssertionID="_40082eadbf045476e26a107e4f37861d" IssueInstant="2009-11-13T02:26:06.569Z" Issuer="self" MajorVersion="1" MinorVersion="1">  <AuthenticationStatement AuthenticationInstant="2009-11-13T02:26:06.569Z" AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password">    <Subject>      <NameIdentifier>AllowGreetingServices</NameIdentifier>      <SubjectConfirmation>        <ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:sender-vouches</ConfirmationMethod>      </SubjectConfirmation>    </Subject>  </AuthenticationStatement></Assertion>
+----
+
+
+Selecting option #8 will send a SAML token without the expected subject:
+
+----
+ Missing SAML authorization for resource: AllowGreetingServices. Message payload is of type: ChunkedInputStream  at org.mule.module.saml.cxf.SAMLVerifyInterceptor.handleMessage(SAMLVerifyInterceptor.java:99)
+----
+
+
+To verify that the received SAML token is authentic, SAML offers two different modes of trust: *Sender Vouches* and *Holder of Key*. In this case, we are using Sender Vouches, which means that the sender of the message must be trusted (e.g., via a digital signature). In Holder of Key mode, the sender of the message does not matter, but the SAML token subject must contain a key from a trusted source (e.g., an X.509 certificate from Verisign).
+
+For more information on SAML, refer to:http://saml.xml.org/wiki/saml-wiki-knowledgebase

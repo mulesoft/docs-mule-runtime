@@ -1,0 +1,163 @@
+= Notifications Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This example demonstrates how to use the notifications in a simple use case. Some basic custom agent and custom security filter usage will be covered as well. The consumption of the notifications will be performed by a simple AJAX-enabled web page.
+
+== Overview
+
+A simple AJAX-enabled web page will be subscribed to an AJAX outbound endpoint which will publish its results encoded in JSON. The page can also send requests to an echo service hosted in Mule, which will pass through a very rudimentary security filter ( thus, letting you generate notifications / security warnings "manually").
+
+The outbound endpoint the page is listening to will submit three types of events:
+
+. Custom notifications from a "heartbeat agent", firing every 10 seconds.
+. When the security filter rejects an echo request, a security warning.
+. When the security filter accepts the echo request, two notifications (one pre-invocation and another one post-invocation), plus the echo response.
+
+== Running the example
+
+. Copy the notifications example zip file into the apps directory in the Mule installation ($MULE_HOME/apps) and start Mule. You can stop Mule at any given time pressing 'CTRL-C' in the Mule console window.
+. Point your browser to http://localhost:8082/services/notifications/
+. You will immediately start receiving notifications (new ones are displayed on top). So far, you will only receive the heartbeat notification every 10 seconds.
+. Type something (e.g.: "Hello Mule!") in the "Secure Echo" text box, leave the drop down box value as "Administrator" and hit the "Send" button. You will see two events associated with the "TestEcho" resource id (one pre-invocation and one post-invocation). You will also see a response that looks a bit like this:
++
+[source,java]
+----
+Response: {"user":"administrator","phrase":"Hello Mule!"}
+----
++
+Basically, the echo of what you just sent, encoded in JSON.
++
+. Type something else (e.g.: "Klaatu barada nikto") in the "Secure Echo" text box, select "Anonymous" from the drop down box and hit the "Send" button. This time validation will fail and you will receive the associated warning event (no pre/post notification, since no components were called).
+
+== Under the Hood
+
+=== The web page
+
+This is a simple AJAX web page composed by index.html and notifications.css. Note the "mule.js" library is being included to enable Mule functionality. We also add a stripped down version of "dojo.js" to help with AJAX and JSON.
+
+[source,xml]
+----
+<script type="text/javascript" src="mule-resource/js/dojo/dojo.js"></script><script type="text/javascript" src="mule-resource/js/mule.js"></script>
+----
+
+
+The subscribe / unsubscribe methods associate / dissociate the notif() callback method to the mule endpoint. The notif() method is pretty straightforward, adding the notifications to the table, and using the event type, combined with the css file, to add some color and formatting.
+
+[source,java]
+----
+function init(){     mule.subscribe("/mule/notifications", notif);}function dispose(){     mule.unsubscribe("/mule/notifications", notif);}function notif(message){     console.debug("data:" + message.data);     if (!message.data)     {          console.debug("bad message format " + message);          return;     }     var event = dojo.fromJson(message.data);     var table = document.getElementById('notificationTable');     var newRow = table.insertRow(1);     newRow.className = event.type;     newRow.insertCell(0).innerHTML = event.action;     newRow.insertCell(1).innerHTML = event.type;     newRow.insertCell(2).innerHTML = event.actionName;     newRow.insertCell(3).innerHTML = event.source;     newRow.insertCell(4).innerHTML = event.resourceIdentifier;     newRow.insertCell(5).innerHTML = event.serverId;     newRow.insertCell(6).innerHTML = event.timestamp;     table.scrollTop = table.scrollHeight - table.clientHeight}
+----
+
+
+Also notice the rpcEcho() method (associated to the "Submit" button), which calls the echo service (via an RPC call to the "/services/echo" channel). The answer is displayed by the rpcEchoResponse() callback method.
+
+Bear in mind rpcEchoResponse() has nothing to do with the displaying of the pre/post event notifications.
+
+[source,java]
+----
+function rpcEcho() {   var data = new Object();   data.phrase = document.getElementById('phrase').value;   data.user = document.getElementById('user').value;   mule.rpc("/services/echo", data, rpcEchoResponse);}function rpcEchoResponse(message) {   document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";}
+----
+
+
+=== Listening to notifications
+
+In order to interact with notifications, we must first register the events we want to listen to. In this example, this is achieved with the following lines in the mule configuration:
+
+[source,xml]
+----
+<notifications dynamic="true">    <notification event="COMPONENT-MESSAGE"/></notifications>
+----
+
+
+* dynamic="true" instructs Mule to let us add listeners dynamically after its context has been started.
+* event="COMPONENT-MESSAGE" instructs Mule to send any notifications of type "COMPONENT-MESSAGE", which occurr before/after a component is invoked. This notification is associated with the ComponentMessageNotification class.
+
+=== The AJAX connector
+
+[source,xml]
+----
+<ajax:connector name="ajaxServer"    serverUrl="http://0.0.0.0:8082/services/notifications"    resourceBase="${app.home}/docroot"/>
+----
+
+
+this connector will create an embedded AJAX server. The "resourceBase" attribute lets us specify a location for storing HTML and other resources (such as the after-mentioned web page). The $\{app.home} is a new placeholder available in Mule that references the root directory of your application.
+
+=== The Transformers
+
+The web page communicates with the application via JSON, therefore we must transform all inbound and outbound communications. Such transformers come bundled with Mule and require little configuration.
+
+==== JSON to Object
+
+[source,xml]
+----
+<json:json-to-object-transformer name="JsonToObject"/>
+----
+
+This one is pretty straightforward. It just takes JSON and translates it into an object with the proper fields.
+
+==== Object to JSON
+
+[source,xml]
+----
+<json:object-to-json-transformer name="ObjectToJson">    <json:serialization-mixin        targetClass="org.mule.context.notification.ComponentMessageNotification"        mixinClass="org.mule.example.notifications.ComponentMessageNotificationMixin"/></json:object-to-json-transformer>
+----
+
+
+The idea is to translate the ComponentMessageNotification data but not the event source object contained within it. We would normally do this adding a "@JsonIgnore" annotation to the getter, but in this case we cannot modify the source codes. Therefore, we must use a "mixin".
+
+A "mixin" is just an interface with annotated methods that match the ones we would like to modify in another object. Mule merges both and the end result is the equivalent of our original object with annotated methods.
+
+In this case, ComponentMessageNotification is merged with ComponentMessageNotificationMixin, in which the getSource() method has been annotated with "@JsonIgnore". Therefore, for all intended purposes, this transformer will ignore that field.
+
+=== Publishing the Notifications
+
+[source,xml]
+----
+<management:publish-notifications ignoreConnectionNotifications="true">    <ajax:outbound-endpoint channel="/mule/notifications" transformer-refs="ObjectToJson"        cacheMessages="true">        <or-filter>            <payload-type-filter expectedType="org.mule.example.notifications.HeartbeatNotification"/>            <payload-type-filter expectedType="org.mule.context.notification.SecurityNotification"/>            <payload-type-filter expectedType="org.mule.context.notification.ComponentMessageNotification"/>        </or-filter>    </ajax:outbound-endpoint></management:publish-notifications>
+----
+
+
+`ignoreConnectionNotifications="true"` will ignore any connection notifications (as the name suggests).
+
+Any notification of the three mentioned types will be sent via the "/mule/notifications/" AJAX channel, translated into JSON (transformer-refs="ObjectToJson"). Messages will be cached if there are no clients subscribed to the channel (cacheMessages="true").
+
+=== The Heartbeat Agent
+
+[source,xml]
+----
+<custom-agent class="org.mule.example.notifications.HeartbeatAgent" name="heartbeat"/>
+----
+
+
+This is a simple custom agent. It will fire "heartbeat notifications" every 10 seconds. Feel free to explore the code for more details on this (especially the HeartbeatAgent class).
+
+=== The TestEcho Flow
+
+[source,xml]
+----
+<flow name="TestEcho">    <ajax:inbound-endpoint channel="/services/echo">        <custom-security-filter class="org.mule.example.notifications.DummySecurityFilter"/>    </ajax:inbound-endpoint><echo-component/></flow>
+----
+
+
+This is a very simple flow with an echo component within it and a custom security filter to restrict unauthorized access.
+
+=== The Dummy Security Filter
+
+The TestEcho flow uses a very simple security filter, implemented in the DummySecurityFilter class (which extends AbstractEndpointSecurityFilter).
+
+It will authenticate inbound and outbound events, making sure no "anonymous" or null users gain access, throwing the corresponding UnauthorisedException with a proper message. Therefore, the "Administrator" user we sent from the web page will be authenticated successfully.
+
+Please refer to the source code for class DummySecurityFilter if you need any more information about the inner workings of the example.
+
+== Summary
+
+In this example, we have covered the following topics:
+
+* Publishing notifications.
+* Creating an AJAX connector.
+* Receiving notifications from a web page using AJAX.
+* Transforming AJAX to Object and vice-versa.
+* Creating a custom agent and firing custom notifications from it.
+* Applying a simple custom security filter to a service.

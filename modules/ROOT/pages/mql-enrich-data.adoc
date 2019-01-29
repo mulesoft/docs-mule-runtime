@@ -1,0 +1,86 @@
+= Enriching local data with data from the cloud
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+It's very common that you have data stored in multiple locations and you need to join it together into a cohesive whole. This example will show you how to take a local object declared in Spring and join it together with data from the SalesForce cloud connector to get all the information about a user in a single location.
+
+In our example, we have a local database of User objects where we have the name and email. In salesforce we have the phone number and company name. We're going to be joining the data based on the user email. Our user object looks like this:
+
+[source,java,linenums]
+----
+public class User {    private String name;    private String email;        public String getName() {  return name; }    public void setName(String name) {  this.name = name; }    public String getEmail() { return email;  }    public void setEmail(String email) { this.email = email; }}
+----
+
+And we have a UserManager object with a getUsers method:
+
+[source,java,linenums]
+----
+public class UserManager {    // a Map of Users keyed by their email    private Map<String,User> users = new HashMap<String,User>();            public Collection<User> getUsers() {        return users.values();    }….
+----
+
+Which is declared as a spring object in our Mule configuration:
+
+[source,xml,linenums]
+----
+<spring:bean name="userManager" class="com.mulesoft.mql.example.UserManager"/>
+----
+
+Next up, we need to configure Mule to talk to Salesforce by adding a configuration for the cloud connector:
+
+[source,xml,linenums]
+----
+<salesforce:config name="salesforce"                    username="${salesforce.username}"                    password="${salesforce.password}"                     securityToken="${salesforce.securityToken}"/>
+----
+
+Your Salesforce securityToken can be obtained through the process described below.
+
+Next, let's create a query which joins together data from Salesforce with our local UserManager. For the sake of this example, assume that you've got the name and email locally and you're trying to join information from Salesforce about the user's phone number and company. This query would query just the local UserManager:
+
+[source,text,linenums]
+----
+from userManager.users as user  select new {    name = user.name,    email = user.email}
+----
+
+The SalesForce connector has a query method which we can use to pass in a Salesforce select query. Since we declared a config object with the name"salesforce" above, we can refer to it inside MQL as "salesforce". We can then simply call query() as part of our join statement like this:
+
+[source,text,linenums]
+----
+join salesforce.query('SELECT Id, Company, MobilePhone FROM Lead WHERE Email = \'' + user.email + '\'', 100) as sfuser
+----
+
+And finally, we can put this all together to create a RESTful service which listens on a URL and returns the result of this query as JSON:
+
+[source,xml,linenums]
+----
+<mql:query-service name="JoinCompanyAndPhone"  address="http://localhost:9002/users"   query="from userManager.users as user            join salesforce.query('SELECT Id, Company, MobilePhone FROM Lead WHERE Email = \'' + user.email + '\'', 100) as sfuser          select new {               name = user.name,               email = user.email,             company = sfuser[0].?Company,               mobile = sfuser[0].?MobilePhone          }"/>
+----
+
+Now, if you run a query against this URL, you will receive a JSON response back with the joined data.
+
+[source,console,linenums]
+----
+$ curl http://localhost:9002/users[{"email":"joe@schmoe.com","company":"Schmoe Co","name":"Joe Schmoe","mobile":"(555)555-5555"}]
+----
+
+== Running the example
+
+Next, we'll configure and start the examples application:
+
+* http://www.mulesoft.org/download-mule-esb-community-edition[Download Mule] and extract the distribution
+* xref:mql-download.adoc[Download MQL] and extract the distribution
+* Copy the examples/mql-examples-0.9.1.zip file from the MQL distribution to MULE_HOME/apps
+* Retreive your Salesforce security token. If you don't have a Salesforce security token, log in to Salesforce, click on your name on the top right, and click Setup. Click the arrow next to Personal Information then click "Reset Security Token." Finally, click the "Rest Security Token" button and retrieve the token from your inbox.
+* Start Mule with your OAuth tokens:
+
+[source,text,linenums]
+----
+ $ cd mule-standalone-3.1.2/bin$ ./mule -M-Dsalesforce.username=YOUR_SALESFORCE_USERNAME -M-Dsalesforce.password=YOUR_SALESFORCE_PASSWORD \-M-Dsalesforce.securityToken=YOUR_SALESFORCE_SECURITY_TOKEN
+----
+
+* Run the query:
+
+[source,text,linenums]
+----
+ $ curl http://localhost:9002/users[{"email":"joe@schmoe.com","company":"Schmoe Co","name":"Joe Schmoe","mobile":"(555)555-5555"}]
+----

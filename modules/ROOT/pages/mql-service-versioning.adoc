@@ -1,0 +1,99 @@
+= Service Versioning
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+One of the hard problems of writing services is dealing with different versions of your service. Inevitably, you need to change the format of your data, yet somehow retain backward compatibility. In the XML world, many people have gone down the XSLT approach, but the complexity of it makes it very difficult. It also doesn't map well to JSON based RESTful services. This example will show you how to use MQL inside of Mule to easily version your JAX-RS web services.
+
+Below is a table of two different data formats, version 1.0 and version 2.0. In version 2.0 we're changing the data format to make the address it's own individual object.
+
+[%header,cols="2*"]
+|===
+|Version 1.0 |Version 2.0
+a|
+
+[source,text,linenums]
+----
+{  "name":"Joe Schmoe",  "email":"joe@schmoe.com",  "address":"10 Foo",  "state":"NY",  "city":"New York"}
+----
+
+ a|
+
+[source,text,linenums]
+----
+{  "name":"Joe Schmoe",  "email":"joe@schmoe.com",  "address" :  {    "address1" : "10 Foo",    "state":"NY",    "city":"New York"  }}
+----
+
+|===
+
+The conversion can be done with two simple MQL expressions. From version 1.0 to 2.0:
+
+[source,text,linenums]
+----
+from payload as u     select new(com.mulesoft.mql.example.User) {       name = u.name,      email = u.email,      address = new(com.mulesoft.mql.example.Address) {         address = u.address,         city = u.city,         state = u.state      }    }
+----
+
+And from version 2.0 to 1.0:
+
+[source,text,linenums]
+----
+from payload as u     select new {       name = u.name,      email = u.email,      address = u.address.address,      city = u.address.city,      state = u.address.state    }
+----
+
+Let's create our JAX-RS resource for version 2.0 of our service:
+
+[source,text,linenums]
+----
+import java.util.Collection;import javax.ws.rs.*;@Path("/")@Produces("application/json")@Consumes("application/json")public class UserResource {    // a Map of Users keyed by their email    private UserManager userManager = new UserManager();       @GET    public Collection<User> getUsers() {        return userManager.getUsers();    }        @POST    public User addUser(User user) {        userManager.addUser(user);        return user;    }}
+----
+
+This simply returns a list of users and adds users when the client does a POST request. Version 2.0 of this service can then be registered as a Mule endpoint:
+
+[source,xml,linenums]
+----
+<flow name="v2">    <inbound-endpoint address="http://localhost:9002/api/v2/users" exchange-pattern="request-response"/>    <jersey:resources>        <component>            <singleton-object class="com.mulesoft.mql.example.UserResource"/>        </component>    </jersey:resources></flow>
+----
+
+We can now create an endpoint for version 1.0 of our service as well based on the MQL transformations. Here is an example. First, we'll declare our MQL transformers in the configuration:
+
+[source,xml,linenums]
+----
+<!-- Converts the old User object to the new version --><mql:transform name="V1-to-V2" query="from payload as u ..." /><!-- Converts the new User object to the old version --><mql:transform name="V2-to-V1" query="from payload as u ..."/>
+----
+
+And now, we'll create a flow which performs these transofrmations on a /api/v1 url:
+
+[source,xml,linenums]
+----
+<flow name="v1">    <inbound-endpoint address="http://localhost:9002/api/v1/users" exchange-pattern="request-response"/>        <!-- Transform from old version if there is a request payload -->    <processor-chain>        <expression-filter expression="message.getInboundProperty('http.method') == 'POST'                                        || message.getInboundProperty('http.method') == 'PUT'"                            evaluator="groovy"/>        <transformer ref="V1-to-V2"/>    </processor-chain>        <jersey:resources>        <component>            <singleton-object class="com.mulesoft.mql.example.UserResource"/>        </component>    </jersey:resources>        <!-- Transform to old version -->    <transformer ref="V2-to-V1"/></flow>
+----
+
+And presto, you have two versions of your service running with only one codebase!
+
+== Running the example
+
+Next, we'll configure and start the examples application:
+
+* http://www.mulesoft.org/download-mule-esb-community-edition[Download Mule] and extract the distribution
+* xref:mql-download.adoc[Download MQL] and extract the distribution
+* Copy the examples/mql-examples-0.9.zip file from the MQL distribution to MULE_HOME/apps
+* Start Mule:
+
+[source,text,linenums]
+----
+ $ cd mule-standalone-3.1.2/bin$ ./mule
+----
+
+* Execute a query against version 1.0 service:
+
+[source,text,linenums]
+----
+http://localhost:9002/api/v1/users/[{"address":"123 Main St","email":"dan@mulesoft.com","name":"Dan Diephouse","state":"CA","city":"San Francisco"}]
+----
+
+* Execute a query against version 2.0 service:
+
+[source,console,linenums]
+----
+$ curl  http://localhost:9002/api/v2/users/[{"address":{"address":"123 Main St","state":"CA","country":"USA","city":"San Francisco"},"name":"Dan Diephouse","email":"dan@mulesoft.com"}]
+----

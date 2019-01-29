@@ -1,0 +1,111 @@
+= Web Service Proxy Pattern
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Proxying web services is a very common practice used for different reasons like security or auditing. This pattern allows a short and easy configuration of such a proxy.
+
+image::mcp-ws-proxy.png[mcp_ws-proxy]
+
+== Core Features
+
+A web service proxy acts as an intermediate between a caller application and the target web service. This gives the proxy a chance to transparently introduce new behaviors in the calling sequence. For example, it can:
+
+* add or remove HTTP headers,
+* transform the SOAP envelope (body or header) to add or remove specific entries,
+* rewrite remote WSDLs so they appear to bind to services inside a corporate firewall,
+* introduce custom error handling.
+
+Let's take a look at Web Service Proxy in action:
+
+*Web Service Proxy*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast" />
+----
+
+With this configuration in place, all calls to the local weather forecaster proxy will be redirected to the remote one.
+
+The Web Service Proxy is provided by the ws module, which must be present on the classpath to be usable. Its namespace is http://www.mulesoft.org/schema/mule/ws and its schema location is http://www.mulesoft.org/schema/mule/ws/3.2/mule-ws.xsd.
+
+The true value add comes from the automatic address rewriting that will be performed by the proxy: calling http://localhost:8090/weather-forecast?wsdl will return the remote WSDL where the port addresses will have been automatically rewritten based on the URL of the request hitting the proxy. That way, if your Mule instance is accessed behind a load balancer or any kind of network indirection, the generated WSDL will point the caller to port addresses that respect your particular network topology.
+
+As said above, the proxy can perform changes on the SOAP invocation by the use of transformers. This is demonstrated hereafter:
+
+*Proxy with Transformers*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy-transformers"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          transformer-refs="zip-code-transformer add-credentials-transformer"
+          responseTransformer-refs="weather-code-transformer"
+          outboundEndpoint-ref="target-ws-endpoint" />
+----
+
+Notice how transformers are introduced by using references to globally declared ones. This technique is also applicable to global endpoints, as you can see with the above reference to target-ws-endpoint.
+
+The Web Service Proxy element supports child elements. The following shows a configuration variant where endpoints are declared internally and an exception strategy has been added in:
+
+*Child Elements*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com:6090/weather-forecast" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</pattern:web-service-proxy>
+----
+
+Finally, the Web Service Proxy also supports inheritance, which allows sharing common configuration attributes across several concrete instantiations of the proxy. Check out the following to see how inheritance works:
+
+*Inheritance*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="abstract-ws-proxy-zipcode-changer"
+          abstract="true"
+          transformer-refs="zip-code-transformer add-credentials-transformer"
+          responseTransformer-refs="weather-code-transformer" />
+
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          parent="abstract-ws-proxy-zipcode-changer">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com/weather-forecast" />
+----
+
+The proxy offers a few extra options as far as WSDL handling is concerned. Let's look at them.
+
+== WSDL Redirection
+
+In some cases, the remote web service doesn't follow the common practice of exposing its WSDL on the same address as the service with a "?wsdl" appended at the end. In that case, it is required to point the Web Service Proxy to the exact location of the remote WSDL, as illustrated there:
+
+*Remote WSDL Redirection*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast"
+          wsdlLocation="http://ws.acme.com:6090/wsdl/weather-forecast" />
+----
+
+In this scenario, the remote WSDL will have its port addresses rewritten as explained above.
+
+For the case when no remote WSDL is available or if the remote WSDL needs manual adjustment before being exposed by the Web Service Proxy, the solution consists in storing the correct WSDL as a local file and have the proxy serve it. This is done as shown here:
+
+*File WSDL Redirection*
+
+[source,xml,linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast"
+          wsdlFile="path/to/correct/weather-forecaster.wsdl" />
+----
+
+In this case, the WSDL will be served as is from the file: no rewriting will occur.

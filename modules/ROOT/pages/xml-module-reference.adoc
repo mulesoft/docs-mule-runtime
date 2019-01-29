@@ -1,0 +1,138 @@
+= XML Module Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The XML module contains several tools to help you read, transform, and write XML.
+
+In addition to the functionality described on this page, you can also use the xref:sxc-module-reference.adoc[SXC Module Reference], which enables efficient XPath XML routing.
+
+== XML Formats
+
+Mule understands a wide variety of XML Java representations:
+
+* org.w3c.dom.Document, org.w3c.dom.Element
+* org.dom4j.Document
+* javax.xml.transform.Source
+* InputStream, String, byte[]
+* OutputHandler
+* XMLStreamReader
+* org.mule.module.xml.transformer.DelayedResult
+
+Any transformer that accepts XML as an input will also understand these types.
+
+== Transformers
+
+There are several standard transformers that process XML inside Mule.
+
+[%header%autowidth.spread]
+|===
+|Transformer |Description
+|xref:xmlobject-transformers.adoc[XmlToObject < - > ObjectToXml] |Converts XML to a Java object and back again using http://x-stream.github.io/[XStream].
+|xref:jaxb-transformers.adoc[JAXB XmlToObject < - > JAXB ObjectToXml] |Converts XML to a Java object and back again using the http://java.sun.com/developer/technicalArticles/WebServices/jaxb/[JAXB] binding framework (ships with JDK6)
+|xref:xslt-transformer.adoc[XSLT] |Transforms XML payloads using XSLT.
+|xref:xquery-transformer.adoc[XQuery] |Transforms XML payloads using http://en.wikipedia.org/wiki/XQuery[XQuery].
+|xref:domtoxml-transformer.adoc[DomToXml < - > XmlToDom] |Converts DOM objects to XML and back again.
+|xref:xmltoxmlstreamreader-transformer.adoc[XmlToXMLStreamReader] |Converts XML from a message payload to a StAX XMLStreamReader.
+|xref:xpath-extractor-transformer.adoc[XPath Extractor] |Queries and extracts object graphs using XPath expressions using JAXP.
+|xref:jxpath-extractor-transformer.adoc[JXPath Extractor] |Queries and extracts object graphs using XPath expressions using JXPath.
+|xref:xmlprettyprinter-transformer.adoc[XmlPrettyPrinter] |Allows you to output the XML with controlled formatting, including trimming white space and specifying the indent.
+|===
+
+=== Efficient Transformations with DelayedResult
+
+Mule contains a special XML output format called DelayedResult. This format allows very efficient XML transformations by delaying any XML serialization until an OutputStream is available.
+
+For example, here is an XSLT transformer set up to use DelayedResult:
+
+[source,xml,linenums]
+----
+<mxml:xslt-transformer name="transform-in"
+                       xsl-file="xslt/transform.xslt"
+                       returnClass="org.mule.module.xml.transformer.DelayedResult"/>
+----
+
+If the result of this transformation were being sent to an HTTP client, the HTTP client would ask Mule for an OutputHandler and pass in the OutputStream to it. Only then would Mule perform the transformation, writing the output directly to the OutputStream.
+
+If DelayedResult were not used, the XML result would first be written to an in-memory buffer before being written to the OutputStream. This will cause your XML processing to be slower.
+
+== Filters
+
+The XML module contains various XPath filters. For general details on how to use filters, see xref:using-filters.adoc[Using Filters].
+
+=== XPath Filter
+
+The XPath filter uses the JAXP libraries to filter XPath expressions. This filter is available as of Mule 2.2.
+
+The following configuration routes messages to the "vm://echo" endpoint when the value of "/e:purchaseOrder/e:shipTo/@country" is "US".
+
+[source,xml,linenums]
+----
+<outbound>
+  <filtering-router>
+    <outbound-endpoint address="vm://echo" synchronous="true"/>
+    <mule-xml:xpath-filter pattern="/e:purchaseOrder/e:shipTo/@country" expectedValue="US">
+      <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+    </mule-xml:xpath-filter>
+  </filtering-router>
+....
+</outbound>
+----
+
+=== Schema Validation Filter
+
+The schema validation filter uses the JAXP libraries to validate your message against a schema. This filter is available as of Mule 2.2.
+
+The following configuration will validate your message against a schema called `schema.xsd` and a schema called `anotherSchema.xsd`.
+
+[source,xml,linenums]
+----
+<mule-xml:schema-validation-filter schemaLocations="com/myapp/schemas/schema.xsd, com/myapp/schemas/anotherSchema.xsd"/>
+----
+
+=== Jaxen Filter
+
+The Jaxen filter uses the Jaxen library to filter messages based on XPath expressions.
+
+The following configuration routes messages to the "vm://echo" endpoint when the value of "/e:purchaseOrder/e:shipTo/@country" is "US".
+
+[source,xml,linenums]
+----
+<outbound>
+  <filtering-router>
+    <outbound-endpoint address="vm://echo" synchronous="true"/>
+    <mule-xml:jaxen-filter pattern="/e:purchaseOrder/e:shipTo/@country" expectedValue="US">
+      <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+    </mule-xml:jaxen-filter>
+  </filtering-router>
+....
+</outbound>
+----
+
+=== JXPath Filter
+
+The JXPath filter is very similar to the Jaxen filter. It is still used for historical purposes (it existed before the Jaxen filter).
+
+[source,xml,linenums]
+----
+<outbound>
+    <filtering-router>
+        <outbound-endpoint address="vm://echo" synchronous="true"/>
+        <mule-xml:jxpath-filter pattern="/e:purchaseOrder/e:shipTo/@country"
+                            expectedValue="US">
+            <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+        </mule-xml:jxpath-filter>
+    </filtering-router>
+....
+</outbound>
+----
+
+== Splitters
+
+The XML module contains two splitters, a filter-based splitter and a round-robin splitter. For more information on these splitters, see xref:outbound-routers.adoc[Outbound Routers].
+
+== XML Parsers
+
+In most cases, http://www.saxproject.org/about.html[SAX] is used to parse your XML. If you are using CXF or the XmlToXMLStreamReader, https://web.archive.org/web/20150526105309/http://stax.codehaus.org/Home[Stax] is used instead.
+
+If you're using SAX, the SAX XML parser is determined by your JVM. If you want to change your SAX implementation, see http://www.saxproject.org/quickstart.html[SAX Quickstart].

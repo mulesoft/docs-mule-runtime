@@ -1,0 +1,147 @@
+= Creating Expression Evaluators
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+In addition to the xref:expressions-configuration-reference.adoc[standard expression evaluators] provided with Mule ESB, you can create your own evaluators. This page describes how to create a custom evaluator, as well as how to add expression support to a custom module.
+
+== Creating the Custom Evaluator
+
+To create a custom evaluator, the first step is to implement the
+ExpressionEvaluator interface. This is a simple strategy interface:
+
+[source,java,linenums]
+----
+public interface ExpressionEvaluator extends NamedObject
+{
+    Object evaluate(String expression, MuleMessage message);
+}
+----
+
+Note that this interface implements `NamedObject`, which allows the evaluator to be named. This is the name you use for the `evaluator` attribute when using this evaluator in config.
+
+The arguments on the `evaluate` method are self-explanatory. The `expression` argument is the expression to evaluate on the current `message` being passed in.
+
+Lets take the `header` expression evaluator as a concrete example. It will assume that the `expression` will contain a name of a header to return. *Note that this is a simplified example without message property scopes support. Consult the evaluators full source code for a more advanced version supporting scopes in expressions.*
+
+[source,java,linenums]
+----
+public class MessageHeaderExpressionEvaluator implements ExpressionEvaluator
+{
+    public static final String NAME = "myEval";
+
+    public Object evaluate(String expression, MuleMessage message)
+    {
+        Object result = null;
+        boolean required;
+
+        //Is the header optional? the '*' denotes optional
+        if (expression.endsWith("*"))
+        {
+            expression = expression.substring(expression.length() - 1);
+            required = false;
+        }
+        else
+        {
+            required = true;
+        }
+
+        //Look up the property on the message
+        result = message.getProperty(expression);
+
+        if (result == null && required)
+        {
+            throw new RequiredValueException(CoreMessages.expressionEvaluatorReturnedNull(NAME, expression));
+        }
+        return result;
+    }
+
+    public String getName()
+    {
+        return NAME;
+    }
+
+    public void setName(String name)
+    {
+        throw new UnsupportedOperationException("setName");
+    }
+}
+----
+
+Note that the name of the expression evaluator is fixed as "myEval" so the `setName` method throws an `UnsupportedOperationException`.
+
+== Registering the Custom Evaluator
+
+After creating your custom expression evaluator, you must register it with Mule. There are two ways of doing this, depending on how you are configuring your Mule instance.
+
+=== Configuring the Evaluator as a Bean
+
+If you are using XML configuration, you can just configure your expression evaluator as a bean, and Mule will discover it.
+
+[source,xml,linenums]
+----
+<spring:beans>
+    <spring:bean class="org.mule.expressions.MessageHeaderExpressionEvaluator"/>
+</spring:beans>
+----
+
+=== Bootstrapping the Evaluator
+
+If you want your expression evaluator to be loaded automatically by Mule when your module (JAR) is on the class path, you need to add a `registry-bootstrap.properties` file to your JAR under the following directory:
+
+[source,text,linenums]
+----
+/META-INF/services/org/mule/config
+----
+
+The contents of the `registry-bootstrap.properties` should look something like this:
+
+[source,text,linenums]
+----
+object.1=org.mule.expression.MessageHeaderExpressionEvaluator
+----
+
+When Mule starts, it will discover this bootstrap file before loading any configuration and will install any objects listed in the file into the local registry. For more information, see xref:bootstrapping-the-registry.adoc[Bootstrapping the Registry].
+
+== Using the Custom Evaluator
+
+To use the custom evaluator, you use the `custom-evaluator` attribute as follows for a transformer:
+
+[source,xml,linenums]
+----
+<expression-transformer>
+    <return-argument evaluator="custom" custom-evaluator="myEval" expression="foo"/>
+</expression-transformer>
+----
+
+or as follows for a filter:
+
+[source,xml,linenums]
+----
+<expression-filter evaluator="custom" custom-evaluator="myEval" expression="foo"/>
+----
+
+When embedding the expression, you can use normal syntax:
+
+[source,text,linenums]
+----
+#[myEval:foo]
+----
+
+== Adding Expression Support to Custom Modules
+
+The ExpressionManager is responsible for maintaining a list of supported Expression Evaluators and resolving expressions at run-time. If you are adding support for expressions in your custom Mule extensions, you will need access to this object. This is currently a static class so all methods can be called statically, for example:
+
+[source,text,linenums]
+----
+Object result = ExpressionManager.evaluate("#[xpath://foo/bar]", muleMessage);
+----
+
+As of Mule 2.2, you can get the ExpressionManager using:
+
+[source,text,linenums]
+----
+Object result = muleContext.getExpressionManager().evaluate("#[xpath://foo/bar]", muleMessage);
+----
+
+Note that the _muleContext_ is available by implementing MuleContextAware. If you are extending a Mule API abstract class (i.e. AbstractConnector) then always check that the base class doesn't already provide the MuleContext.

@@ -1,0 +1,135 @@
+= Error Handler Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The error handler example demonstrates using Spring beans as Mule ESB service component implementations and how to publish messages to multiple outbound endpoints. The sample consists of two services: ExceptionManager and BusinessErrorManager. The BusinessErrorManager is a simple service used to log a message to the console when a message is received. In this example, it is used to receive BusinessException message over JMS to simulate a real-world exception processing application.
+
+The ExceptionManager is a service that receives exception messages and performs some action depending on the type of exception. For example, if a fatal exception is received, an email is sent to the system administrator. If a standard system exception is received, it is logged to a file on the local file system. The purpose of this example isn't to implement an exception handler, but to demonstrate the following features:
+
+* All the service components in the error handler are configured as Spring beans in the same Mule configuration file.
+* The error manager has multiple outbound endpoints configured on it, and the example demonstrates how to dispatch to different endpoints.
+* The messages in the system are Java objects and need to be converted to and from XML. The example demonstrates chaining multiple transformers together.
+
+image::https://images.mulesoft.org/Errorhandlersample.gif[image]
+
+== Running the Application
+
+To get started right away, simply copy the pre-built application archive (mule-example-errorhandler.zip) to the application folder ($MULE_HOME/apps) and start Mule as described below in Running the Example.
+
+To stop Mule, type 'CTRL-C' in the Mule console window
+
+=== Running the Example
+
+. At a command prompt/shell, navigate to the `apps/mule-example-errorhandler` under the Mule distribution root.
+. Edit the `classes/email.properties` file with the SMTP settings for your environment. These settings are required for the Error Handler example to send an alert email.
+. Stat mule from the `$MULE_HOME` directory. The Mule startup screen displays.
+. Open another console window and navigate to the `apps/mule-example-errorhandler/test-data/out` directory. This directory contains three files : MuleException.xml, BusinessException.xml, and FatalException.xml.
+. Move each of these files into the `../in` directory one by one to see what happens. Each exception type will trigger a different endpoint. Note that the FatalException.xml file will cause Mule to send an email using the properties you specified in `conf/email.properties`.
+. To stop Mule, type 'CTRL-C' in the Mule console window.
+
+== Building the Example
+
+Depending on the build tool you are using (Ant or Maven), you can build the example by simply running "ant" or "mvn". This will compile the example classes, produce an application zip file and copy it to $MULE_HOME/apps.
+
+== Configuring Spring Beans
+
+Mule's strong support for Spring makes it easy to configure Spring beans from the Mule configuration and inject them into your service flow. For example, here is the bean to handle a BusinessException:
+
+[source,xml]
+----
+<spring:bean id="businessHandler" class="org.mule.example.errorhandler.handlers.BusinessHandler">    <spring:property name="endpointName" value="ExceptionQueue"/>    <spring:property name="errorManager">        <spring:ref local="errorManager"/>    </spring:property></spring:bean>
+----
+
+For more information on configuring Spring in Mule, see xref:using-spring-beans-as-service-components.adoc[Using Spring Beans as Service Components].
+
+== Pooled Components
+
+In addition, a xref:configuring-java-components.adoc[pooled Java component] will maintain a pool of object instances that will be reused, with a single instance being used by one thread at any one time.
+
+[source,xml]
+----
+<pooled-component>    <prototype-object class="org.mule.example.errorhandler.ErrorManager">        <properties>            <spring:entry key="handlers">                <spring:list>                    <spring:ref local="fatalHandler"/>                    <spring:ref local="defaultHandler"/>                    <spring:ref local="businessHandler"/>                </spring:list>            </spring:entry>        </properties>    </prototype-object></pooled-component>
+----
+
+
+== Transports
+
+This example uses three popular Mule Transports:
+
+=== xref:file-transport-reference.adoc[File Transport Reference]
+
+Mule supports monitoring a directory for any file or a wildcard pattern. In this example, only files ending in an .XML extension are picked up and processed by Mule.
+
+[source,xml]
+----
+<file:inbound-endpoint path="${app.home}/test-data/in">    <file:filename-wildcard-filter pattern="*.xml"/>    <transformer ref="XMLToExceptionBean ExceptionBeanToErrorMessage" /></file:inbound-endpoint>
+----
+
+Mule can also write files using an outbound endpoint as shown below. This endpoint uses Mule's expression filename parser to construct the output file name. The expression-filename-parser element configures the ExpressionFilenameParser, which can use any expression language supported by Mule to construct a file name for the current message. Read more about expressions below.
+
+[source,xml]
+----
+<file:outbound-endpoint path="${app.home}/test-data/exceptions"     outputPattern="Exception-[function:uuid].xml">    <transformer ref="ErrorMessageToExceptionBean" />    <transformer ref="ExceptionBeanToXML" /></file:outbound-endpoint>
+----
+
+
+=== xref:jms-transport-reference.adoc[JMS Transport Reference]
+
+The use of Mule's sensible defaults for ActiveMQ allow this JMS transport to be set up in the example using a single line of configuration.
+
+[source,xml]
+----
+<jms:activemq-connector name="JMSConnector"/>
+----
+
+=== xref:email-transport-reference.adoc[Email Transport Reference]
+
+Mule supports most common email protocols and configuration options.
+
+In addition, xref:configuring-properties.adoc[property placeholders] are used to configure the email transport.
+
+[source,xml]
+----
+<context:property-placeholder location="email.properties"/>
+----
+
+
+This allows the use of Ant-style properties that are loaded from a property file using Spring and referenced in the Mule configuration.
+
+== Using Expressions
+
+Mule's rich expression language support allows you to manipulate almost any aspect of a message and is especially useful for routing and filtering. Expressions can be xpath, xquery, ognl, mvel, header, function, and more. Read more about xref:using-expressions.adoc[Using Expressions].
+
+In addition to the use mentioned above to define the output file name, the Errorhandler example also uses a groovy expression to filter the exceptions on the outbound endpoint.
+
+[source,xml]
+----
+<expression-filter evaluator="groovy" expression="payload.throwable instanceof org.mule.api.DefaultMuleException"/>
+----
+
+
+== Chaining Transformers
+
+You can chain transformers together so that the output from one transformer becomes the input for the next. To chain transformers, you create a space-separated list of transformers in the transformer-refs or responseTransformer-refs attributes or by creating multiple <transformer> elements as shown below.
+
+[source,xml]
+----
+<transformer ref="XMLToExceptionBean ExceptionBeanToErrorMessage" />
+----
+
+
+[source,xml]
+----
+<transformer ref="ErrorMessageToExceptionBean" /><transformer ref="ExceptionBeanToXML" /><transformer ref="StringToEmailMessage"/>
+----
+
+For more on transformers, including best practices, read xref:using-transformers.adoc[Using Transformers].
+
+== Summary
+
+* The ErrorManager and BusinessErrorManager components are created as Spring beans when Mule starts and are used as the service component implementations.
+* When an exception file is copied to the `apps/mule-example-errorhandler/test-data/in` directory, the default inbound endpoint for the error handler is invoked, and the target handler does some processing of the exception.
+* When ready to pass on the message, the method returns, and Mule invokes the outbound router on the service.
+* The exception manager gets the message transformed to an exception bean, from which the exception type is determined. The outbound routers filter based on the exception type.
+* The first router to match the payload type is used to route the message.

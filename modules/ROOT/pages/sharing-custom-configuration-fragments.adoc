@@ -1,0 +1,52 @@
+= Sharing Custom Configuration Fragments
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Thanks to its element naming and referencing strategy, the Mule configuration configuration mechanism supports re-using fragments of configuration between teams. This is very convenient for sharing complex, repetitive or critical bits of configuration.
+
+Concretely, here are some type of configuration elements that can be shared across projects:
+
+*Connector configurations - a connector that need a complex configuration, say with specific transport level details, is a great candidate for re-use +
+ *Endpoint definitions - defining global endpoints facilitates testing (as discussed in section 3) but also promotes re-use as they become sharable +
+ *Pre-configured transformers - some transformers, like the XSL-T one, can require a fair bit of configuration, making them likely to be shared +
+ *Sub-flows - a particular chain of message processors can form a bit of configuration that is worth re-using (we'll look at an example right after this) +
+ *Flows - it can make sense for a service to exist in several Mule applications: in that case sharing a flow is the best way to go. If this flow is configured to rely on global endpoints, the application using this flow retains full control on what protocol will actually be used
+
+Let's take a look at a configuration file containing a sub-flow that defines a standard chain of transformer we want to share with all our applications so they can use it too:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd">
+
+  <flow name="DefaultTransformers">
+    <append-string-transformer message=">>" />
+    <base64-encoder-transformer />
+  </flow>
+</mule>
+----
+
+As you can see, nothing makes this flow a sub-flow except that it has no inbound router. It's when if gets re-used that it truly becomes a sub-flow:
+
+[source,xml,linenums]
+----
+<flow name="FlowUsingSubflow">
+  ...
+  <log-component />
+  <flow-ref name="DefaultTransformers" />
+  ...
+</flow>
+----
+
+Now, how does can an application refer to a common flow like this? In truth, what we're sharing are complete configuration files. We do so with the standard Maven dependency mechanism described before: the Maven project containing common configuration files (containing common configuration fragments) simply needs to export them as resources in a JAR.
+
+The only (simple) trick is that the Mule application that wants to use a shared configuration file should import it by locating it on the classpath, as shown here:
+
+[source,xml,linenums]
+----
+<spring:import resource="classpath:mule-common-config.xml" />
+----

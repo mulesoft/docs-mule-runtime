@@ -1,0 +1,81 @@
+= Using Parameters in Your Configuration Files
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+When an application gets deployed in different environments, like QA, pre-production or production, it usually needs to be configured differently as server names, credentials and other similar parameters will vary.
+
+As a developer facing this kind of variability, your goal is to produce a single Mule application for all your environments and to externalize all the environment-specific configuration parameters. This is the key to reproducible deployments.
+
+Consider externalizing other aspects of your configuration, like time-out values, polling frequencies, etc... even if they don't vary between environments. This will facilitate tuning and experimenting as the whole Mule application would become configurable through a single properties file.
+
+In Mule, you achieve this by using Spring's property placeholder resolution mechanism. Consider the following Mule configuration fragment that defines an HTTP endpoint pointing to a password protected web resource:
+
+[source,xml,linenums]
+----
+<http:endpoint name="ProtectedWebResource"
+               user="${web.rsc.user}"
+               password="${web.rsc.password}"
+               host="${web.rsc.host}"
+               port="80"
+               path="path/to/resource" />
+----
+
+The variables bits are clearly visible: the user, password and host can vary for each environment where this endpoint gets deployed in. To provide values for these variables, we use a standard Java properties file:
+
+[source,text,linenums]
+----
+web.rsc.user=alice
+web.rsc.password=s3cr3t
+web.rsc.host=www.acme.com
+----
+
+Use a consistent naming strategy for your properties and make them unique across applications: this will greatly facilitate re-use across teams.
+
+You also need to configure Spring's property placeholder configurer. Instead of configuring Spring to load a single properties file, follow this approach:
+
+* Configure Spring to load a default properties file and another file containing overrides.
+* Ship a default properties file with values applicable for developers' workstations inside your Mule application deployable.
+* Create the properties override file only in the environments where it's needed and with only the properties that actually need to be overridden.
+
+The advantages of this approach are:
+
+* Developers don't need to deploy and run the application locally.
+* The ops team only needs to work with the set of properties they have to configure for a particular environment.
+
+Here is a method of accomplishing this:
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:context="http://www.springframework.org/schema/context"
+  xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core
+            http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+      http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+      http://www.springframework.org/schema/context
+            http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+  <spring:beans>
+    <context:property-placeholder
+             location="classpath:my-mule-app.properties,
+                       classpath:my-mule-app-override.properties" />
+  </spring:beans>
+</mule>
+----
+
+With this in place, add a `my-mule-app.properties` file in your application resources directory `(src/main/app` for a Mule application Maven project) and put default and development environment values in it. To override some values, create a my-mule-app-override.properties file and drop it in `$MULE_HOME/conf`.
+
+If your ops team can't drop files in Mule's directory hierarchy, the alternative is to configure the placeholder configurer to pick up the override file from a well-known location, as shown here:
+
+[source,xml,linenums]
+----
+<context:property-placeholder
+         location="classpath:my-mule-app.properties,
+                   file:///etc/mule/conf/my-mule-app-override.properties" />
+----
+
+Use unique file names for your properties files to ease the burden on sysadmins. A good strategy is to use the application name or ID in the default and override properties file names. +
+Should you need to encrypt passwords in your properties file, consider using Jasypt's subclass of Spring's placeholder configurer. For more information, check the section named "Encryption-aware Spring's property configurers" on this page: http://www.jasypt.org/encrypting-configuration.html

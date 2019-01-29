@@ -1,0 +1,132 @@
+= SAML Module
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[ <<Using the SAML Module>> ] [ <<Choosing a SAML Profile>> ] [ <<Example>> ]
+
+As of version 2.2.3, Mule enterprise offers support for the http://saml.xml.org/about-saml[Security Assertion Markup Language (SAML)], which is a standard for exchange of security information between federated systems. For more information on SAML, see http://saml.xml.org/wiki/saml-wiki-knowledgebase.
+
+Current support in Mule is limited to SAML 1.1 and CXF web services only. Future versions of Mule will support the use of SAML with other transports. The supported SAML module is only available in the enterprise edition of Mule.
+
+== Using the SAML Module
+
+This section describes how to configure the SAML module in your Mule configuration.
+
+=== Adding the SAML Module JAR
+
+The use the SAML module, the `mule-module-saml` JAR file must be in a location on the classpath of your application.
+
+=== Configuring the Security Manager
+
+To use the features of the SAML module, add the SAML module namespace to your Mule configuration file as follows:
+
+[source,xml,linenums]
+----
+<mule xmlns:saml="http://www.mulesource.org/schema/mule/saml"
+      xsi:schemaLocation="http://www.mulesource.org/schema/mule/saml http://www.mulesource.org/schema/mule/saml/current/mule-saml.xsd">
+    <!-- Rest of your mule configuration -->
+
+</mule>
+----
+
+Next, you configure the SAML security manager as shown below. The following example starts off with the definition of the SAML security manager and its accompanying security provider. The security provider specifies the default security realm to use by security filters if none is specified. This is especially useful in case you have only one security realm.
+
+[source,xml,linenums]
+----
+<saml:security-manager>
+  <saml:saml-security-provider name="samlSecurityProvider" default-realm="senderVouches">
+    <saml:keystore-provider name="default-key-provider"
+      key-store-file="classpath:saml.ks"
+      key-store-type="JKS"
+      key-store-password="changeit"/>
+    <saml:sender-vouches-realm name="senderVouches" sign-key-alias="mulesaml"
+      sign-key-password="changeit" key-provider-ref="default-key-provider" resign-assertions="true"/>
+    <saml:holder-of-key-realm name="holderOfKey" key-provider-ref="default-key-provider" />
+  </saml:saml-security-provider>
+</saml:security-manager>
+----
+
+Within the security provider, you define a key provider, which reads keys and certificates from a standard Java keystore file. You configure this file using the normal Spring options to define resources. In this case, the keystore is read from the classpath.
+
+In this example, two security realms are defined. One uses the sender vouches SAML scheme and is also the default realm. The other is a holder of key realm. Both use the same key provider as defined above. For more information on these realms, see Choosing a SAML Profile below.
+
+=== Configuring Security on an Endpoint
+
+Once you've defined a security manager, you can configure security filters on CXF endpoints as shown in the examples below. The first example does not specify a security realm, so the default realm is used. Both filters specify the same certificate that is used to verify the SAML assertions as issued by the assertion provider.
+
+[source,xml,linenums]
+----
+<saml:cxf-security-filter certificate-alias="mulesaml"/>
+
+<saml:cxf-security-filter certificate-alias="mulesaml" security-realm="non-default"/>
+----
+
+Additionally, you must create specific configurations for the various transports to instruct them to support SAML. For example, CXF has to be instructed to configure WSS4j for usage of SAML as WS-Security profile.
+
+== Choosing a SAML Profile
+
+SAML defines two different profiles: Sender-vouches (SV) and Holder-of-key (HOK).
+
+* The Sender Vouches profile means that the sender of a message is authorized to act for one of its users towards another system. In this case, the sender of the message vouches its correctness. If both systems trust each other, this profile is appropriate.
+
+* Holder-of-key means that the user himself is authorized to perform the actions. In this case, the owner (holder) of the key is acting. If your target system trusts the token issuer (and therefore the user) you'll use Holder-of-key.
+
+For a more detailed description of these profiles and the use cases when they're appropriate, see the article in the SAP documentation http://wiki.sdn.sap.com/wiki/display/Security/Single+Sign+on+for+Web+Services[here].
+
+== Example
+
+Since SAML is used for single sign-on, authentication of the user is assumed to have already occurred, and the SAML token simply contains one or more *subjects*, which provide some information understood by other systems. In this case we will configure our service to require a SAML subject of `AllowGreetingServices`. To our inbound endpoint we add a `SAMLVerifyInterceptor` with a callback, which will check for the correct SAML subject:
+
+[source,xml,linenums]
+----
+<spring:bean class="org.mule.module.saml.cxf.SAMLVerifyInterceptor">
+     <spring:property name="callback">
+          <spring:bean class="org.mule.example.security.VerifyAuthorization">
+               <spring:property name="subject" value="AllowGreetingServices" />
+          </spring:bean>
+     </spring:property>
+</spring:bean>
+----
+
+[source,java,linenums]
+----
+public class VerifyAuthorization implements SAMLVerifyCallback
+{
+    private String subject;
+
+    public SAMLAuthenticationAdapter verify(SAMLAuthenticationAdapter
+samlAuthentication) throws SecurityException
+    {
+        SAMLSubject samlSubject = samlAuthentication.getSubject();
+        if (!samlSubject.getNameIdentifier().getName().equals(subject))
+        {
+            throw new UnauthorisedException(...cut...
+----
+
+When the expected SAML token is added to the WS-Security header of the message, it looks like this:
+
+[source,xml,linenums]
+----
+<Assertion xmlns="urn:oasis:names:tc:SAML:1.0:assertion"
+xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion"
+xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol"
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+AssertionID="_40082eadbf045476e26a107e4f37861d"
+IssueInstant="2009-11-13T02:26:06.569Z" Issuer="self"
+MajorVersion="1" MinorVersion="1">
+  <AuthenticationStatement AuthenticationInstant="2009-11-13T02:26:06.569Z"
+AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password">
+    <Subject>
+      <NameIdentifier>AllowGreetingServices</NameIdentifier>
+      <SubjectConfirmation>
+        <ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:sender-vouches
+</ConfirmationMethod>
+      </SubjectConfirmation>
+    </Subject>
+  </AuthenticationStatement>
+</Assertion>
+----
+
+To verify that the received SAML token is authentic, SAML offers two different modes of trust: *Sender Vouches* and *Holder of Key*. In this case, we are using Sender Vouches, which means that the sender of the message must be trusted (e.g., via a digital signature). In Holder of Key mode, the sender of the message does not matter, but the SAML token subject must contain a key from a trusted source (e.g., an X.509 certificate from Verisign).

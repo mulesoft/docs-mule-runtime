@@ -1,0 +1,123 @@
+= Classloader Control in Mule
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This topic introduces you to classloading in Mule and shows you how to override classloading in your applications and plugins.
+
+== Classloading in Mule
+
+Mule uses classloaders to find and load classes for execution. When Mule uses classloaders, it does so in the following order:
+
+. The bootstrap, extensions, and CLASSPATH class loaders created by the Java virtual machine. This classloader loads the core Java libraries.
+. The Mule System class loader. This classloader loads standard Mule libraries, that is, libraries in the <MULE_HOME>/lib directory and subdirectories, where <MULE_HOME> is the directory where Mule ESB is installed.
+. One or more shared domain classloaders. These classloaders are used to share libraries between applications or allow an application to use a different version of a library. These libraries are in the <MULE_HOME>/lib/shared/<domain> library, where <domain> is the domain of the application. The shared domain classloader is optional, there is none by default.
+. One or more Mule application class loaders that load classes or libraries from a Mule application, that is, libraries in the <MULE_HOME>/apps/<myapp>/lib directory, where <myapp> is the name of the application.
+
+The Mule classloader order is illustrated in the following diagram:
+
+image::classloader-architecture.png[ClassLoader-Architecture]
+
+Although this classloading architecture meets most classloading needs, there are times when you might need to override the default classloading scheme. For example, suppose an application requires a third-party library that is bundled with it. This might conflict with a library version that the shared domain classloader would load (that is, a version of the library already bundled with Mule). How do you ensure that the required version of the library is used with the application? To address requirements such as these, Mule 3.2.0 adds support for fine-grained class loading control that enables you to override default classloading.
+
+== Fine-Grained Classloading Control
+
+Mule introduces a new configuration property, `loader.override`, that enables you to override default classloading. You specify the property in the mule-deploy.properties file for the application, and identify a list of classes, packages, or both that will used in overrides.
+
+[%header,cols="1*a"]
+|===
+^|mule-deploy.properties
+|
+[source,text,linenums]
+----
+loader.override=<comma-separated list of classes or packages>
+----
+|===
+
+Each class or package in the list is specified with its fully-qualified name. For example, an override list that includes a class (`com.example.MyProvider`) and a package (`com.sun.jersey`) would be specified as follows:
+
+[source,text,linenums]
+----
+loader.override=com.example.MyProvider, com.sun.jersey
+----
+
+[WARNING]
+If a package is specified in the override list, it applies to all of its subpackages. For example, `com.sun.jersey` will also include `com.sun.jersey.impl`.
+
+=== Blocking
+
+You can also block the loading of a class so that the class lookup is done in the application and not in Mule. You specify blocking similarly to the way you specify class overrides, that is, using `loader.override`. However, the fully qualified names of classes or packages in the list must be prefixed with a - (dash/minus sign). Here, is an example of a blocking specification:
+
+[source,text,linenums]
+----
+loader.override=-com.example.AnotherProvider
+----
+
+Blocking is a more advanced concept than class overriding, and many users will not need to consider it. But it is quite important for plugin developers. The difference between blocking and class overriding is that if a class is specified in the blocking list, its lookup is performed within the application or plugin only. In other words, if the class is provided by Mule, it will not be visible in the application or plugin. A `ClassNotFoundException` is a valid outcome even if Mule does have such a class on a system level.
+
+=== Classloading Override/Blocking Path Diagram
+
+Here is a diagram that illustrates how class loading is handled for class overrides and blocking. When you view the diagram note that every class loader has a parent class loader. Unless loader override is configured, a classloader first delegates the search for a class to its parent classloader before attempting to find the class itself (the classloader is the child of its parent classloader).
+
+image::chart.png[]
+
+== Mule Plugin System
+
+Mule now has a plugin system that allows applications to package the plugins they use, and optionally allows these plugins to control their class loading in the same way that applications do.
+
+Enabling a plugin to control classloading can be quite useful. For example, a cloud connector may bundle a third-party library that it's been tested with (that is, a library different from one that Mule provides) and declare a preference to load the third-party version. An application would just need to add a plugin that identifies the third-party library in a loader override. The loader override is specified as a property, loader.override, in the plugin structure (in<<Plugin Layout>> below).
+
+[WARNING]
+In general, when/where are plugins useful? Also, where can users find information about developing plugins?
+
+The module system also provides for a simple distribution format for Mule extensions with dependencies.
+
+=== Application Layout
+
+Mule plugins are deployed as part of Mule applications. The Mule application structure has been extended to add a `plugins` top-level directory:
+
+[%header,cols="1*a"]
+|===
+^|Application Layout
+|
+[source,text,linenums]
+----
+/-
+  /classes
+  /lib
+  /plugins
+  mule-deploy.properties (optional)
+  mule-app.properties (optional)
+----
+|===
+
+Here are some things to consider regarding the plugins:
+
+* Multiple plugins, such as cloud connectors, can be bundled in the application.
+* The plugins are deployed in natural sort order by filename.
+* Each plugin must be packaged as a zip file with a predefined structure (as shown in <<Plugin Layout>> below).
+* Exploded plugins are not currently supported. The rationale for this is to encourage and maintain a simple plugin distribution model of just one file.
+* The deployment lifecycle of the plugin is tied to the application.
+
+=== Plugin Layout
+
+The plugin layout is a simplified version of a Mule app.
+
+[%header,cols="1*a"]
+|===
+^|Plugin Layout
+|
+[source,text,linenums]
+----
+/-
+  /classes
+  /lib
+  plugin.properties (optional)
+----
+|===
+
+=== Plugin Properties
+
+The following plugin properties are currently recognized:
+
+* *loader.override* - provides fine-grained control over class loading within a plugin. This is the same level of fine-grained class loader control that is available to an application. An application can indicate its classloading preference simply by including a plugin that specifies the loader.override property. The application does not need to do any extra classloader configuration. However, if necessary, the application can override any classloading preference the plugin declares.

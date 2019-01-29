@@ -1,0 +1,102 @@
+= Setting Up an LDAP Provider for Acegi
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[CAUTION]
+====
+Deprecated Module
+
+The Acegi module is deprecated. Please xref:upgrading-from-acegi-to-spring-security.adoc[upgrade] to the xref:configuring-the-spring-security-manager.adoc[Spring Security module] instead, which is a drop-in replacement. As of Mule 3.2 the Acegi module is removed from the distribution.
+====
+
+This page describes how you can configure an Acegi LDAP provider, which can be:
+
+* Used by Mule as its security provider via AcegiProviderAdapter
+* Used by Acegi/Spring to perform xref:component-authorization-using-acegi.adoc[Component Authorization]
+
+For information on configuring an in-memory DAO provider, see xref:configuring-security.adoc[Configuring Security].
+
+== Declaring the Beans
+
+You must set up two beans in Spring, an http://www.acegisecurity.org/acegi-security/apidocs/org/acegisecurity/ldap/InitialDirContextFactory.html[InitialDirContextFactory] and an http://www.acegisecurity.org/acegi-security/apidocs/org/acegisecurity/providers/ldap/LdapAuthenticationProvider.html[LdapAuthenticationProvider]. The `InitialDirContextFactory` is the access point for obtaining an LDAP context where the `LdapAuthenticationProvider` provides integration with the LDAP server. For example:
+
+[source,xml,linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:mule="http://www.mulesource.org/schema/mule/core"
+       xmlns:acegi="http://www.mulesource.org/schema/mule/acegi"
+       ...cut...
+
+  <bean id="initialDirContextFactory" class="org.acegisecurity.ldap.DefaultInitialDirContextFactory">
+	<constructor-arg value="ldap://localhost:389/dc=com,dc=foobar" />
+	<property name="managerDn">
+		<value>cn=root,dc=com,dc=foobar</value>
+	</property>
+	<property name="managerPassword">
+		<value>secret</value>
+	</property>
+  </bean>
+
+  <bean id="authenticationProvider" class="org.acegisecurity.providers.ldap.LdapAuthenticationProvider">
+	<constructor-arg>
+		<bean class="org.acegisecurity.providers.ldap.authenticator.BindAuthenticator">
+			<constructor-arg>
+				<ref local="initialDirContextFactory" />
+			</constructor-arg>
+			<property name="userDnPatterns">
+				<list>
+					<value>uid={0},ou=people</value>
+				</list>
+			</property>
+		</bean>
+	</constructor-arg>
+	<constructor-arg>
+		<bean class="org.acegisecurity.providers.ldap.populator.DefaultLdapAuthoritiesPopulator">
+			<constructor-arg>
+				<ref local="initialDirContextFactory" />
+			</constructor-arg>
+			<constructor-arg>
+				<value>ou=groups</value>
+			</constructor-arg>
+			<property name="groupRoleAttribute">
+				<value>cn</value>
+			</property>
+			<property name="searchSubtree">
+				<value>true</value>
+			</property>
+			<property name="rolePrefix">
+				<value>ROLE_</value>
+			</property>
+			<property name="convertToUpperCase">
+				<value>true</value>
+			</property>
+		</bean>
+	</constructor-arg>
+  </bean>
+----
+
+== Configuring the Mule Security Provider
+
+The `AcegiProviderAdapter` delegates to an `AuthenticationProvider` such as the `LdapAuthenticationProvider`.
+
+[source,xml,linenums]
+----
+<acegi:security-manager>
+    <acegi:delegate-security-provider name="acegi-ldap" delegate-ref="authenticationProvider"/>
+</acegi:security-manager>
+----
+
+With the above configuration, you can achieve endpoint-level security and other security features in Mule that require one or more security providers.
+
+== Configuring the MethodSecurityInterceptor
+
+The configuration for component authorization is similar to the one described in xref:component-authorization-using-acegi.adoc[Component Authorization Using Acegi]. A key point of configuration is `ObjectDefinitionSource`:
+
+[source,xml,linenums]
+----
+<property name="objectDefinitionSource" value="org.mule.api.lifecycle.Callable.onCall=ROLE_MANAGERS"/>
+----
+
+The roles are looked up by the `DefaultLdapAuthoritiesPopulator`, which you configured in the previous section. By default, a role is prefixed with `ROLE_` and its value is extracted (and converted to uppercase) from the LDAP attribute defined by the `groupRoleAttribute`.

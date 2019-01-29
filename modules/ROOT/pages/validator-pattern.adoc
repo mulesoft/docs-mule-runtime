@@ -1,0 +1,108 @@
+= Validator Pattern
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+When processing messages, a certain format is always assumed to have been respected so that the required data can be retrieved. It is possible and oftentimes desirable to be very liberal with the data representation used by incoming messages: as long as you can find the needed pieces of information, the rest doesn't matter.
+
+But sometimes, a strict up-front validation of incoming messages is needed. This is that kind of scenarios that the Validator configuration pattern addresses.
+
+image::mcp-validator.png[mcp_validator]
+
+== Core Features
+
+Services that expose a SOAP API benefit from the validation inherent to their host web service framework, which enforces the compliance of incoming messages against the strict contract defined with WSDL. For all the other types of services, Mule's filtering and routing infrastructure provides all the necessary building blocks for putting a strict validation in place.
+
+The Validator pattern provides you with a framework for performing this kind of up-front validation. It has been designed in such way that validation is performed synchronously while dispatching of valid requests is performed asynchronously. This provides a decoupling of the validation and processing phases, which is a common pattern when clients are producing messages faster they are actually processed.
+
+The Validator pattern leverages Mule's extensive expression framework for building the acknowledgement and rejection messages. It uses Mule's filters to express the conditions for a message to be valid.
+
+Let's take a look at a Validator that accepts only integers:
+
+*Integer Only Validator*
+
+[source,xml,linenums]
+----
+<pattern:validator name="integer-validator"
+           inboundAddress="vm://validator.in"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           outboundAddress="vm://test-service.in">
+  <payload-type-filter expectedType="java.lang.Integer"/>
+</pattern:validator>
+----
+
+Suppose we send 123 to this Validator: it will accept the message and acknowledge with "GOOD:123@integer-validator". To the opposite, if we send "abc" it will reject the message with "BAD:abc@integer-validator".
+
+It is possible to use global endpoints and filters and refer to them from a Validator, as show hereafter:
+
+*Using References*
+
+[source,xml,linenums]
+----
+<pattern:validator name="validator-with-refs"
+           inboundEndpoint-ref="validator-with-refs-channel"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           validationFilter-ref="int-payload-filter"
+           outboundEndpoint-ref="test-service-channel" />
+----
+
+It is also possible to define the inbound and outbound endpoints and a custom exception strategy as child elements, which is handy when you use endpoints that need complex configuration:
+
+*Child Elements*
+
+[source,xml,linenums]
+----
+<pattern:validator name="validator-with-child-elements">
+  <vm:inbound-endpoint path="validator-with-child-endpoints.in"
+                       exchange-pattern="request-response" />
+  <payload-type-filter expectedType="java.lang.Integer"/>
+  <outbound-endpoint ref="test-service-channel" />
+  <custom-exception-strategy
+           class="com.acme.ValidationExceptionStrategy" />
+</pattern:validator>
+----
+
+Finally, like all configuration patterns, the Validator element supports inheritance. This is useful if you want to share ack/nack expressions or validation rules across several validators:
+
+*Inheritance*
+
+[source,xml,linenums]
+----
+<pattern:validator name="abstract-parent-validator"
+            abstract="true"
+            ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+            nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]" />
+
+<pattern:validator name="concrete-validator"
+           parent="abstract-parent-validator"
+           inboundAddress="vm://concrete-validator.in"
+           outboundAddress="vm://test-service.in">
+  <payload-type-filter expectedType="java.lang.Integer"/>
+</pattern:validator>
+----
+
+== Outbound Errors
+
+[WARNING]
+Since Mule 3.0.1
+
+By default, if something wrong happens during the outbound dispatch of a valid message, the caller will not know about. In that case, it's possible to use Mule's exception handling mechanism to log the error, store the valid message to be dispatched and even attempt redeliveries.
+
+That said, it is possible that in some scenarios the caller must be informed that the dispatch of its valid message has failed. For that matter, a third optional expression can be used:
+
+*Inheritance*
+
+[source,xml,linenums]
+----
+<pattern:validator name="dispatch-error"
+           inboundAddress="vm://dispatch-error.in"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           errorExpression="#[string:ERROR:#[message:payload]@#[context:serviceName]]"
+           outboundAddress="http://acme.com/services/fragile"
+           validationFilter-ref="int-payload-filter" />
+----
+
+With this configuration, the errorExpression will be used to create the response to the caller if the outbound dispatch fails. Note that when this expression is used, the outbound endpoint will use the request-response exchange pattern.

@@ -1,0 +1,217 @@
+= Transaction Management
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Mule's transaction framework is agnostic to the underlying transaction manager. The transaction could be a JDBC transaction, XA transaction, or a JMS transaction or message acknowledgment. All transaction types can be handled the same way. Mule transactions are configured on synchronous xref:configuring-endpoints.adoc[endpoints], where an endpoint can be configured to start a new transaction or join an existing one. Transactions are configured on an endpoint using `<transaction>`, which maps to the https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/MuleTransactionConfig.html[org.mule.transaction.MuleTransactionConfig] class. This element defines what action an endpoint should take when it receives an event and the transaction factory to use to create transactions.
+
+[WARNING]
+If you have multiple transactional inbound or outbound endpoints in a flow and you specify a transaction for one of them, you must specify transactions for _all_ of them. For example, if you have two outbound endpoints and you specify a transaction for the first one, you must also specify a transaction for the second one.
+
+For an excellent article on distributed transactions using both XA and non-XA approaches, see http://www.javaworld.com/javaworld/jw-01-2009/jw-01-spring-transactions.html. The multi-resource transaction support described below maps to the Best Efforts 1PC pattern described in the article.
+
+For more details on the elements you configure for transactions, see xref:transactions-configuration-reference.adoc[Transactions Configuration Reference].
+
+For information on using exception strategies to determine whether a transaction gets committed or rolled back in case of an error, see xref:error-handling.adoc[Error Handling with Transactions].
+
+== Single-resource (Local) Transactions
+
+Single-resource transactions (also called "local transactions") are transactions that are provided by the underlying resource, such as JDBC transactions and JMS transactions. These kind of transactions can be used to receive and/or send messages using a single resource only.
+
+An example configuration for a single-resource transaction might look like this:
+
+[source,xml,linenums]
+----
+<jms:endpoint name="In" queue="test.In" connector-ref="jmsConnector1" />
+<jms:endpoint name="Out" queue="test.Out" connector-ref="jmsConnector1" />
+
+<flow>
+...
+
+  <inbound-endpoint ref="In">
+    <jms:transaction action="ALWAYS_BEGIN" />
+  </inbound-endpoint>
+...
+  <outbound-endpoint ref="Out">
+    <jms:transaction action="ALWAYS_JOIN" />
+  </outbound-endpoint>
+...
+</flow>
+----
+
+This configuration defines a global JMS endpoint that receives on a "test.In" queue and another global JMS endpoint that sends on a "test.Out" queue. The action attribute tells Mule what to do for each message. In this case, a new transaction will be created for every message received. The outbound endpoint will use the resource enlisted in the current transaction, if one is running. In this case, it will use the same JMS session that has been used to receive the event. When the message has been routed from the inbound endpoint to the outbound endpoint, the transaction will be committed or rolled back.
+
+You can send multiple messages using the xref:outbound-routers.adoc[recipient list] router, which will send all messages in the same transaction.
+
+You can set action values on the `<transaction>` element as follows:
+
+* NONE - Never participate in a transaction.
+* ALWAYS_BEGIN - Always start a new transaction when receiving a message. If a previous transaction exists, it commits that transaction.
+* BEGIN_OR_JOIN - If a transaction is already in progress when an event is received, join the transaction, otherwise start a new transaction.
+* ALWAYS_JOIN - Always expects a transaction to be in progress when an event is received. If there is no transaction, an exception is thrown.
+* JOIN_IF_POSSIBLE - Will join the current transaction if one is available. Otherwise, no transaction is created.
+
+== Unable to render embedded object: File (eetiny.png) not found. Multi-resource Transactions
+
+If you are using Mule Enterprise Edition, you can use the `<multi-transaction>` element to enable a series of operations from multiple JMS resources to be grouped into a single virtual transaction. Multi-resource transactions work without the overhead of XA. The trade-off is that XA reliability guarantees aren't provided, and your flows must be ready to handle duplicates. This is very similar to a 1.5 phase commit concept (for a discussion of different approaches, see the http://www.javaworld.com/javaworld/jw-01-2009/jw-01-spring-transactions.html[JavaWorld article on distributed transactions]).
+
+Multi-resource transactions are useful for creating transactional non-XA bridges. For example, if you want to bridge two different JMS connectors, each of which is running local transactions instead of XA transactions, you could configure the multi-resource transaction as follows:
+
+[CAUTION]
+The Multi-Resource Transactions feature works only with JMS.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesource.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesource.org/schema/mule/jms"
+      xmlns:wmq="http://www.mulesource.org/schema/mule/ee/wmq"
+      xmlns:ee="http://www.mulesource.org/schema/mule/ee/core"
+      xmlns:test="http://www.mulesource.org/schema/mule/test"
+      xsi:schemaLocation="
+       http://www.mulesource.org/schema/mule/test http://www.mulesource.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesource.org/schema/mule/core http://www.mulesource.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesource.org/schema/mule/ee/core http://www.mulesource.org/schema/mule/ee/core/3.2/mule-ee.xsd
+       http://www.mulesource.org/schema/mule/jms http://www.mulesource.org/schema/mule/jms/3.2/mule-jms.xsd
+       http://www.mulesource.org/schema/mule/ee/wmq http://www.mulesource.org/schema/mule/ee/wmq/3.2/mule-wmq-ee.xsd>
+
+    <jms:activemq-connector name="jmsConnector"
+                            maxRedelivery="3"
+                            disableTemporaryReplyToDestinations="true"/>
+
+    <wmq:connector name="wmqConnector"
+                   hostName="winter"
+                   port="1414"
+                   disableReplyToHandler="true"
+                   disableTemporaryReplyToDestinations="true"
+                   queueManager="MY_QUEUE_MANAGER"
+                   targetClient="NONJMS_MQ"
+                   transportType="CLIENT_MQ_TCPIP"
+                   specification="1.1"
+                   numberOfConsumers="16"
+                   username=""
+                   password=""/>
+
+    <flow name="MultiTxFlow">
+        <jms:inbound-endpoint queue="in">
+            <ee:multi-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <test:component/>
+        <wmq:outbound-endpoint queue="out">
+             <ee:multi-transaction action="ALWAYS_JOIN"/>
+        </wmq:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+In this example, the local JMS transaction is started when the message is received on the "in" endpoint, and the local WMQ transaction is started when the message is sent out on the "out" endpoint. The last transaction (WMQ) is committed first, and then the previous transaction (JMS) is committed.
+
+Note that when the inbound endpoint has a multi-resource transaction configured on it, any outbound endpoints must also be configured with multi-resource transaction support and the action set to "ALWAYS_JOIN" to become part of the virtual transaction.
+
+== XA Transactions
+
+You can use XA transactions if you want to enlist multiple managed resources within the same transaction and require 100% reliability. The inbound endpoints are configured in the same manner as for single-resource transactions, but the connectors need to be configured to use XA-enabled resources.
+
+If you run Mule outside an application server, you can use xref:jboss-transaction-manager-reference.adoc[JBoss Transaction Manager] to configure an embedded transaction manager.
+
+Currently, only the following transports support XA transactions:
+
+* xref:vm-transport-reference.adoc[VM Transport Reference]
+* xref:jdbc-transport-reference.adoc[JDBC Transport Reference]
+* xref:jms-transport-reference.adoc[JMS Transport Reference]
+* xref:mule-wmq-transport-reference.adoc[Mule WMQ Transport Reference] (as of Mule Enterprise Edition 2.2)
+
+The following example of an XA transaction configuration uses a single transaction to read from a JMS queue and write to a database.
+
+[source,xml,linenums]
+----
+<flow name="JmsToJdbc">
+  <jms:inbound-endpoint queue="my.queue" reuseSession="false"/>
+    <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  </jms:inbound-endpoint>
+  <jdbc:outbound-endpoint address="writeTest" type="2">
+    <xa-transaction action="ALWAYS_JOIN"/>
+  </jdbc:outbound-endpoint>
+</flow>
+----
+
+Because the inbound JMS endpoint has an XA transaction configured on it, any outbound endpoints must also be configured with XA transaction support to become part of the XA transaction. This requires that the transport type supports XA transactions. For this configuration to work, you will need to configure a JMS connector that uses a JMS XA Connection Factory and a JDBC connector that is configured to use an XA data source.
+
+Note that although Java EE does not support nested transactions, XA transactions have a suspend/resume concept. Therefore, if a flow is configured with an XA transaction set to ALWAYS_BEGIN, and the message is forwarded to another flow with an XA transaction set to ALWAYS_BEGIN, the first transaction is suspended until the second transaction completes.
+
+=== XA Transaction Element and Attributes
+
+The `xa-transaction` element is a child element of the `abstract-transaction` element. It inherits the `action` attribute from `abstract-transaction` and the `action` settings have the same meaning for `xa-transaction` as they do for `abstract-transaction`. However, `xa-transaction` does not inherit the `timeout` attribute, except as noted in the section below on setting polling frequency.
+
+The `xa-transaction` element includes another attribute, `interactWithExternal`, which is a boolean type. When set to true, `interactWithExternal` causes Mule ESB to interact with transactions begun outside of Mule ESB. For instance, if an external transaction is active and `interactWithExternal` is set to true, then the BEGIN_OR_JOIN setting for `action` results in Mule ESB joining the existing transaction while the ALWAYS_BEGIN `action` attribute setting causes an exception to be thrown. Note that the default value for the `interactWithExternal` attribute is false.
+
+=== Setting the Polling Frequency
+
+When you configure an inbound JMS endpoint with XA transactions, the receiver polls every 100 ms. You can change the polling frequency by setting the `pollingFrequency` property as follows:
+
+[source,xml,linenums]
+----
+<jms:inbound-endpoint queue="my.queue" reuseSession="false">
+  <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  <properties>
+    <spring:entry key="pollingFrequency" value="5000"/>
+  </properties>
+</jms:inbound-endpoint>
+----
+
+This property is only applicable if you are using the https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/jms/XaTransactedJmsMessageReceiver.html[XaTransactedJmsMessageReceiver], which is the default receiver on inbound JMS endpoints that use XA transactions. If you are using JBoss transactions, please read xref:jboss-transaction-manager-reference.adoc[here] for information on how to configure the `timeout` value.
+
+== Transaction Manager Lookup
+
+Mule uses `javax.transaction.TransactionManager` for managing transaction spanning multiple resources (XA). If you need the SUSPEND semantics for your transactions (which is what EJB's `RequiresNew` transaction attribute value does), you *must* use the transaction manager. Conversely, the more typical `javax.transaction.UserTransaction` is just a thin handle to a transaction manager with limited (though in most cases sufficient) functionality that does not let you suspend the current transaction.
+
+Note: Depending on your application server vendor, the transaction manager might be available via JNDI or only through proprietary APIs.
+
+The following table summarizes some common Java EE servers:
+
+[%header%autowidth.spread]
+|===
+|Application Server |Remote |Embedded |Common Location |Lookup class
+|JBoss |image:error.png[] |image:check.png[] |java:/TransactionManager |https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/JBossTransactionManagerLookupFactory.html[org.mule.transaction.lookup.JBossTransactionManagerLookupFactory]
+|Weblogic
+|image:check.png[] |image:check.png[] |javax.transaction.TransactionManager |https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/WeblogicTransactionManagerLookupFactory.html[org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory]
+|Resin
+|image:error.png[] |image:check.png[] |java:comp/TransactionManager |https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/Resin3TransactionManagerLookupFactory.html[org.mule.transaction.lookup.Resin3TransactionManagerLookupFactory]
+|JRun
+|image:error.png[]
+|image:check.png[]
+|java:/TransactionManager
+|https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/JRunTransactionManagerLookupFactory.html[org.mule.transaction.lookup. JRunTransactionManagerLookupFactory]
+|Other
+|image:help-16.png[help_16] |image:check.png[] |Specified via a _jndiName_ property |https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/GenericTransactionManagerLookupFactory.html[org.mule.transaction.lookup.GenericTransactionManagerLookupFactory]
+|===
+
+For example, to use Weblogic's transaction manager, you would configure Mule as follows:
+
+[source,xml,linenums]
+----
+<transaction-manager factory="org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory" />
+----
+
+== Transaction Coordination
+
+Transaction demarcation is set on endpoints. The actual management of transactions is handled by the https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/TransactionCoordination.html[Mule Transaction Coordinator]. Note that any transacted event flows will be synchronous. The Transaction Coordinator is a singleton manager that looks after all the transactions for a Mule instance and provides methods for binding and unbinding transaction and retrieving the current transaction state.
+
+For example, to determine whether a transaction is an XA transaction, you could use `TransactionCoordination.getInstance().getTransaction().isXa()`.
+
+== Non-Transactional Outbound Endpoints
+
+By default, an outbound endpoint from a non-transactional transport will now ignore an active transaction rather than rejecting it. (That is, the default transactional action for such endpoints is no longer `NONE`). This allows flows such as the following:
+
+[source,xml,linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <vm:transaction action="ALWAYS_BEGIN"/>
+     </vm:inbound-endpoint>
+     <file:outbound-endpoint ref="receivedOrders"/>
+</flow>
+----
+
+As described in Transactional Inbound VM Queues, messages read from the VM queue are processed synchronously and transactionally. The File transport in the code example above is not transactional. So strictly speaking, writing to the file is not part of the transaction. However, any exception thrown while creating the file will roll back the transaction, causing the message to be reprocessed. This gives the effect of a multi-resource transaction.

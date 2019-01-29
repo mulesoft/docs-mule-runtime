@@ -1,0 +1,106 @@
+= GPS Walker Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This page describes the configuration and behavior of the GPS Walker example, which demonstrates how to use AJAX to communicate from a Mule Service to the browser. This example uses other new features in Mule 3 including automatic JSON bindings, the @Schedule annotation and Flow.
+
+image::gpswalker12.png[]
+
+== Running the Application
+
+Simply copy the pre-built application archive (mule-example-gpswalker.zip) to the application folder ($MULE_HOME/apps) and start Mule. To access the web service, invoke
+
+http://localhost:8081/services/gps/index.html
+
+from your browser.
+
+== Building the Example
+
+First, make sure you have set the MULE_HOME environment variable as recommended in Mule's README.txt
+
+You can build the example by simply running "mvn". This will compile the example classes and produce a zip file that will be copied into the application folder ($MULE_HOME/apps).
+
+== How it Works
+
+The GPS Walker application is configured in the `mule-config.xml` file in `examples/gpswalker/src/main/app` under your Mule home directory. This section walks through the configuration and the source Java files it calls.
+
+== The Server Side
+
+At the server, a single component called CityStroller is responsible for generating random GPS coordinates and publishing them. It uses the previously published coordinates and generates a random value for distance and angle.
+
+*CityStroller*
+
+[source,java]
+----
+    private GpsCoord currentCoord = SAN_FRANCISCO;    private AtomicBoolean firstTime = new AtomicBoolean(true);     @Schedule(interval = 3000)    public GpsCoord generateNextCoord()    {        if (firstTime.get()) {            firstTime.set(false);        }        else {            double dist = Math.random() * 0.002;            double angle = Math.random() * Math.PI;             float lat = currentCoord.getLatitude() + (float) (dist * Math.sin(angle));            float lng = currentCoord.getLongitude() + (float) (dist * Math.cos(angle));             currentCoord = new GpsCoord(lat, lng);        }        return currentCoord;    }
+----
+
+This service method has a @Schedule annotation that will cause the method to be invoked every 3 seconds; a cron expression could also be used.
+
+The CityStroller component produces GPSCoord objects. GPSCoord is a JavaBean that will get automatically serialized to JSON so that it can be easily consumed by JavaScript in the browser.
+
+*GpsCoord*
+
+[source,java]
+----
+public class GpsCoord{    @JsonProperty    private float latitude;    @JsonProperty    private float longitude;     public GpsCoord(float lat, float lng)  {        latitude = lat;        longitude = lng;    }     public float getLatitude() {        return latitude;    }     public float getLongitude()  {        return longitude;    }     public void setLatitude(float latitude) {        this.latitude = latitude;    }     public void setLongitude(float longitude) {        this.longitude = longitude;    }}
+----
+
+Notice that the @JsonProperty annotations tell Mule that this object should be serialized to a JSON string. Mule uses the Jackson Framework for working with JSON.
+
+The final piece of the server side is the Mule configuration itself.
+
+*mule-config.xml*
+
+[source,xml]
+----
+<?xml version="1.0" encoding="UTF-8"?><mule xmlns="http://www.mulesoft.org/schema/mule/core"      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"      xsi:schemaLocation="        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.0/mule-ajax.xsd        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd">     <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8081/services/gps"               resourceBase="${app.home}/docroot"/>     <flow name="StrollerService">        <component>            <singleton-object class="org.mule.example.gpswalker.CityStroller"/>        </component>        <ajax:outbound-endpoint channel="/gpswalker"/>    </flow></mule>
+----
+
+
+== Notes on this Configuration
+
+*Line 4* There is a new 'ajax' namespace. This allows Mule to bind services and flows to ajax channels on the browser.
+
+*Line 10* The ajax:connector creates an embedded AJAX server for this application. Note that the 'resourceBase' attribute specifies a directory where HTML and other resources can be published. When the browser requests pages, they will be served from this location. Everything between the quotation marks is a new placeholder available in Mule that references the route directory of your application.
+
+*Line 12* We are using the new Flow configuration. Flow is less verbose than Service for many scenarios. Note that there is no inbound endpoint for the flow since the @Scheduler annotation triggers it. You could still use a quartz endpoint here if you prefer.
+
+*Line 14* We declare our CityStroller component, it is declared a singleton since we maintain state between requests (the current coordinates).
+
+*Line 16* Finally, we define an outbound ajax channel called '/gpswalker'. The GPSCoord data produced by CityStroller will be sent over this channel to any listeners that have subscribed. Remember, Mule will automatically serialise the GPSCoord to JSON.
+
+== Client Side
+
+In the browser we use the new Mule JavaScript client to receive coordinates from the server. To use the Mule JavaScript client you need a single script import:
+
+[source,xml]
+----
+<head>    <title>Mule GPS Walker Example</title>    <script type="text/javascript" src="mule-resource/js/mule.js"></script></head>
+----
+
+When this script gets loaded, the Mule client is automatically loaded and available via the 'mule' variable.
+
+[source,xml]
+----
+<script type="text/javascript">    function init() {        setupMap();        mule.subscribe("/gpswalker", callback);    }
+----
+
+Now we can create subscriptions to Mule services that publish to AJAX channels. Here we subscribe to /gpswalker which is the same channel as our CityStroller service publishes to. That is all that is required to get your ESB and the browser talking to each other!
+
+The subscribe method requires a callback method to be passed in. This will get invoked every time a message is received on the /gpswalker channel.
+
+[source,javascript]
+----
+function callback(message) {        if (message) {            var latLng = new GLatLng(message.data.latitude, message.data.longitude);            map.addOverlay(new GPolyline([marker.getPoint(),latLng]));            marker.setPoint(latLng);            map.setCenter(latLng);        }    }
+----
+
+
+The message is received in JSON format, which means the data is easily accessible on in JavaScript. We create a new GLatLng object from the latitude and longitude sent from the server and add an overlay to the google Map. I will not cover the Google Map code here, but you get the picture. You can see the full source for the index.html here.
+
+image::gpswalker2.png[]
+
+A number of new features show up here. We create a service that is triggered using a scheduler, the service publishes data to a client application and we use JSON data bindings to automatically manage data transfer between Java and JavaScript. AJAX is used to communicate between the server and client and the client plots data from the server onto a Google map. All with very little coding.
+
+Mule makes it easy to create Service-oriented AJAX applications. This promotes service-oriented architecture on the server and inherently requires a clean separation of data and presentation.
