@@ -3,33 +3,917 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-image::soap-48x32.png[Soap-48x32]
+The *SOAP Component* facilitates the publishing, consuming, and proxying of *SOAP Web Services* within a Mule flow.
 
-*Purpose:* Publish a SOAP web service via JAX-WS annotations, WSDL, or CXF Simple Service using Apache CXF.
+Mule leverages Apache's open-source http://cxf.apache.org/docs/a-simple-jax-ws-service.html[CXF framework] to build Web services. You can create a CXF Web service in Studio by configuring a SOAP component in your Mule flow to perform any of the following CXF Web service operations:
 
-*Minimum Configuration:* No configuration is required. The default is a simple service using the default CXF configuration and port 80.
+* publish a simple service
+* publish a JAX-WS service
+* proxy a published service
+* consume a service using a simple client
+* consume a service using JAX-WS client
+* proxy to a service
 
-*Discussion:* A SOAP component publishes a SOAP web service via JAX-WS annotations, WSDL, or CSF Simple Service. It uses Apache CSF.
+Using Mule's SOAP Component, you can also xref:enabling-ws-security.adoc[enable WS-security], specify data bindings, and add interceptors to your CXF Web service. For more information about how Mule leverages the CXF framework, consult the xref:cxf-module-configuration-reference.adoc[CXF Module Configuration Reference].
 
-Generally, you add a SOAP component to an endpoint. If you add the SOAP component to a request-response endpoint, such as an HTTP endpoint, Mule Studio generates a SOAP request-response component, as shown below.
+== Adding a SOAP Component/CXF Element
+
+<<Complete Code Example>>
+
+[WARNING]
+====
+*Mule Studio Version 3.3.1* supports corrected databinding in the following types of Web service *Operations*:
+
+* Simple service
+* JAX-WS service
+* Simple client
+* JAX-WS client
+
+*Mule Studio Version 3.3.0* supports databinding in the following types of Web service *Operations*:
+
+* Simple service
+* JAX-WS service
+* Proxy service
+====
+
+[.ex]
+=====
+[discrete.view]
+=== Stuio Visual Editor
+
+. Add a SOAP component to your flow, positioning it just after an inbound endpoint, or just before an outbound endpoint.
+. Open the component's *Pattern Properties* panel, then configure the endpoint's basic attributes according to the table below. +
 +
-image::soap-twoway.png[SOAP-twoway]
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Display Name* |Enter a unique name for the component, if you wish.
+|*Operation* |JAX-WS service (_default_) +
+Proxy service +
+Simple service +
+JAX-WS client +
+Proxy client +
+Simple client
+|===
+
+. The configurable elements and attributes of the SOAP component vary according to the type of operation the Web service is performing. Consult the sub-sections below for detailed configuration information.
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+. Add a CXF element to your flow, positioning it just after an inbound endpoint, or just before an outbound endpoint (see code sample below). The types of CXF element available are as follows:
+
+* cxf:jaxws-service
+* cxf:proxy-service
+* cxf:simple-service
+* cxf:jaxws-client
+* cxf:proxy-client
+* cxf:simple-client
+
+. Configure the endpoint's basic attributes according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*doc:name* |unique name for component (not required for Mule Standalone)
+|===
 +
 
-If you add the SOAP component to a one-way endpoint, such as a File endpoint, then Mule Studio generates a SOAP one-way component. See below.
+[source,text,linenums]
+----
+#Publishing
+
+<flow name="example_flow1" doc:name="example_flow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <cxf:jaxws-service doc:name="SOAP"/>
+</flow>
+
+
+#Consuming
+
+<flow name="example_flow2" doc:name="example_flow2">
+    <cxf:jaxws-client doc:name="SOAP"/>
+    <http:outbound-endpoint exchange-pattern="one-way" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</flow>
+
+
+#Proxying
+
+<flow name="example_flow1" doc:name="example_flow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <cxf:proxy-service doc:name="SOAP"/>
+</flow>
+----
+
+. The configurable elements and attributes of the SOAP component vary according to the type of operation the Web service is performing. Consult the sub-sections below for detailed configuration information.
+
+[NOTE]
+In 3.x versions of Mule Studio, you could specify an *onException* attribute for your SOAP Component. +
+As of Mule 3.3 — because of the improvements to error handling which manage exceptions — you do not need to specify an *onException* attribute.
+=====
+
+== Applying Global CXF Configuration
+
+To set up and reuse customized CXF behavior, you must create a *global element* and reference it within the SOAP component(s) in your Mule flows. The following configuration information applies to all types of Web service Operations (service, client and proxy).
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. On your canvas, click the *Global Elements* tab, then click the *Create* button, then select `CXF Configuration` from the list of available options.
 +
-image::soap-oneway.png[SOAP-oneway]
+
+[NOTE]
+You can also create a *Global CXF Element* directly from the SOAP component's *Pattern Properties* panel. Next to the *Config Reference* field, click the image:add.png[(plus)] icon to open the *Global Element Properties* panel.
++
+. Configure the global CXF configuration attributes according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Value |Description
+|*Name* |unique name |Enter a unique name for the global element, if you wish.
+|*Configuration Location* |filepath/filename.xml |If you have created an `.xml` file that supplies the specifics of how you want your CXF elements to behave, enter the file path of your CXF configuration file.
+|*Enable Mule Soap Headers* |true (_default_) +
+false  |If set to true (i.e. checked) this attribute ensures that Mule can add a header to a SOAP message when required as part of the message's processing. +
+For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties and will not process messages with Mule headers, set this attribute to false (i.e. uncheck).
+|*Initialize Static Bus Instance* |true (_default_) +
+false  |If set to true, (i.e. checked) this attribute ensures that the CXF Web service uses Mule transports instead of http://cxf.apache.org/docs/transports.html[CXF transports].
+|===
+. Click the *Message Flow* tab to return to your canvas.
+. Open the Pattern Properties panel of the SOAP component, again.
+. Use the drop down menu in the *Config Reference* field to select the global CXF element you created.
++
+. Click *OK* to save your changes to the SOAP component.
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+. Above all flows in your Mule project, add a global cxf:configuration element. Refer to code sample below.
+. Configure the global CXF configuration attributes according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description
+|*name* |unique name |Enter a unique name for the global element, if you wish. (not required for Mule Standalone)
+|*enableMuleSoapHeaders* |true +
+false  |If set to true`,` this attribute ensures that Mule can add a header to a SOAP message when required as part of the message's processing. +
+For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties and will not process messages with Mule headers, set this attribute to false.
+|*initializeStaticBusInstance* |true +
+false  |If set to true, (i.e. checked) this attribute ensures that the CXF Web service uses Mule transports instead of http://cxf.apache.org/docs/transports.html[CXF transports].
+|*configurationLocation* |filepath/filename.xml |If you have created an `.xml` file that supplies the specifics of how you want your CXF elements to behave, enter the file path of your CXF configuration file.
+|===
+. To the CXF element within your flow, add a `configuration-ref` attribute to reference the global CXF configuration element. Refer to code sample below.
+
+[source,xml,linenums]
+----
+<cxf:configuration name="CXF_Configuration" enableMuleSoapHeaders="true" initializeStaticBusInstance="true" doc:name="CXF Configuration" configurationLocation="src/test/resources/filename.xml"/>
+
+<flow name="example_flow1" doc:name="example_flow1">
+...
+    <cxf:jaxws-client doc:name="SOAP" configuration-ref="CXF_Configuration"/>
+    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</flow>
+----
+
+.Namespace
+
+[source,xml,linenums]
+----
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+...
+xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+----
+
+=====
+
+== Publishing a Web Service
+
+This sub-section describes how to specify attributes for your Web service.
+
+[NOTE]
+====
+For some attributes, enter data according to the http://en.wikipedia.org/wiki/Web_service#Automated_design_methodologies[automated design method] you used to develop your Web service:
+
+* bottom up method (code first)
+* top down method (WSDL first)
+====
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+In the *General* tab of the SOAP component's pattern properties panel, configure the Web service's attributes according to the table below.
++
+[%header,cols="5*"]
+|===
+|Attribute |Simple service |JAX-WS service |Proxy service |Value
+|*Binding ID* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the http://cxf.apache.org/docs/cxf-architecture.html#CXFArchitecture-DataBindings[CXF Protocol Bindings] which facilitate the mapping of concrete formats and protocols on transports.
+|*Port* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: specify the the port generated in the WSDL. +
+ • *WSDL first*: specify the port to which the Java class will bind in the WSDL.
+|*Namespace* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: specify the the SOAP namespace generated in the WSDL. Overrides default CXF namespace. +
+ • *WSDL first*: specify the SOAP namespace to which the Java class will bind in the WSDL. Overrides default CXF namespace.
+|*Service †* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: where more than one service exists, specify the the service generated in the WSDL. +
+ • *WSDL first*: where more than one service exists, specify the service to which the Java class will bind to the WSDL.
+|*Service Class †* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: click the ellipsis (. . .) to specify the Web service interface to which the Java class will bind to the WSDL. +
+ • *WSDL first*: click the *Generate from WSDL* button to specify the location of the WSDL document (URL or file) Mule should use to identify the service interface. In the *Generate from WSDL* panel that appears, specify both the location and the *Package Name* of the source.
+|*Validation Enabled* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Set to true (i.e. checked) if you want Mule to perform schema validation on all incoming messages.
+|*Payload* |  |  a|
+x
+
+ |Use the drop down menu to select how much of the message should pass through the proxy. (By default, Mule selects `body`.) +
+• *body*: Mule passes only the body of the message through the proxying Web service. +
+• *envelope*: Mule passes the entire envelope of the message, including body and headers, through the proxying Web service.
+|===
+
+† mutually exclusive fields
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+Configure your cxf:jaxws-service, cxf:`proxy-service`, or cxf:simple-service attributes according to the table below. Refer to the code sample below.
+
+[%header,cols="5*"]
+|===
+|Attribute |Simple service |JAX-WS service |Proxy service |Value
+|*bindingId* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the http://cxf.apache.org/docs/cxf-architecture.html#CXFArchitecture-DataBindings[CXF Protocol Bindings] which facilitate the mapping of concrete formats and protocols on transports.
+|*namespace* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: specify the the SOAP namespace generated in the WSDL. Overrides default CXF namespace. +
+ • *WSDL first*: specify the SOAP namespace to which the Java class will bind in the WSDL. Overrides default CXF namespace.
+| *port* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: specify the the port generated in the WSDL. +
+ • *WSDL first*: specify the port to which the Java class will bind in the WSDL.
+|*service †* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: where more than one service exists, specify the the service generated in the WSDL. +
+ • *WSDL first*: where more than one service exists, specify the service to which the Java class will bind to the WSDL.
+|*serviceClass †* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |• *Code first*: specify the Web service interface to which the Java class will bind to the WSDL. +
+ • *WSDL first*: specify the location of the WSDL document (URL or file) Mule should use to identify the service interface. Specify both the location and the packageName of the source.
+|*payload* |  |  a|
+x
+
+ |Specify how much of the message should pass through the proxy. +
+• *body*: Mule passes only the body of the message through the proxying Web service. +
+• *envelope*: Mule passes the entire envelope of the message, including body and headers, through the proxying Web service.
+|*validationEnabled* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |True or False. Set to true if you want Mule to perform schema validation on all incoming messages.
+|===
+
+† mutually exclusive attributes
+
+[source,text,linenums]
+----
+# JAX-WS Service
+
+<cxf:jaxws-service doc:name="SOAP" bindingId="StockQuote12" namespace="http://www.webserviceX.net" port="8080" service=" " serviceClass="org.mule.example.bookstore.OrderService" validationEnabled="true"/>
+
+
+# Proxy Service
+
+<cxf:proxy-service doc:name="SOAP"  port="8080"  serviceClass="org.mule.example.bookstore.OrderService"     payload="body" bindingId=" " namespace=" " service="StockQuoter" validationEnabled="true"/>
+----
+=====
+
+== Consuming a Web Service
+
+This sub-section describes how to specify attributes for your Web service client.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+In the *General* tab of the SOAP component's pattern properties panel, configure the Web service client's attributes according to the table below.
+
+[%header,cols="5*"]
+|===
+|Attribute |Simple client |JAX-WS client |Proxy client |Value
+|*Operation* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the operation to invoke on the Web service to which your client will make calls. For example, `createNew`.
+|*Service Class* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the Java class CXF should use to construct its service model for the client.
+|*Decoupled Endpoint* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the reply-to endpoint (URL) for clients which have http://cxf.apache.org/docs/ws-addressing.html[WS-Addressing] enabled.
+|*Client Class* |  a|
+x
+
+ |  |Specify the name of the client class that CXF generated using its `wsdl2java` tool.
+|*Payload* |  |  a|
+x
+
+ |Use the drop down menu to select how much of the message the client passes to the service. (By default, Mule selects `body`.) +
+• *body*: Mule passes only the body of the message. +
+• *envelope*: Mule passes the whole envelope of the message, including body and headers.
+|*Port* |  a|
+x
+
+ a|
+x
+
+ |_Not_ the TCP port. Specify the WSDL SOAP port name the client must use to communicate with the Web service. Links the binding to the Web service.
+|===
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+Configure your cxf:jaxws-client, cxf:`proxy-client`, or cxf:simple-client attributes according to the table below. Refer to the code sample below.
+
+[%header,cols="5*"]
+|===
+|Attribute |Simple client |JAX-WS client |Proxy client |Field Contents
+|*port* |  a|
+x
+
+ a|
+x
+
+ |_Not_ the TCP port. Specify the WSDL SOAP port name the client must use to communicate with the Web service. Links the binding to the Web service.
+|*serviceClass†* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the Java class CXF should use to construct its service model for the client.
+|*clientClass†* |  a|
+x
+
+ |  |Specify the name of the client class that CXF generated using its `wsdl2java` tool.
+|*decoupledEndpoint* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the reply-to endpoint (URL) for clients which have http://cxf.apache.org/docs/ws-addressing.html[WS-Addressing] enabled.
+|*operation* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Specify the operation to invoke on the Web service to which your client will make calls. For example, createNew.
+|*payload* |  |  a|
+x
+
+ |Specify how much of the message the client passes to the service. +
+• *body*: Mule passes only the body of the message. +
+• *envelope*: Mule passes the whole envelope of the message, including body and headers.
+|===
+
+† mutually exclusive
+
+[source,text,linenums]
+----
+# JAX-WS Client
+
+<cxf:jaxws-client doc:name="SOAP"   port="StockQuoter"  serviceClass=" org.mule.example.bookstore.OrderService" clientClass=" " decoupledEndpoint="http://www.StockQuoter.org" enableMuleSoapHeaders="true" operation="createNew"/>
+
+
+# Proxy Client
+
+<cxf:proxy-client doc:name="SOAP"   port="8080"  serviceClass="org.mule.example.bookstore.OrderService"  clientClass=" " decoupledEndpoint=" " enableMuleSoapHeaders="true" operation="createNew" payload="body"/>
+----
+=====
+
+== Adding Custom Interceptors
+
+CXF uses chains of http://cxf.apache.org/docs/interceptors.html[interceptors] – the most basic processing unit – to process messages. As a message moves through an interceptor chain, each interceptor performs an action upon the message, such as reading it, transforming it or validating it.
+
+If you need to add an extra action to the messages processed by your CXF Web service (for instance, to add a header to a message), use the SOAP component to add extra interceptors to the interceptor chain.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. Open the *Pattern Properties* panel, then click on the *Interceptors* tab.
+. Click on the image:add.png[(plus)] icon to reveal the four **http://cxf.apache.org/docs/interceptors.html[Interceptor Providers]** CXF uses to add interceptors to interceptor chains; click one of the choices to add an interceptor provider. +
+
+* `Add in Interceptor`
+* `Add in Fault Interceptor`
+* `Add out Interceptor`
+* `Add out Fault Interceptor`
++
+. Double-click the newly created interceptor provider in the *Settings* pane (below, left) to open the interceptor provider panel (below, right).
++
+. Use the drop down menu in the *Beans* field to select from your list of existing beans the one that will act as an interceptor.
 +
 
-Configuring SOAP attributes is optional. If you do want to change any attributes, double-click the SOAP icon on the canvas to open the Pattern Properties dialog. Use the General tab to specify any generic and inbound attributes for the SOAP component.
+[NOTE]
+If you have not yet created any beans, click the *new* button to open a new *Properties Panel* that facilitates the creation and configuration of new a bean, which imports the Java class you have built to specify the interceptor's behavior.
+
+. Click the *add to list* button to insert the selected bean into the interceptor chain.
+. Click *Finish*, then *OK* to save your interceptor configurations.
+
+[discrete.view]
+=== Studio XML Editor
+
+. Above all flows in your Mule project, create a global spring:bean element to import the Java class you have built to specify the interceptor's behavior. Refer to code sample below.
+. To the CXF element in your flow, add a child element according to the type of action you want the interceptor to perform:
+* cxf:inInterceptor
+* cxf:inFaultInterceptor
+* cxf:outInterceptor
+* cxf:outFaultInterceptor
+
+. As a child element of the CXF interceptor element, add a reference to the spring bean, spring:ref *bean*, you created which imports the Java class.
+. Add as many as four interceptor child elements to your CXF service or client component.
+
+[source,xml,linenums]
+----
+<spring:beans>
+    <spring:bean id="Bean" name="Bean" class="org.mule.example.myClass"/>
+</spring:beans>
+
+
+<flow name="example_flow1" doc:name="example_flow1">
+...
+    <cxf:proxy-service doc:name="SOAP"   port="8080"  serviceClass="org.mule.example.bookstore.OrderService"  payload="body" bindingId=" " namespace=" " service="" validationEnabled="true">
+       <cxf:inInterceptors>
+           <spring:ref bean="Bean"/>
+       </cxf:inInterceptors>
+    </cxf:proxy-service>
+...
+</flow>
+----
+=====
+
+Adding Web Service Security
+
+*_Enterprise_* +
+To protect the CXF Web service in your Mule flow, you can configure elements in the SOAP component to apply WS-security. You can add http://cxf.apache.org/docs/ws-security.html[WS-Security] *Configuration Elements* (i.e. key-value pairs) to validate and/or authenticate information in the SOAP header of a message; you can also enable one or more of six *Token Validators* to ensure message security. The ability to add these security features is available only in the Enterprise Edition of Mule Studio.
+
+Consult the xref:enabling-ws-security.adoc[Enabling WS-Security] document to configure the security elements of your Web service.
+
+== Configuring Advanced Elements
+
+You can adjust several advanced CXF Web service configurations according to your requirements.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. Open the *Pattern Properties* panel, then click on the *Advanced* tab.
 +
-image::soap-props1.png[SOAP-props1]
-+
+. Adjust configurations as needed according to the table below, then click *OK* to save your changes.
 
-Use the Advanced tab to optionally configure other common configurations (such as enabling Mule SOAP headers), attributes (such as enabling MTOM), and schema locations.
+[%header,cols="20,16,16,16,16,16"]
+|===
+|Configuration |Simple or JAX-WS Service |Simple or JAX-WS Client |Proxy service |Proxy client |Activity
+|*WSDL Location* a|
+x
 
-image::soap-props2.png[SOAP-props2]
+ a|
+x
 
-== Mule ESB Reference
+ a|
+x
 
-For more information see xref:cxf-module-configuration-reference.adoc[CSF Module Configuration Reference].
+ a|
+x
+
+ |In the *WSDL Location* field, enter the URL (relative or absolute) of the http://en.wikipedia.org/wiki/Web_Services_Description_Language[WSDL file] which describes the functionality of the Web service.
+|*MTOM Enabled* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Set *MTOM Enabled* to true (i.e. checked) if you want Mule to process the binary data sent as part of a SOAP message. (http://cxf.apache.org/docs/mtom.html[Message Transmission Optimization Mechanism])
+|*Enable Mule Soap headers* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |By default, *Enable Mule Soap Headers* is set to true (i.e. checked); this ensures that Mule can add a header to a SOAP message when required as part of the message's processing. Set to false (i.e. unchecked) if you do not want Mule to add headers to SOAP messages. For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties (such as added Mule headers), deactivate the *Enable Mule Soap Headers* box.
+|*Soap 1.1* +
+*Soap 1.2* a|
+x
+
+ |  a|
+x
+
+ |  |Use radio buttons to select the version of SOAP you want your service to use: http://www.w3.org/2003/06/soap11-soap12.html[SOAP 1.1 or SOAP 1.2]. By default, Mule sets the version to SOAP 1.1.
+|*Databinding* a|
+x
+
+ a|
+x
+
+ |  |  |Within the context of the CXF framework, http://cxf.apache.org/docs/data-binding-architecture.html[*data binding*] refers to the mapping of data from XML documents to Java objects. Use the drop down menu to select a data binding type that will meet your configuration requirements: +
+ • http://cxf.apache.org/docs/aegis-21.html[aegis-databinding] +
+ • http://cxf.apache.org/docs/jaxb.html[jaxb-databinding] +
+ • custom-databinding +
+ • http://jibx.sourceforge.net/[jibx-databinding]
+|*Schema Locations* a|
+x
+
+ |  a|
+x
+
+ |  |Click the image:add.png[(plus)] icon in the *Schema Locations* pane to specify a `schemaLocations` attribute that identifies a namespace `name` and `description`. Reference http://msdn.microsoft.com/en-us/library/ms256100.aspx[schemaLocation] for additional details.
+|===
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+. Within the context of the CXF framework, http://cxf.apache.org/docs/data-binding-architecture.html[*data binding*] refers to the mapping of data from XML documents to Java objects. You can specify the databinding of your client or service, if you wish. (Not configurable on proxy service or proxy client.) The following are the different types of databinding available:
+* http://cxf.apache.org/docs/aegis-21.html[aegis-databinding]
+* http://cxf.apache.org/docs/jaxb.html[jaxb-databinding]
+* custom-databinding
+* http://jibx.sourceforge.net/[jibx-databinding] +
+
+. To the CXF element in your flow, add a child element according to the type of databinding you want your service or client to use:
+* cxf:aegis-databinding
+* cxf:jaxb-databinding
+* cxf:custom-databinding
+* cxf:jibx-databinding
+
+. As a child element of the CXF databinding element, add one or more `spring:property` elements with either a name and value, or name and reference, to define any databinding properties. Refer to the code sample below.
+. Define a *`cxf:schemalocations`* attribute, if you wish, to identify a namespace to which your service should refer. (Not configurable on JAX-WS client, simple client or proxy client.) Reference http://msdn.microsoft.com/en-us/library/ms256100.aspx[schemaLocation] for additional details. To the CXF element in your flow (below any interceptor elements, if you have added any), add a **`cxf:schemaLocations`** child element.
+. Within the `cxf:schemaLocations` element, add a `cxf:schemaLocation` child element, to specify the URL of the schema to which your service should refer. Refer to code sample below.
+. As per your specific needs, configure any of the following CXF service or client attributes according to the table below. Refer to the code sample below.
+
+[%header,cols="20,16,16,16,16,16"]
+|===
+|Configuration |Simple or JAX-WS Service |Simple or JAX-WS Client |Proxy service |Proxy client |Activity
+|*validationEnabled* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |When se to true, validationEnabled ensures that Mule can add a header to a SOAP message when required as part of the message's processing. Set to false if you do not want Mule to add headers to SOAP messages. For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties (such as added Mule headers), set validationEnabled to false.
+|*mtomEnabled* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Set mtomEnabled to true if you want Mule to process the binary data sent as part of a SOAP message. (http://cxf.apache.org/docs/mtom.html[Message Transmission Optimization Mechanism])
+|*wsdlLocation* a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ a|
+x
+
+ |Enter the URL (relative or absolute) of the http://en.wikipedia.org/wiki/Web_Services_Description_Language[WSDL file] which describes the functionality of the Web service.
+|*soapVersion* a|
+x
+
+ |  a|
+x
+
+ |  |Identify the version of SOAP you want your service to use: http://www.w3.org/2003/06/soap11-soap12.html[SOAP 1.1 or SOAP 1.2]. By default, Mule uses SOAP 1.1.
+|===
+
+[source,xml,linenums]
+----
+<flow name="example_flow1" doc:name="example_flow1">
+...
+<cxf:jaxws-service doc:name="SOAP"   port="8080"  serviceClass="org.mule.example.bookstore.OrderService"      bindingId=" " namespace=" " service=" " validationEnabled="true" mtomEnabled="true" wsdlLocation="src/main/resources" soapVersion="1.2">
+    <cxf:jibx-databinding>
+        <spring:property name="sample2" ref="reference"/>
+        <spring:property name="sample1" value="value"/>
+    </cxf:jibx-databinding>
+    <cxf:schemaLocations>
+        <cxf:schemaLocation>http://mycompany.com/schemas/stockquotes</cxf:schemaLocation>
+    </cxf:schemaLocations>
+</cxf:jaxws-service>
+...
+</flow>
+----
+=====
+
+== Complete Code Example
+
+.Namespace
+
+[source,xml,linenums]
+----
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+...
+xsi:schemaLocation="
+...
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+----
+
+.Example Code
+
+[source,xml,linenums]
+----
+<spring:beans>
+
+        <spring:bean id="property-placeholder"
+
+            class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+
+            <spring:property name="location"
+
+                value="classpath:config.dev.properties" />
+
+        </spring:bean>
+
+
+
+
+    </spring:beans>
+
+    <mulexml:namespace-manager
+
+        includeConfigNamespaces="true">
+
+        <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/" />
+
+        <mulexml:namespace prefix="mes" uri="http://www.mule-health.com/SOA/message/1.0" />
+
+        <mulexml:namespace prefix="mod" uri="http://www.mule-health.com/SOA/model/1.0" />
+
+    </mulexml:namespace-manager>
+
+    <data-mapper:config name="admit_subject_to_upsert_patient"
+
+        transformationGraphPath="admit_subject_to_upsert_patient.grf"
+
+        doc:name="DataMapper" />
+
+    <data-mapper:config name="upsert_patient_response_to_create_episode"
+
+        transformationGraphPath="upsert_patient_response_to_create_episode.grf"
+
+        doc:name="DataMapper" />
+
+    <object-to-string-transformer name="Object_to_String"
+
+        doc:name="Object to String" />
+
+    <data-mapper:config name="create_episode_response_to_admit_subject_response"
+
+        transformationGraphPath="create_episode_response_to_admit_subject_response.grf"
+
+        doc:name="DataMapper" />
+
+    <flow name="admitPatientService" doc:name="admitPatientService"
+
+        doc:description="AdmssionService SOAP Web service which accepts calls and processes request to perform pre-admissions activities in the hospital's systems.">
+
+        <http:inbound-endpoint exchange-pattern="request-response"
+
+            host="localhost" port="${http.port}" doc:name="AdmissionService"
+
+            path="AdmissionService" />
+
+        <cxf:proxy-service doc:name="Proxy service"
+
+            namespace="http://www.mule-health.com/SOA/service/admission/1.0"
+
+            payload="body" port="AdmissionPort" service="AdmissionService"
+
+            wsdlLocation="service/AdmissionService.wsdl" />
+
+        <mulexml:dom-to-xml-transformer
+
+            returnClass="java.lang.String" />
+
+        <flow-ref name="upsertPatient" doc:name="Upsert Patient" />
+
+        <flow-ref name="createEpisode" doc:name="Create Episode" />
+
+        <data-mapper:transform
+
+            config-ref="create_episode_response_to_admit_subject_response"
+
+            doc:name="&lt;createEpisodeResponse /&gt; to &lt;admitSubjectResponse /&gt;" />
+
+    </flow>
+
+    <sub-flow name="upsertPatient" doc:name="upsertPatient" doc:description="Uploads and inserts patient data into a hospital system.">
+
+        <data-mapper:transform config-ref="admit_subject_to_upsert_patient"
+
+            doc:name="&amp;lt;admitSubject /&amp;gt; to &amp;lt;upsertPatient /&amp;gt;" />
+
+        <flow-ref name="invokePatientService" doc:name="Invoke Patient Service" />
+
+        <mulexml:dom-to-xml-transformer
+
+            returnClass="java.lang.String" />
+
+    </sub-flow>
+
+    <sub-flow name="invokePatientService" doc:name="invokePatientService" doc:description="Submits calls to the PatientService Web service.">
+
+        <cxf:proxy-client payload="body"
+
+            enableMuleSoapHeaders="true" doc:name="Proxy client" />
+
+        <http:outbound-endpoint exchange-pattern="request-response"
+
+            host="localhost" port="${http.port}" path="PatientService" doc:name="PatientService" password="hello123" user="nialdarbey"/>
+
+    </sub-flow>
+
+    <sub-flow name="createEpisode" doc:name="createEpisode" doc:description="Creates new episodes for patient pre-admission into the hospital systems.">
+
+        <data-mapper:transform config-ref="upsert_patient_response_to_create_episode"
+
+            doc:name="&amp;lt;upsertPatientResponse /&amp;gt; to &amp;lt;createEpisode /&amp;gt;" />
+
+        <flow-ref name="invokeEHRService" doc:name="Invoke EHR Service" />
+
+        <mulexml:dom-to-xml-transformer
+
+            returnClass="java.lang.String" />
+
+    </sub-flow>
+
+    <sub-flow name="invokeEHRService" doc:name="invokeEHRService" doc:description="Submits calls to the EHR Web service.">
+
+        <cxf:proxy-client payload="body"
+
+            enableMuleSoapHeaders="true" doc:name="Proxy client" />
+
+        <http:outbound-endpoint exchange-pattern="request-response"
+
+            host="localhost" port="${http.port}" path="EHRService" doc:name="EHRService" />
+
+    </sub-flow>
+
+</mule>
+----
+
+
+== See Also
+
+* xref:cxf-module-reference.adoc[CXF Module]
+* xref:enabling-ws-security.adoc[security]

@@ -3,18 +3,21 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-Endpoints are used to connect services. An endpoint is a specific channel on which a service can send messages and from which another service can receive messages. For example, a purchasing component may receive an order request over HTTP. Once the order has been processed by the component, a JMS message may be sent over a topic to notify an auditing system, and a response can be sent back over HTTP.
+* <<Basic Configuration>>
+* <<Dynamic Endpoints>>
+* <<Message Processors>>
+* <<Global Endpoints>>
 
-This page describes how to configure an endpoint. For details on the various attributes and elements you can configure on an endpoint, see xref:endpoint-configuration-reference.adoc[Endpoint Configuration Reference].
+Endpoints are used to connect flows. An endpoint is a specific channel on which a flow can send messages and from which another flow or external service can receive messages. For example, a purchasing component may receive an order request over HTTP. Once the order has been processed by the component, a JMS message may be sent over a topic to notify an auditing system, and a response can be sent back over HTTP.
+
+This page describes how to configure an endpoint. For details on the various attributes and elements you can configure on an endpoint, see xref:3.4@endpoint-configuration-reference.adoc[Endpoint Configuration Reference].
 
 == Basic Configuration
 
-In its most basic form, an endpoint consists of a xref:connecting-using-transports.adoc[transport] and a transport-specific channel/destination/resource used to identify the channel and location where two services can exchange information. For example:
+In its most basic form, an endpoint consists of a xref:3.4@connecting-using-transports.adoc[transport] and a transport-specific channel/destination/resource used to identify the channel and location where two flows can exchange information. For example:
 
-[%header,cols="1*a"]
-|===
-^|URI-style Endpoints
-|
+*URI-style Endpoints*
+
 [source,xml,linenums]
 ----
 <inbound-endpoint address="udp://localhost:65432"/>
@@ -25,14 +28,11 @@ In its most basic form, an endpoint consists of a xref:connecting-using-transpor
 
 <inbound-endpoint address="jms://test.queue"/>
 ----
-|===
 
-Traditionally, endpoints in Mule ESB have been specified as a xref:mule-endpoint-uris.adoc[URI] such as the examples above. This form is still supported, and indeed may prove to be more practical depending on your application. However, as of Mule 2.0, the recommended way to specify endpoints is via transport-specific namespaces, as shown in the following examples.
+Traditionally, endpoints in Mule ESB have been specified as a xref:3.4@mule-endpoint-uris.adoc[URI] such as the examples above. This form is still supported, and indeed may prove to be more practical depending on your application. However, as of Mule 2.0, the recommended way to specify endpoints is via transport-specific namespaces, as shown in the following examples.
 
-[%header,cols="1*a"]
-|===
-^|Transport-specific Endpoints
-|
+*Transport-specific Endpoints*
+
 [source,xml,linenums]
 ----
 <file:inbound-endpoint path="./.mule/in"
@@ -50,61 +50,49 @@ comparator="org.mule.transport.file.comparator.OlderFirstComparator" reverseOrde
 
 <jms:inbound-endpoint queue="test.queue"/>
 ----
-|===
 
 == Dynamic Endpoints
 
-Starting in Mule 3, an outbound endpoint can also be dynamic. This means that the endpoint's URI is the value of an xref:using-expressions.adoc[expression], which is evaluated just before a message is sent to it. This allows the target of a message to be determined by its contents or the value of any message property. Dynamic endpoints can use either of the endpoint formats shown above.
+Starting in Mule 3, an outbound endpoint can also be dynamic. This means that the endpoint's URI is the value of an xref:mule-expression-language-mel.adoc[expression], which is evaluated just before a message is sent to it. This allows the target of a message to be determined by its contents or the value of any message property. Dynamic endpoints can use either of the endpoint formats shown above.
 
-[%header,cols="1*a"]
-|===
-^|Dynamic Endpoints
-|
+*Dynamic Endpoints*
+
 [source,xml,linenums]
 ----
-<outbound-endpoint address="smtp://user:secret@#[header:OUTBOUND:host]"/>
+<outbound-endpoint address="smtp://user:secret@#[message.outboundProperties['host']]"/>
 
-<http:outbound-endpoint host="localhost" port="#[header:INBOUND:portNumber]" path="orderService"/>
+<http:outbound-endpoint host="localhost" port="#[message.inboundProperties['portNumber']]" path="orderService"/>
 
-<jms:outbound-endpoint host="localhost" queue="#[mule:registry.defaultJmsQueue]"/>
+<jms:outbound-endpoint host="localhost" queue="#[app.registry['defaultJmsQueue']]"/>
 ----
-|===
 
 The only part of an endpoint URI that cannot be dynamic is the scheme. Don't do this:
 
-[%header,cols="1*a"]
-|===
-^|Illegal Dynamic Endpoint
-|
-[source,xml,linenums]
+*Illegal Dynamic Endpoint*
+
+[source,xml]
 ----
-<outbound-endpoint address="#[header:INBOUND:endpointType]//localhost:8080/service"/>
+<outbound-endpoint address="#[message.inboundProperties['endpointType']]//localhost:8080/service"/>
 ----
-|===
 
 === Connector
 
 In many cases, the connector associated with an endpoint can simply be assumed based on the transport and created implicitly. However, if more than one connector of the same transport exists, or if non-default settings are used for the connector, you must refer to the connector from the endpoint using the `connector-ref` attribute.
 
-[%header,cols="1*a"]
-|===
-^|Specifying a connector
-|
+*Specifying a connector*
+
 [source,xml,linenums]
 ----
 <inbound-endpoint address="tcp://localhost:65432" connector-ref="tcpConnector1"/>
 <tcp:inbound-endpoint host="localhost" port="65433" connector-ref="tcpConnector2"/>
 ----
-|===
 
 === Properties
 
-Properties on endpoints can be used to customize behavior. Any properties set on the endpoint can be used to override default properties on the associated transport's connector. For example, an SMTP outbound endpoint might set the `fromAddress` property to `workflow1` to override a default connector value of `sysadmin`. Any standard properties for an endpoint will be available as attributes in the XML schema if transport-specific endpoints are used. It is also possible to specify a non-standard property. For example:
+Properties on endpoints can be used to customize behavior. Any properties set on the endpoint can be used to override default properties on the associated transport's connector. For example, an SMTP outbound endpoint might set the `fromAddress` property to `workflow1` to override a default connector value of `sysadmin`. Any standard properties for an endpoint are available as attributes in the XML schema if transport-specific endpoints are used. It is also possible to specify a non-standard property. For example:
 
-[%header,cols="1*a"]
-|===
-^|Setting properties
-|
+*Setting properties*
+
 [source,xml,linenums]
 ----
 <!-- Standard properties -->
@@ -116,67 +104,52 @@ Properties on endpoints can be used to customize behavior. Any properties set on
     <property key="precision" value="2.5"/>
 </quartz:endpoint>
 ----
-|===
 
 === Exchange Pattern
 
 By default, endpoints are one-way; that is, they accept (or send) messages, but do not return (or receive) responses to those messages. To set an endpoint to wait for a response, you set `exchange-pattern="request-response"`. This setting is not required by HTTP/S, SSL, TCP, and Servlet endpoints, which are request-response by default.
 
-For more information on configuring messaging styles on an endpoint, see xref:service-messaging-styles.adoc[Service Messaging Styles].
-
 === Transaction
 
-A transaction can begin or commit when an event is received or sent via an endpoint. The endpoint must be synchronous, and transaction support depends largely on the particular transport being used. For more information see xref:transaction-management.adoc[Transaction Management].
+A transaction can begin or commit when an event is received or sent via an endpoint. The endpoint must be synchronous, and transaction support depends largely on the particular transport being used. For more information see xref:3.4@transaction-management.adoc[Transaction Management].
 
-[%header,cols="1*a"]
-|===
-^|Transaction example
-|
+*Transaction example*
+
 [source,xml,linenums]
 ----
 <jms:inbound-endpoint queue="in">
     <jms:transaction action="BEGIN_OR_JOIN"/>
 </jms:inbound-endpoint>
 ----
-|===
 
 === Encoding
 
 This is the encoding an endpoint used to convert message content. For inbound endpoints, it is used to convert the bytes received to characters. For outbound endpoints, it is used to convert characters about to be sent to bytes. If no encoding is set on the endpoint, the default encoding for the Mule configuration is used. This is turn defaults to UTF-8.
 
+*Encoding example*
 
-[%header,cols="1*a"]
-|===
-^|Encoding example
-|
-[source,xml,linenums]
+[source,xml]
 ----
 <inbound-endpoint address="tcp://localhost:65432" encoding="iso-8859-1"/>
 ----
-|===
 
 === MimeType
 
-This is the mime type associated with an endpoint's messages. When set on an inbound endpoint, it indicates the type of message expected for incoming messages. Receiving a message with a different mime type will result in an exception. When set on an outbound endpoint, the result is to set that mime type on all outgoing messages.
+This is the mime type associated with an endpoint's messages. When set on an inbound endpoint, it indicates the type of message expected for incoming messages. Receiving a message with a different mime type results in an exception. When set on an outbound endpoint, the result is to set that mime type on all outgoing messages.
 
-[%header,cols="1*a"]
-|===
-^|MimeType example
-|
-[source,xml,linenums]
+*MimeType example*
+
+[source,xml]
 ----
 <inbound-endpoint address="tcp://localhost:65432" mimeType="text/xml"/>
 ----
-|===
 
 === Redelivery Policy
 
 A redelivery policy can be defined on an inbound endpoint. It is similar to the maximum redelivery counts that can be set on JMS brokers, and solves a similar problem: if an exception causes the read of a message to be rolled back over and over, how to avoid an infinite loop? Here's an example:
 
-[%header,cols="1*a"]
-|===
-^|MimeType example
-|
+*Redelivery Policy example*
+
 [source,xml,linenums]
 ----
 <flow name ="syncFlow" processing-strategy="synchronous">
@@ -187,10 +160,10 @@ A redelivery policy can be defined on an inbound endpoint. It is similar to the 
             </dead-letter-queue>
         </idempotent-redelivery-policy>
     </file:inbound-endpoint>
+    ...
 ----
-|===
 
-If something later in the flow throws an exception, the file won't be consumed, and will be reprocessed. The idempotent-redelivery-policy ensures that it won't be reprocessed more then 3 times; after that, it will be send to `vm:error-queue`, where it can be handled as an error case.
+If something later in the flow throws an exception, the file isn't consumed, and is reprocessed. The `idempotent-redelivery-policy` ensures that it isn't reprocessed more then 3 times; after that, it's sent to `vm:error-queue`, where it's handled as an error case.
 
 == Message Processors
 
@@ -205,11 +178,11 @@ In the case of endpoints, the following message processors are allowed:
 * Splitters
 * Custom Message Processors
 
-You can put any number of these message processors as child elements on an endpoint (inbound or outbound), and they will get applied in the order in which they are listed to any message passing through that endpoint.
+You can put any number of these message processors as child elements on an endpoint (inbound or outbound), and they are applied in the order in which they are listed to any message passing through that endpoint.
 
-In the case of a synchronous outbound endpoint, there is a response message involved, and so any number of message processors can also be put inside a response wrapper and will get applied to the response message in the order in which they are listed.
+In the case of a synchronous outbound endpoint, there is a response message involved, and so any number of message processors can also be put inside a response wrapper and are applied to the response message in the order in which they are listed.
 
-Note that any of these elements could be declared locally (i.e., in-line in the endpoint) or globally (and referenced via a ref="foo" attribute).
+Note that any of these elements could be declared locally, such as, in-line in the endpoint. or globally and referenced via a ref="foo" attribute.
 
 === Transformers
 
@@ -217,9 +190,18 @@ xref:using-transformers.adoc[Transformers] can be configured on an endpoint enca
 
 Transformers are configured on endpoints using child message processors elements. When configured on an inbound endpoint they are used to transform the message received by the endpoint, and when configured on an outbound endpoint they are used to transform the message before it is sent.
 
-Response transformers can be configured inside the nested `<response>` element. When configured on an inbound endpoint these transformer will be applied to the message just before it is sent back over the transport, and when configured on an outbound endpoint they are applied on the message received from the invocation of the outbound endpoint if there is one.
+Response transformers can be configured inside the nested `<response>` element. When configured on an inbound endpoint these transformer apply to the message just before it is sent back over the transport, and when configured on an outbound endpoint they are applied on the message received from the invocation of the outbound endpoint if there is one.
 
-As will all message processors configured on endpoints, the order in which they are configured is the order in which they are executed.
+As with all message processors configured on endpoints, the order in which they are configured is the order in which they are executed.
+
+In the above example you can see two request transformers configured, one of which executes before the expression filter and the other one after. The custom transformer configured in the `<response>` element is applied to the response message.
+
+*Global Endpoints* +
+ Although globally defined transformers can be referenced from endpoints using the \{\{<transformer ref=""/> element as seen in the above example endpoints also support a shortcut notification.
+
+The `transformer-refs` and `responseTransformer-refs` attributes can be used to quickly and easily reference global endpoints.
+
+Any transformers referenced in this way are added to the end of the list of message processors configured a child elements and therefore are executed last. If you need them to be executed before something else like a filter or need to use global endpoints in conjunction with locally defined endpoints in a specific order, then use `<transformer>` elements instead.
 
 [source,xml,linenums]
 ----
@@ -233,185 +215,22 @@ As will all message processors configured on endpoints, the order in which they 
 </inbound-endpoint>
 ----
 
-In the above example you can see two request transformers configured, one of which will be executed before the expression filter and the other one after. The custom transformer configured in the `<response>` element will be applied to the response message.
-
-*Global Endpoints*
-Although globally defined transformers can be referenced from endpoints using the \{\{<transformer ref=""/> element as seen in the above example endpoints also support a shortcut notification.
-
-The `transformer-refs` and `responseTransformer-refs` attributes can be used to quickly and easily reference global endpoints.
-
-[source,xml,linenums]
-----
-<inbound-endpoint address="file://./test-data/in" transformer-refs="globalTransformer1 globalTransformer2" responseTransformer-refs="globalTransformer2"/>
-----
-
-Any transformers referenced in this way will be added to the end of the list of message processors configured a child elements and will therefore be executed last. If you need them to be executed before something else like a filter or need to use global endpoints in conjunction with locally defined endpoints in a specific order then you'll need to use `<transformer>` elements instead.
-
 === Filter
 
-An endpoint can contain a filter to selectively ignore certain messages. The filter can be transport-specific such as a JMS selector or file filter or can be a general-purpose filter such as JXPath. Filtering is not supported by all transports, and setting a filter on an endpoint using some transports will result in an UnsupportedOperationException. For more information, see xref:using-filters.adoc[Using Filters].
+An endpoint can contain a filter to selectively ignore certain messages. The filter can be transport-specific such as a JMS selector or file filter or can be a general-purpose filter such as JXPath. Filtering is not supported by all transports, and setting a filter on an endpoint using some transports results in an UnsupportedOperationException. For more information, see xref:using-filters.adoc[Using Filters].
 
-[%header,cols="1*a"]
-|===
-^|Filter example
-|
+*Filter example*
+
 [source,xml,linenums]
 ----
-<jms:endpoint queue="in.queue">
-    <jms:selector expression="JMSPriority > 5"/>
-</jms:endpoint>
-
-<vm:endpoint name="fruitBowlEndpoint" path="fruitBowlPublishQ">
-    <message-property-filter pattern="foo=bar"/>
-</vm:endpoint>
+<inbound-endpoint address="file://./test-data/in"
+transformer-refs="globalTransformer1 globalTransformer2"
+responseTransformer-refs="globalTransformer2"/>
 ----
-|===
 
 === Other Message Processors
 
-Although filters and transformer are the message processor most used within endpoints, you can just as easily configure other message processors. See more information about the available messages processor on in the xref:message-sources-and-message-processors.adoc[Message Sources and Message Processors] page.
-
-== Endpoint Usage
-
-Endpoints can be used in the following places:
-
-* Inbound Routers
-* Outbound Routers
-* Services
-* Catch-all Strategies
-* Exception Strategies
-
-=== Inbound Routers
-
-See xref:inbound-routers.adoc[Inbound Routers].
-
-[%header,cols="1*a"]
-|===
-^|Inbound router
-|
-[source,xml,linenums]
-----
-<service name="Receiver">
-    <inbound>
-        <vm:inbound-endpoint path="inbound.channel"/>
-        <wire-tap-router>
-            <vm:outbound-endpoint path="tapped.channel"/>
-        </wire-tap-router>
-    </inbound>
-    <component class="com.acme.SomeService"/>
-</service>
-----
-|===
-
-=== Outbound Routers
-
-See xref:outbound-routers.adoc[Outbound Routers].
-
-[%header,cols="1*a"]
-|===
-^|Outbound routers
-|
-[source,xml,linenums]
-----
-<service name="MessageChunker">
-    <inbound>
-        <jms:inbound-endpoint queue="big.messages"/>
-    </inbound>
-    <outbound>
-        <message-chunking-router messageSize="10">
-            <jms:outbound-endpoint queue="small.chunks"/>
-        </message-chunking-router>
-    </outbound>
-</service>
-
-<service name="LenderGatewayService">
-    <inbound>
-        <inbound-endpoint ref="LenderGateway" />
-    </inbound>
-    <outbound>
-        <chaining-router>
-            <outbound-endpoint ref="LenderService" />
-            <outbound-endpoint ref="BankingGateway" transformer-refs="SetLendersAsRecipients ObjectToJMSMessage" />
-        </chaining-router>
-    </outbound>
-</service>
-----
-|===
-
-=== Services
-
-As a shortcut, endpoints can be configured directly on the service without a router in some cases.
-
-[%header,cols="1*a"]
-|===
-^|Implicit router
-|
-[source,xml,linenums]
-----
-<service name="Echo">
-    <inbound>
-        <!-- Inbound router is implicit -->
-        <stdio:inbound-endpoint system="IN"/>
-    </inbound>
-    <echo-component/>
-    <outbound>
-        <!-- Outbound router is explicit -->
-        <pass-through-router>
-            <stdio:outbound-endpoint system="OUT"/>
-        </pass-through-router>
-    </outbound>
-</service>
-----
-|===
-
-=== Catch-all Strategies
-
-A single "catch-all" endpoint can be configured for certain types of routers. See xref:catch-all-strategies.adoc[Catch-all Strategies].
-
-[%header,cols="1*a"]
-|===
-^|Catch-all strategy
-|
-[source,xml,linenums]
-----
-<service name="dataService">
-    <inbound>
-        <inbound-endpoint ref="dataIn">
-            <payload-type-filter expectedType="java.lang.String"/>
-        </inbound-endpoint>
-        <forwarding-catch-all-strategy>
-            <jms:outbound-endpoint queue="error.queue"/>
-        </forwarding-catch-all-strategy>
-    </inbound>
-    ...cut...
-</service>
-----
-|===
-
-=== Exception Strategies
-
-A single error endpoint can be configured on an exception strategy. See xref:error-handling.adoc[Error Handling].
-
-[%header,cols="1*a"]
-|===
-^|Exception strategy
-|
-[source,xml,linenums]
-----
-<service name="dataService">
-    <inbound>
-        ...cut...
-    </inbound>
-    <component class="com.acme.DataProcessor"/>
-    <outbound>
-        ...cut...
-    </outbound>
-    <default-service-exception-strategy>
-        <jms:outbound-endpoint queue="error.queue"/>
-    </default-service-exception-strategy>
-</service>
-----
-|===
+Although filters and transformer are the message processor most used within endpoints, you can just as easily configure other message processors. See more information about the available messages processor on in the xref:message-sources-and-message-processors.adoc[Message Sources] page.
 
 == Global Endpoints
 
@@ -419,27 +238,22 @@ Global endpoints, while not required, are a recommended best practice for having
 
 To reference a global endpoint, use the usual `<inbound-endpoint>` and `<outbound-endpoint>` elements, and specify the global endpoint name using the `ref` attribute.
 
-[%header,cols="1*a"]
-|===
-^|Global endpoint example
-|
+*Global endpoint example*
+
 [source,xml,linenums]
 ----
 <file:endpoint name="fileReader" reverseOrder="true" comparator="org.mule.transport.file.comparator.OlderFirstComparator"/>
 ...cut...
 
-<model>
-    <service name="Priority1">
+ <flow name="Priority1">
         <file:inbound-endpoint ref="fileReader" path="/var/prio1"/>
         ...cut...
-    </service>
+  </flow>
 
-    <service name="Priority2">
+  <flow name="Priority2">
         <file:inbound-endpoint ref="fileReader" path="/var/prio2"/>
         ...cut...
-    </service>
-</model>
+  </flow>
 ----
-|===
 
 In the above example, the `"fileReader"` endpoint is used as a template for the inbound endpoints. The properties `reverseOrder` and `comparator` only need to be declared once, and the property `path` changes for each inbound endpoint.

@@ -3,173 +3,473 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-[ <<Starting the Example>> ] [ <<No Security>> ] [ UsernameToken ] [ Signatures ] [ Encryption ] [ SAML ]
+*_Enterprise Edition_*
 
-The WS-Security example demonstrates the different possibilities available for incorporating WS-Security into your Mule application.
+*_Version 3.3.1 only_*
 
-== Starting the Example
+This example demonstrates how to apply security to a SOAP Web service.
 
-The WS-Security example is in the directory $MULE_HOME/examples/security, where $MULE_HOME is the path to your installation of Mule Enterprise.
+When a Web service exposes private-network data to the outside world, that data travels through 4 - 7 separate protocol layers (see: http://en.wikipedia.org/wiki/TCP/IP_model[TCP/IP] or http://en.wikipedia.org/wiki/OSI_model[OSI]) thus introducing potential security vulnerabilities. Implementing security at a higher layer on the protocol stack — the application layer, for instance — generally provides better protection than an implementation at the lower transport layer, which provides only HTTPS security.
 
-First, copy the example's zip file in $MULE_HOME/examples/security into the $MULE_HOME/apps directory and then start mule.
+To implement application-layer security, enable http://msdn.microsoft.com/en-us/library/ms977327.aspx[WS-security] (a http://cxf.apache.org/[CXF] configuration) on your Web service. WS-security defines a new SOAP header which is capable of carrying various security tokens that systems use to identify a Web service caller's identity and privileges.
 
-From $MULE_HOME/examples/security, run `./security` (Unix/Linux/Mac) or `security.bat` (Windows).
+The *WS-Security Example* application applies different security measures to five of the six variations of a SOAP service it exposes (the sixth is unsecure). Each variation accepts end user salutation requests via a Web browser, then responds with a personalized greeting. For instance, when a user submit his name, “John”, to one of the six variation, he receives a response that reads, `Hello John`. The table below outlines the six variations in the WS-Security example application, and the security Mule applies to each.
 
-*Tip:* Edit the example's "log4j.properties" file so that the logging level for `org.apache.cxf` classes is set to INFO. This enables logging the SOAP XML of the request/response messages in Mule's log file. The log4j.properties file can be found in $MULE_HOME/apps/mule-example-security-<version>/classes. After editing, trigger redeployment of the application by touching the example config (found in $MULE_HOME/apps/mule-example-security-<version>).
+[%header,cols="34,33,33"]
+|===
+|Web Service Name |Type of Security |Description
+|UnsecureServiceFlow |none |Processes all requests.
+|UsernameTokenServiceFlow |UsernameToken |Processes requests with a valid username and password.
+|UsernameTokenSignedServiceFlow a|UsernameToken  + signature |Processes requests with a valid username and password, and a valid digital signature.
+|UsernameTokenEncryptionServiceFlow a|UsernameToken  + encryption |Processes encrypted requests with a valid username and password.
+|SamlTokenServiceFlow |SAML2 |Processes requests in conjunction with an identity provider to verify message security.
+|SignedSamlTokenServiceFlow |SAML2
++ signature |Processes requests with valid digital signature in conjunction with an identity provider to verify message security.
+|===
 
-After starting the `security` script, the following menu appears:
+This application also includes several variations of a *client-side Web service* to ensure a functional example. These *service-clients* enable end users to submit salutation requests to the server-side Web service. Refer to the <<Client-Side Flows>> section below for more details.
 
+This document will help you understand some of the ways you can apply security to a SOAP Web service in Mule ESB applications. To understand more about Mule ESB’s ability to integrate services and systems, access the xref:mule-examples.adoc[Mule examples] and see other applications in action.
+
+== Assumptions
+
+This document describes the details of the example within the context of *Mule Studio*, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot in an expandable section.
+
+This document assumes that you are familiar with Mule ESB and the xref:mule-studio-essentials.adoc[Mule Studio interface]. To increase your familiarity with Mule Studio, consider completing one or more xref:mule-studio.adoc[Mule Studio Tutorials].
+
+== Set Up
+
+As with this WS-Security example, you can create template applications straight out of the box in *Mule Studio* or *Mule Standalone* (Mule ESB without Studio). You can tweak the configurations of these use case-based templates to create your own customized applications in Mule.
+
+Follow the procedure below to create, then run the WS-Security example application in Mule ESB.
+
+. Complete the procedure in xref:mule-examples.adoc[Examples and Exercises] to create, then run the Security template in Mule Studio, or the Security example in Mule Standalone (Mule ESB without Studio).
+. Open your Web browser.
+. In the address bar, type
+. Press *enter* to elicit a response from the WS-Security application (see image below).
++
+image::first-response.png[first_response]
+
+. Adjust the URL to change the *name* from `John` to your name, then press *enter* to elicit a new response from the application.
+. Adjust the *clientType* parameter from `unsecure` to any of the following five types (note that each type is case-sensitive): +
+* `usernameToken`
+* `usernameTokenSigned`
+* `usernameTokenEncrypted`
+* `samlToken`
+* `samlTokenSigned`
+. Press *enter* to elicit a new response from the application (see example, below).
++
+image::second-response.png[second_response]
+
+Regardless of the *clientType* you use to submit a request, Mule returns the same response. The type of security Mule uses to process the message is not reflected in the content of message, so even though Mule processes each request in a different way, the content of the response remains unchanged.
+
+=== Alternative Set Up
+
+Rather than interacting with the application via a Web browser, you can submit end user requests via the *SecureClient* java class within Mule Studio.
+
+. Complete the procedure in xref:mule-examples.adoc[Examples and Exercises] to create, then run the Security template in Mule Studio, or the Security example in Mule Standalone (Mule ESB without Studio).
+. In the *Package Explorer*, navigate to `src/main/java`, then expand `com.mulesoft.mule.example.security` to reveal the `SecureClient` file.
++
+image::secure-client.png[secure_client]
+
+. Right click the `SecureClient` file, then select *Run As* > *Java Application*.
+. In the *Console* (bottom-right quadrant of Mule Studio), Mule displays a menu which lists the different types of requests you can submit to the WS-Security application.
++
+image::console1.png[]
+
+. Click below the last line in the list, `q. Quit`, to activate your cursor in the console pane.
+. Below the last line, type `2`, then press *enter* to submit a request with Username Token security to the WS-Security application.
+. Mule processes the request and returns a response in the console pane which reads, `Hello Mule`.
++
+image::response.png[]
+
+. Mule displays the same menu of request submission options in the console again. Type another number, 1 – 9, below the last list item, then press *enter*.
+. Mule processes the request and returns a response in the console pane which reads, `Hello Mule`.
+. When you wish to terminate the Java application, type `q`, then press *enter*.
+
+== How it Works
+
+The WS-Security application consists of several xref:mule-application-architecture.adoc[flows and subflows]. Each of these flows exposes a variation of the same Web service which processes end user requests for a salutation. The only difference between the flows is the type of Web service security each employs.
+
+The sections below offer flow-by-flow descriptions of the WS-Security application’s actions as it processes end user requests. The Web service variation of each flow in this document is more secure than the one preceding it.
+
+[TIP]
+====
+*For Mule Studio Users*
+
+In Mule Studio, double-click a xref:studio-building-blocks.adoc[building block] to open its *Properties Panel*, then examine its configuration details. Alternatively, click the *Configuration XML* tab to examine the application's XML configuration file.
+
+image::config-tab-1.png[config_tab-1]
+====
+
+=== UnsecureService Flow
+
+image::unsecure-flow.png[unsecure_flow]
+
+// View the XML
+
+When an end user submits an `unsecure` salutation request, the Web service client sends a simple SOAP request message (see below) to the *UnsecureService* flow in the WS-Security application.
+
+[source,xml,linenums]
 ----
- 1. No security2. UsernameToken3. UsernameToken with wrong password (error)4. UsernameToken Signed5. UsernameToken missing signature (error)6. UsernameToken Encrypted7. SAMLToken8. SAMLToken wrong subject (error)q. Quit
-----
-
-Each of these options will invoke an instance of the same simple web service, each of which is protected by a different form of security. Each instance uses the configuration file in the `$MULE_HOME/examples/security/src/main/app` directory. Additional resources that are pulled in by this example can be found in `$MULE_HOME/examples/security/src/main/resources`.
-
-The rest of this page describes each of these scenarios.
-
-== No Security
-
-The basic web service we will use without any security whatsoever looks like this in our Mule configuration:
-
-[source,xml]
-----
-<flow name="UnsecureServiceFlow">    <inbound-endpoint address="http://localhost:63081/services/unsecure" exchange-pattern="request-response"/>    <cxf:jaxws-service serviceClass="com.mulesoft.mule.example.security.Greeter">        <cxf:features>            <spring:bean class="org.mule.module.cxf.feature.PrettyLoggingFeature" />            </cxf:features>        </cxf:jaxws-service>        <component class="com.mulesoft.mule.example.security.GreeterService" /></flow>
-----
-
-
-Select option #1 from the menu to call this service. We can see the simple SOAP request message sent:
-
-[source,xml]
-----
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greet xmlns:ns2="http://security.example.mule.org/">      <name>Mule</name>    </ns2:greet>  </soap:Body></soap:Envelope>
-----
-
-and the service's equally simple response message:
-
-[source,xml]
-----
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greetResponse xmlns:ns2="http://security.example.mule.org/">      <name>Hello Mule</name>    </ns2:greetResponse>  </soap:Body></soap:Envelope>
-----
-
-
-== UsernameToken
-
-Now let's add some simple security to the service. We'll start with a basic Username authentication. For this, we'll add a WSS4J interceptor to our inbound CXF endpoint:
-
-[source,xml]
-----
-<cxf:inInterceptors>    <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">        <spring:constructor-arg>            <spring:map>                  <spring:entry key="action" value="UsernameToken Timestamp" />                  <spring:entry key="passwordCallbackClass"value="org.mule.example.security.PasswordCallback" />            </spring:map>        </spring:constructor-arg>    </spring:bean></cxf:inInterceptors>
-----
-
-
-The most important thing we specify on this interceptor is the *action*, which is the list of features/aspects of WS-Security that we want to validate upon receiving an incoming message. In this case, we specify `UsernameToken`, which will check the username and password, and `Timestamp`, which will verify that the message is not too stale. We also specify a password callback so that our password is not stored in the config file itself.
-
-[source,java]
-----
-public class PasswordCallback implements CallbackHandler{    public void handle(Callback[] callbacks)      {        ...cut...        if (pc.getIdentifier().equals("joe"))         {            pc.setPassword("secret");        }...cut...
-----
-
-
-Selecting option #2 from the menu will create an appropriate WS-Security header for our SOAP request:
-
-[source,xml]
-----
-<soap:Header>  <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" soap:mustUnderstand="1">    <wsu:Timestamp xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="Timestamp-2">      <wsu:Created>2009-11-11T00:05:05.044Z</wsu:Created>      <wsu:Expires>2009-11-11T00:10:05.044Z</wsu:Expires>    </wsu:Timestamp>    <wsse:UsernameToken xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="UsernameToken-1">      <wsse:Username>joe</wsse:Username>      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">53d055aB/snZJelfToizUd5s1p8=</wsse:Password>      <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">uHT6rXehXO83lMQGKXg8uw==</wsse:Nonce>      <wsu:Created>2009-11-11T00:05:05.042Z</wsu:Created>    </wsse:UsernameToken>  </wsse:Security></soap:Header>
-----
-
-
-We can see the Username and Password as well as the Timestamp in the header. Note that the password is in digest form rather than plain text, which is the default behavior.
-
-Now select option #3 to see what happens if the wrong password is provided:
-
-----
-org.apache.ws.security.WSSecurityException: The security token could not be authenticated or authorized  at org.apache.ws.security.processor.UsernameTokenProcessor.handleUsernameToken(UsernameTokenProcessor.java:143)  at org.apache.ws.security.processor.UsernameTokenProcessor.handleToken(UsernameTokenProcessor.java:56)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:326)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:243)  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:159)
-----
-
-
-== Signatures
-
-A more advanced way of authenticating the user is via a digital signature. To validate based on a signature, we'll need to add a new Signature action to our inbound endpoint:
-
-[source,xml]
-----
-<spring:entry key="action" value="UsernameToken Signature Timestamp" /><spring:entry key="signaturePropFile" value="wssecurity.properties" />
-----
-
-Signatures are validated based on a keystore, so we'll also need to specify some information about the keystore we're using. The following properties are in the `wssecurity.properties` file:
-
-[source,java]
-----
-org.apache.ws.security.crypto.merlin.file=keystore.jksorg.apache.ws.security.crypto.merlin.keystore.password=keyStorePassword
-----
-
-We can use the Java keytool command to verify that the certificate for user "joe" exists in our keystore:
-
-----
-$ keytool -list -v -keystore ./src/main/resources/keystore.jks -alias joeEnter keystore password:  keyStorePassword Alias name: joeCreation date: Sep 24, 2009Entry type: keyEntryCertificate chain length: 1Certificate[1]:Owner: CN=joeIssuer: CN=joeSerial number: 4abb93daValid from: Thu Sep 24 11:44:26 CLT 2009 until: Wed Dec 23 12:44:26 CLST 2009Certificate fingerprints:   MD5:  24:08:D3:3B:D1:FE:E0:18:6B:12:DC:79:98:EE:62:6D   SHA1: 25:69:19:52:C9:FE:26:64:F7:C8:F3:BF:E4:9A:5B:71:B4:9E:9F:C3
-----
-
-
-Note that this certificate is self-signed. In the real world, it would be issued by a trusted third party such as Verisign.
-
-Selecting option #4 from the menu will invoke the web service using a signed SOAP message:
-
-[source,xml]
-----
-<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  Id="Signature-2">  <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    <ds:CanonicalizationMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />    <ds:SignatureMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1" />    <ds:Reference xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  URI="#id-3">      <ds:Transforms xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:Transform xmlns:ds="http://www.w3.org/2000/09/xmldsig#"          Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />      </ds:Transforms>      <ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"        Algorithm="http://www.w3.org/2000/09/xmldsig#sha1" />      <ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">AtIQc6I4I62MvLRJd+S8jdiS5SE=</ds:DigestValue>    </ds:Reference>  </ds:SignedInfo>  <ds:SignatureValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    VFT2zQ+wpoY/C1sTyDMYkD0Z/Vij4GM8mGaoa26aUw5WuRPUxHure7dwsGMF4ivj96cSMo/AQpFR    C/rVdwVEGbobmkrpp/IwkGIwXu2lNf5yAOalIVdLQCeSUdT8KqAHYzQbyYxOKWaroFzkws/+E4Xm    mNAoiJixK71EPmyqNe0=    </ds:SignatureValue>  <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="KeyId-FCBB1376C4DCB7E74C12579545658052">    <wsse:SecurityTokenReference      xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"      xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"      wsu:Id="STRId-FCBB1376C4DCB7E74C12579545658073">      <ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:X509IssuerSerial xmlns:ds="http://www.w3.org/2000/09/xmldsig#">          <ds:X509IssuerName xmlns:ds="http://www.w3.org/2000/09/xmldsig#">CN=joe</ds:X509IssuerName>          <ds:X509SerialNumber xmlns:ds="http://www.w3.org/2000/09/xmldsig#">1253807066</ds:X509SerialNumber>        </ds:X509IssuerSerial>      </ds:X509Data>    </wsse:SecurityTokenReference>  </ds:KeyInfo></ds:Signature>
-----
-
-
-And option #5 shows what happens if we try to send a message that isn't signed by joe:
-
-----
-org.apache.ws.security.WSSecurityException: An error was discovered processing the  header  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:238)
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <ns2:greet xmlns:ns2="http://security.example.mule.mulesoft.com/">
+            <name>John</name>
+        </ns2:greet>
+    </soap:Body>
+</soap:Envelope>
 ----
 
+The request-response **xref:http-endpoint-reference.adoc[HTTP Endpoint] **in this flow receives the end user request. Because it has a two-way message exchange pattern, this HTTP endpoint is responsible for both receiving and returning messages.
 
-== Encryption
+[NOTE]
+====
+*Two-Way vs. One-Way*
 
-Note that so far, all security information has been contained in the header of the SOAP message, but the body of the message is completely transparent. We can encrypt the body of the message by adding an Encrypt action to our service:
+Notice that the HTTP endpoint has a *two-way message exchange pattern* (as indicated by the small double-arrow icon — below, left). Because it must respond to the requester, the HTTP endpoint in this example has a request-response message exchange pattern.
 
-[source,xml]
+If an HTTP endpoint has only to input information into an application, it requires a *one-way message exchange pattern* (below, right).
+
+image::http-endpoints.png[http_endpoints]
+====
+
+A JAX-WS service, the **xref:soap-component-reference.adoc[SOAP Component]** in this flow evaluates the message according to its security configurations. In this case, the Web service is unsecure (see image below) so the SOAP component processes all requests it receives. +
+
+image::no-security.png[no_security]
+
+[source,xml,linenums]
 ----
-<spring:entry key="action" value="UsernameToken Timestamp Encrypt" /><spring:entry key="decryptionPropFile" value="wssecurity.properties" />Selecting option #6 will send a SOAP message with the body encrypted:<soap:Body>  <xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"    Id="EncDataId-9" Type="http://www.w3.org/2001/04/xmlenc#Content">    <xenc:EncryptionMethod xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"      Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc" />    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">      <wsse:SecurityTokenReference        xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">        <wsse:Reference          xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"          URI="#EncKeyId-FCBB1376C4DCB7E74C12579575025715" />      </wsse:SecurityTokenReference>    </ds:KeyInfo>    <xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">      <xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">4bJWs2bQKdzof3FM2U5O3qTa4EhuSdItuE6zjSfi8BNqO+y/7V3cU2T4j6ewMo/TAUyyvDNLqluL        +kaAJen3hE/KWkFKfo5CAVeE3ifbBK10lem8cGo5qwAPXZjlCYY52xv1QpW3hlv9E63J0hcbnQQr        BAcF4LwlGzIybwaeydju3Y34hU+nhVpgmiBahwKHD6R+7EuUrwby7t7pQnh53gtEvqkH0YES5dVx        yOqTtLsBTLu/Xz2IzeRiGQBqFJVHzwueOaS1L7A2mlLebmUiEQ==</xenc:CipherValue>    </xenc:CipherData>  </xenc:EncryptedData></soap:Body>
-----
-
-
-The message will not be decrypted without the user's signature, so the keystore is once again used for encryption.
-
-== SAML
-
-This scenario uses the SAML module. Since SAML is used for single sign-on, authentication of the user is assumed to have already occurred, and the SAML token simply contains one or more subjects, which provide some information understood by other systems. In this case we will configure our service to require a SAML subject of AllowGreetingServices. To our inbound endpoint we add a SAMLVerifyInterceptor with a callback, which will check for the correct SAML subject:
-
-[source,xml]
-----
-<spring:bean class="org.mule.module.saml.cxf.SAMLVerifyInterceptor">     <spring:property name="callback">          <spring:bean class="org.mule.example.security.VerifyAuthorization">               <spring:property name="subject" value="AllowGreetingServices" />          </spring:bean>     </spring:property></spring:bean>
-----
-
-
-[source,java]
-----
-public class VerifyAuthorization implements SAMLVerifyCallback{    private String subject;        public SAMLAuthenticationAdapter verify(SAMLAuthenticationAdapter samlAuthentication) throws SecurityException    {        SAMLSubject samlSubject = samlAuthentication.getSubject();        if (!samlSubject.getNameIdentifier().getName().equals(subject))        {            throw new UnauthorisedException(...cut...
+<cxf:jaxws-service serviceClass="com.mulesoft.mule.example.security.Greeter" doc:name="Unsecure service"/>
 ----
 
+The **xref:java-component-reference.adoc[Java Component]** executes a simple script to prepare a personalized salutation for the end user.
 
-Option #7 adds the expected SAML token to the WS-Security header of the message:
+[TIP]
+====
+*Where is the Java code?*
 
-[source,xml]
+To access the Java code in *Mule Studio*, navigate to the source file in the *Package Explorer*.
+
+
+*Find the Java*:
+
+. In your WS-Security project, navigate to `src/main/java` > `com.mulesoft.mule.example.security`.
+. Double-click the `Greeter.java` file to open it in a new tab on the Studio canvas (see image below). +
+ +
+image::see-java.png[see_java]
+
+To access the Java code in *Mule Standalone*, navigate to the source file in the example folder on your local drive.
+
+. Navigate to the Mule Standalone folder on your local drive.
+. Navigate to `examples` > `security` > `src` > `main` > `java` > `com` > `mulesoft` > `mule` > `example` > `security`.
+. Double click to open the `Greeter.java` file.
+
+====
+
+Finally, the HTTP endpoint returns a simple SOAP response (see below) to the client.
+
+[source,xml,linenums]
 ----
-<Assertion xmlns="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" AssertionID="_40082eadbf045476e26a107e4f37861d" IssueInstant="2009-11-13T02:26:06.569Z" Issuer="self" MajorVersion="1" MinorVersion="1">  <AuthenticationStatement AuthenticationInstant="2009-11-13T02:26:06.569Z" AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password">    <Subject>      <NameIdentifier>AllowGreetingServices</NameIdentifier>      <SubjectConfirmation>        <ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:sender-vouches</ConfirmationMethod>      </SubjectConfirmation>    </Subject>  </AuthenticationStatement></Assertion>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <ns2:greetResponse xmlns:ns2="http://security.example.mule.mulesoft.com/">
+            <name>Hello John</name>
+        </ns2:greetResponse>
+    </soap:Body>
+</soap:Envelope>
 ----
 
+=== UsernameTokenService Flow
 
-Selecting option #8 will send a SAML token without the expected subject:
+image::usernametoken-flow.png[usernameToken_flow]
 
+//  View the XML
+
+When an end user submits a `usernameToken` salutation request, the Web service client sends a SOAP request message (see below) to the *UsernameTokenService* flow in the WS-Security application.
+
+// View the SOAP Request Message
+
+Like the UnsecureService flow, this flow uses an HTTP endpoint to receive the request and a SOAP component to process the message. In this case, however, the SOAP component’s configuration specifies the *action*, which is a list of WS-security features against which Mule validates a message. This component’s UsernameToken specification verifies the following:
+
+* username and password — confirms the client’s username and password are valid
+* timestamp — verifies that the message is not stale
++
+image::usernametoken.png[usernameToken]
+
+// View the XML
+
+[NOTE]
+====
+*Username and password?*
+
+To demonstrate a functional example, the WS-Security application includes several *client-side flows* which provide the *server-side flows* with security information.
+
+Normally, an independent Web service client provides the Web service provider with end user security information, such as *username* and *password*. In this case, however, Mule generates this information within its *service-clients* flows to simulate secure request submissions.
+
+Refer to the <<Client-Side Flows>> section below for more details.
+====
+
+Next, the Java Component executes a simple script to prepare a personalized salutation for the end user. Lastly, the HTTP endpoint returns a simple SOAP response to the client.
+
+=== UsernameTokenSignedService Flow
+
+image::uersnametokensigned.png[uersnameTokenSigned]
+
+//  View the XML
+
+This flow validates the digital signature of a message. A message with a digital signature — in addition to username, password and timestamp — is more secure than a message without.
+
+When an end user submits a `usernameTokenSigned` salutation request, the Web service client sends a SOAP request message (see below) to the *UsernameTokenSignedService* flow in the WS-Security application.
+
+// View the SOAP Request Message
+
+The only difference between the *UsernameTokenService* and *UsernameTokenSignedService* flows is the SOAP component’s configuration. In this flow, the component includes a signature action, *signaturePropFile* (see image below), which Mule uses to validate the digital signature.
+
+image::usernametokensigned.png[usernameTokenSigned]
+
+// View the XML
+
+The *signaturePropFile* property specifies the keystore against which Mule must validate the digital signature on the message. The *keystore*, which is a repository containing security certificates, resides in the *wssecurity.properties* file embedded in the application.
+
+[NOTE]
+====
+*Where is the wssecurity.properties File?*
+
+To access the *wssecurity.properties* file in Studio, navigate to the source file in the *Package Explorer*.
+
+. In your WS-Security project, navigate to `src/main/resources`.
+. Double-click the `wssecurity.properties` file to open it in a new tab on the Studio canvas (see image below).
++
+image::see-java2.png[see_java2]
+====
+
+The *wssecurity.properties* file contains the following properties:
+
+* `org.apache.ws.security.crypto.merlin.file=keystore.jks`
+* `org.apache.ws.security.crypto.merlin.keystore.password=keyStorePassword`
+
+To validate the digital signature, Mule uses a Java keytool command to verify that the certificate for user `joe` exists in the keystore (see image below).
+
+image::keystore.png[]
+
+[NOTE]
+Note that this example certificate is self-signed (i.e. the `Owner` and `Issuer` are the same entity). Normally, a trusted third party `Issuer`, such as VeriSign, issues the certificate.
+
+=== UsernameTokenEncryptedService Flow
+
+image::usernametokenencrypted.png[UsernameTokenEncrypted]
+
+// View the XML
+
+In the preceding flows, the header of the SOAP message contained all the message’s security information, and the body of the message was completely transparent. This flow not only validates all the message using all the security information in the SOAP header, it decrypts the encrypted content in the body of the message. A message with an encrypted body is more secure than one with unencrypted content.
+
+When an end user submits a `usernameTokenEncrypted` salutation request, the Web service client sends a SOAP request message (see below) to the *UsernameTokenEncryptedService* flow in the WS-Security application.
+
+// View the SOAP Request Message
+
+In this flow, the SOAP component must validate the username, password, timestamp and digital signature before decrypting the body of the SOAP message. Mule uses the keystore to perform the decryption.
+
+image::decryption.png[]
+
+// View the XML
+
+The *signaturePropFile* property specifies the keystore which Mule uses to perform two tasks:
+
+. validate the digital signature on the message
+. decrypt the body of the SOAP message
+
+[NOTE]
+====
+*How is the Message Body Encrypted?*
+
+To demonstrate a functional example, the WS-Security application includes several *client-side flows* which provide the *server-side flows* with security information.
+
+The *SOAP Component* in the client-side *usernameTokenEncrypted* subflow encrypts the body of the SOAP message (see image below).
+
+image::double-click.png[double_click]
+
+Refer to the <<Client-Side Flows>> section below for more details.
+====
+
+=== SAMLTokenService Flow
+
+image::samltoken-flow.png[samltoken_flow]
+
+// View the XML
+
+This flow uses the `SAMLTokenUnsigned` timestamp action to validate http://en.wikipedia.org/wiki/SAML_2.0[SAML2] assertions. A Web service uses Security Assertion Markup Language (SAML) to manage http://saml.xml.org/web-sso[single sign-on] (SSO) authentication. Assuming that an external resource has already authenticated a user — confirmed username and password, for example — the SAML token in the SOAP header of a message contains one or more *subjects* to confirm that the original authenticator is trustworthy. SAML offers two different methods for a Web service to gauge the trustworthiness of a message’s sender.
+
+. *Sender Vouches* — The message _sender_ must prove to the Web service that it is trustworthy. For example, a sender includes authenticity subjects in the SOAP header of a message, or provides a digital signature to prove its identity and trustworthiness.
+. *Holder of Key* — The message _receiver_ must confirm the trustworthiness of the sender. To do so, it demands that a message contain a SAML token subject which, in turn, contains a key from a trusted source (for example, an X.509 certificate from VeriSign).
+
+[TIP]
+For more information on *SAML*, refer to the http://saml.xml.org/wiki/saml-wiki-knowledgebase[saml.xml.org knowledge base].
+
+When an end user submits a `samlTokenSigned` salutation request, the Web service client sends a SOAP request message (see below) to the *SignedSAMLTokenService* flow in the WS-security application.
+
+// View the SOAP Request Message
+
+In this flow, the SOAP component uses the *Sender Vouches* method to confirm the trustworthiness of the message sender. The `SAMLTokenUnsigned Timestamp` action ensures that the Web service will only process messages which contains a valid subject.
+
+Rather than perform all the security validation itself, the SOAP component delegates the validation to other elements.
+
+In this example, the SOAP component delegates the chore of validating the SAML Token to the SAML2 Token Validator. (In Studio, a checked *SAML 2* box indicates this delegation.) The SAML2 Token Validator references a *custom SAML2 token validator* (see below, left), configured as a Spring bean, to determine how to validate the SAML token. The `samlCustomValidator` bean uses a Java class, `com.mulesoft.mule.example.security.SAMLCustomValidator`, to confirm the contents of the SAML subject are correct (see Java code below). In this case, Mule validates that the subject's `NameID` is `AllowGreetingService`.
+
+
+image::validator-bean.png[validator_bean]
+
+
+
+[TIP]
+====
+*For Mule Studio Users*
+
+To access the *SAMLCustomValidator* Java class in Studio, navigate to the source file in the *Package Explorer*.
+
+. In your WS-Security project, navigate to `src/main/java` > `com.mulesoft.mule.example.security`.
+. Double-click the `SAMLCustomValidator.java` file to open it in a new tab on the Studio canvas (see image below).
+
+image::custom-validator.png[custom_validator]
+====
+
+[NOTE]
+====
+*How Does the Web Service Client Send a SAML2 Assertion?*
+
+To demonstrate a functional example, the WS-Security application includes several *client-side flows* which provide the *server-side flows* with security information.
+
+The *SOAP Component* in the client-side *samlToken* subflow uses a SAMLCallbackHandler (see Java code below this box) to populate the assertion it sends to the Web Service. (see image below).
+
+image::client-saml-config.png[client_saml_config]
+====
+
+//  View SAMLCallbackHandler Class
+
+Refer to the <<Client-Side Flows>> section below for more details.
+
+=== SignedSAMLTokenService Flow
+
+image::signedsaml-flow.png[signedSAML_flow]
+
+// View the XML
+
+Much the same as <<SAMLTokenService Flow>>, this flow uses `SAMLTokenUnsigned` action to validate SAML2 assertions. However, the action in this flow uses a digital signature to verify the trustworthiness of the original authenticator. To validate the digital signature on the message, the SOAP component uses a keystore specified in the *signaturePropFile*. (Refer to <<UsernameTokenEncryptedService Flow>> section above for more information on verifying digital signatures.)
+
+When an end user submits a `samlTokenSigned` salutation request, the Web service client sends a SOAP request message (see below) to the *SignedSAMLTokenService* flow in the WS-security application.
+
+*View the SOAP Request Message*
+
+[source,xml,linenums]
 ----
- Missing SAML authorization for resource: AllowGreetingServices. Message payload is of type: ChunkedInputStream  at org.mule.module.saml.cxf.SAMLVerifyInterceptor.handleMessage(SAMLVerifyInterceptor.java:99)
+<soap:Header>
+        <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+                       xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+                       soap:mustUnderstand="1">
+            <wsse:BinarySecurityToken
+                    EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary"
+                    ValueType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"
+                    wsu:Id="CertId-E847A979F41D3E8185134621375247815">
+                MIICGDCCAYECBEs5ItowDQYJKoZIhvcNAQEEBQAwUzELMAkGA1UEBhMCVVMxDDAKBgNVBAgTA2pvZTEMMAoGA1UEBxMDam9lMQwwCgYDVQQKEwNqb2UxDDAKBgNVBAsTA2pvZTEMMAoGA1UEAxMDam9lMB4XDTA5MTIyODIxMjc1NFoXDTI5MDIyNjIxMjc1NFowUzELMAkGA1UEBhMCVVMxDDAKBgNVBAgTA2pvZTEMMAoGA1UEBxMDam9lMQwwCgYDVQQKEwNqb2UxDDAKBgNVBAsTA2pvZTEMMAoGA1UEAxMDam9lMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCXTdHZyVwHGUTW3F0pLyP8dFT3b2ItMt1Nu5PKOmD0OmSBEZGmNRcZzYABWKnfJLVeBqr+At5mMYFqA4KX6W/WXnNDFz3xIgT5zjpcx3OIBStS/qbs3Qf7HbgEHAJce9qVHowB7vJP+dTsTJYCC7Zlpo/Uv4yl0oararXDI/S7QQIDAQABMA0GCSqGSIb3DQEBBAUAA4GBABLKNtAhloYg+YksqvMNToo1NwtE/k28314NKIGdxmFn+baCV20zvtRkmHCDL5HO4lGTePze3btNdScUiLmUKIlMRSRIVxLMC6dmkzdlfCIg4+qvsAxQO23LIeOhujP2iqcHyD9GTUgL47hu9UJOu1Fk9ZnCHsK+LsbHogv5UrcI
+            </wsse:BinarySecurityToken>
+            <saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"
+                             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                             ID="_E847A979F41D3E8185134621375247212" IssueInstant="2012-08-29T04:15:52.472Z"
+                             Version="2.0" xsi:type="saml2:AssertionType">
+                <saml2:Issuer>self</saml2:Issuer>
+                <saml2:Subject>
+                    <saml2:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+                                  NameQualifier="www.example.com">AllowGreetingServices
+                    </saml2:NameID>
+                    <saml2:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:sender-vouches"/>
+                </saml2:Subject>
+                <saml2:Conditions NotBefore="2012-08-29T04:15:52.472Z" NotOnOrAfter="2012-08-29T04:20:52.472Z"/>
+                <saml2:AuthnStatement>
+                    <saml2:AuthnContext>
+                        <saml2:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password
+                        </saml2:AuthnContextClassRef>
+                    </saml2:AuthnContext>
+                </saml2:AuthnStatement>
+            </saml2:Assertion>
+            <wsse:SecurityTokenReference
+                    xmlns:wsse11="http://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd"
+                    wsse11:TokenType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0"
+                    wsu:Id="STRSAMLId-E847A979F41D3E8185134621375247816">
+                <wsse:KeyIdentifier ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">
+                    _E847A979F41D3E8185134621375247212
+                </wsse:KeyIdentifier>
+            </wsse:SecurityTokenReference>
+            <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="SIG-18">
+                <ds:SignedInfo>
+                    <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#">
+                        <ec:InclusiveNamespaces xmlns:ec="http://www.w3.org/2001/10/xml-exc-c14n#" PrefixList="soap"/>
+                    </ds:CanonicalizationMethod>
+                    <ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+                    <ds:Reference URI="#id-17">
+                        <ds:Transforms>
+                            <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#">
+                                <ec:InclusiveNamespaces xmlns:ec="http://www.w3.org/2001/10/xml-exc-c14n#"
+                                                        PrefixList=""/>
+                            </ds:Transform>
+                        </ds:Transforms>
+                        <ds:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+                        <ds:DigestValue>l2yyoEpr7OkUX8J6RNTEPVjxAfU=</ds:DigestValue>
+                    </ds:Reference>
+                    <ds:Reference URI="#STRSAMLId-E847A979F41D3E8185134621375247816">
+                        <ds:Transforms>
+                            <ds:Transform
+                                    Algorithm="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#STR-Transform">
+                                <wsse:TransformationParameters>
+                                    <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                                </wsse:TransformationParameters>
+                            </ds:Transform>
+                        </ds:Transforms>
+                        <ds:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+                        <ds:DigestValue>rA4vUTJHRh5zS7XO/qzD6rdjG38=</ds:DigestValue>
+                    </ds:Reference>
+                </ds:SignedInfo>
+                <ds:SignatureValue>EGQFUSCuRgLPY7Mny5acRRadnRnxH+ZnF5fBsADfsA+G/qG4ZxCUVRSyvbJ6D53IDAZ0JnEq2wzt
+                    bGaHWDdI/R20fACt1Q7bUBAIRXFHXrYNjGWEBu6Dw9pmxz9GF1OO0VzvSCWRkpiMWGCfmVFdz4Hn
+                    gq6PUghSBHwD2dfP7fk=
+                </ds:SignatureValue>
+                <ds:KeyInfo Id="KeyId-E847A979F41D3E8185134621375247813">
+                    <wsse:SecurityTokenReference wsu:Id="STRId-E847A979F41D3E8185134621375247814">
+                        <wsse:Reference URI="#CertId-E847A979F41D3E8185134621375247815"
+                                        ValueType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"/>
+                    </wsse:SecurityTokenReference>
+                </ds:KeyInfo>
+            </ds:Signature>
+        </wsse:Security>
+    </soap:Header>
 ----
 
+Where the *SAMLTokenService* flow processed _unsigned_ messages — messages which without a digital signature from the original authenticator in the SOAP header — this flow processes _signed_ messages.
 
-To verify that the received SAML token is authentic, SAML offers two different modes of trust: *Sender Vouches* and *Holder of Key*. In this case, we are using Sender Vouches, which means that the sender of the message must be trusted (e.g., via a digital signature). In Holder of Key mode, the sender of the message does not matter, but the SAML token subject must contain a key from a trusted source (e.g., an X.509 certificate from Verisign).
+image::signature-component.png[signature_component]
 
-For more information on SAML, refer to:http://saml.xml.org/wiki/saml-wiki-knowledgebase
+// View the XML
+
+As with the <<SAMLTokenService Flow>>, the SOAP component delegates SAML Token validation to the SAML2 Token Validator. The token validator, in turn, references a custom SAML2 token validator. The `samlCustomValidator` uses a Java class to confirm the contents of the SAML subject are correct. Additionally, this SOAP component validates the digital signature of the message’s original authenticator against a keystore in the `wssecurity.properties` file.
+
+== Client-Side Flows
+
+This example application includes client side configurations which enable the application to function. The *service-clients* flow in the WS-Security application consists of a flow and several subflows which facilitate client-side submissions to the server side.
+
+image::client-server-diagram.png[client-server_diagram]
+
+Double-click the `service-clients.mflow` file in the package explorer to open the *service-clients* configuration in a separate tab in Mule Studio (see image below).
+
+image::service-clients-flow.png[service_clients_flow]
+
+The client-side subflows contain different kinds of client security information which enables Mule to successfully process requests on the server side. For example, the client-side *usernameToken* subflow contains the end user security information against which the server-side *UsernameTokenService* validates the message. It sets the UsernameToken and Timestamp actions, provides the user, and relies on a password callback class (see below) to provide the user password.
+
+// View the Callback Class
+
+Without client-side services, there would be no mechanism for submitting requests to the server-side WS-Security example application. Ergo, these client-side services exist to simulate the various real-life requests that end users might submit to a Web service.
+
+// View the Client-Side XML
+
+== Related Topics
+
+* For more information on the SOAP Component, see xref:soap-component-reference.adoc[SOAP Component Reference].
+* For more information on WS-security, see xref:enabling-ws-security.adoc[Enabling WS-Security].

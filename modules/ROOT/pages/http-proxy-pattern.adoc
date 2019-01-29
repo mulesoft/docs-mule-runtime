@@ -1,0 +1,100 @@
+= HTTP Proxy Pattern
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+== Summary
+
+The HTTP Proxy sits between a caller application and a target web resource, propagating HTTP requests and responses.
+
+image::http-proxy.png[HTTP+Proxy]
+
+You can use it to access remote web resources in a controlled manner. For example, use the HTTP Proxy when you don’t want to have numerous internal applications depending directly on external services. It also supports caching, which allows you to reduce the outbound traffic towards regular (and of course cacheable) web resources.
+
+=== Use Cases
+
+* Exposing a remote web resource as one being hosted behind a corporate firewall
+* Adding or removing HTTP headers
+* Dynamically dispatching to different remote resources
+* Content caching of regularly accessed resource
+
+=== Configuration
+
+Configuring the HTTP Proxy
+
+[source,xml,linenums]
+----
+<pattern:http-proxy name="http-proxy-sample"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+
+<pattern:http-proxy name="http-proxy-sample">
+    <http:inbound-endpoint address="http://localhost:8080/acme-data" />
+    <http:outbound-endpoint address="http://acme.org/feeds/data" />
+</pattern:http-proxy>
+----
+
+Inbound and outbound endpoints can either be specified as full URI address attributes, endpoint reference attributes, or child elements. When using the address attributes, you can define transformers for the request and response phases with attributes too (as shown hereafter); otherwise, transformers have to be configured within the endpoint elements.
+
+[source,xml,linenums]
+----
+<pattern:http-proxy name="transforming-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    transformer-refs="canonical-to-acme add-acme-headers"
+                    responseTransformer-refs="drop-acme-headers acme-to-canonical"
+                    outboundAddress="http://acme.org/feeds/data" />
+----
+
+Like all the other configuration patterns, the HTTP Proxy supports inheritance, which enables re-use of common configuration elements. In the following example, the transformers configuration is shared between an abstract parent and a concrete implementation. More concrete implementations, with different addresses, could then be created.
+
+[source,xml,linenums]
+----
+<pattern:http-proxy name="abstract-parent-http-acme-proxy"
+                   abstract="true"
+                   transformer-refs="canonical-to-acme add-acme-headers"
+                   responseTransformer-refs="drop-acme-headers acme-to-canonical" />
+
+<pattern:http-proxy name="concrete-acme-http-proxy"
+                    parent="abstract-parent-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+----
+
+== Key Features
+
+=== Path Extension
+
+The HTTP Proxy automatically propagates the path extension received on the inbound endpoint to the path of the outbound endpoint.
+
+This means that, within the context of the previous examples, if a request for +http://localhost:8080/acme-data/extra/stuff.txt+ is sent to the proxy, it is forwarded as +http://acme.org/feeds/data/extra/stuff.txt+.
+
+Similarly, query parameters are propagated. So, +http://localhost:8080/acme-data?id=123+ becomes +http://acme.org/feeds/data?id=123+.
+
+=== Dynamic Dispatch
+
+Path extension is a convenient mechanism, but requires the sender to know about the URL structure of the remote service. Thanks to the HTTP Proxy's support of the Mule Expression Language, it can generate outbound addresses based on any expression that can be evaluated on the in-flight message. When interacting with this proxy, the caller application will have to provide a HTTP header named "X-Acme-Feed" that will be used in order to build the actual outbound address. You can create more complex expressions to implement more complex dynamic dispatch rules.
+
+For Example:
+
+[source,xml,linenums]
+----
+<pattern:http-proxy name="dynamic-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/#[header:INBOUND:X-Acme-Feed]" />
+----
+
+=== Caching
+
+Caching is a way to save already-processed data in order to avoid the cost of reprocessing the same request multiple times.To use caching, the HTTP Proxy must reference a caching strategy—for example, the HTTP caching strategy (EE)—that uses the HTTP caching directives to determine how to cache each response.
+
+For example:
+
+[source,xml,linenums]
+----
+<ee:http-caching-strategy name="httpCachingStrategy"/>
+
+<pattern:http-proxy name="http-proxy-caching-sample"
+                    cachingStrategy-ref="httpCachingStrategy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+----

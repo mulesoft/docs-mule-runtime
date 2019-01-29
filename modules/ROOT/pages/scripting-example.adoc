@@ -3,84 +3,180 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-This example demonstrates how to invoke a JSR-223 Script from Mule ESB. It also illustrates how to use custom transformers, routing based on the content type of the payload and how to use JVM environment variables in your Mule configuration. The script implements a http://en.wikipedia.org/wiki/Greedy_algorithm[Greedy Algorithm] for giving change.
+The *Scripting* example demonstrates two ways to use Java-platform scripts in Mule ESB applications.
 
-== Running the Application
+You can include several kinds scripts in your Mule ESB application, all of which Mule backs by a http://www.jcp.org/en/jsr/detail?id=223[JSR-223] compliant-script engine. Specifically, Mule ESB supports http://en.wikipedia.org/wiki/Groovy_(programming_language)[Groovy], http://en.wikipedia.org/wiki/Javascript[Javascript], http://en.wikipedia.org/wiki/Python_(programming_language)[Python], http://en.wikipedia.org/wiki/Ruby_(programming_language)[Ruby] and http://en.wikipedia.org/wiki/Beanshell[Beanshell] scripting languages.
 
-. Make sure you have met the prerequisites and installed Mule according to the nstalling Mule instructions.
-. At the command line, navigate to the `examples/scripting` directory under your Mule home directory.
-. Copy the pre-built example zip to the applications folder ($MULE_HOME/apps).
-. Open one of the following URLs in your browser: +
- `+http://localhost:47493/change-machine?amount=2.42&currency=USD+` +
- `+http://localhost:47493/change-machine?amount=2.42&currency=GBP+`
-. To stop Mule, type 'CTRL-C' in the Mule console window.
+This Scripting example presents an HTTP request-response application which an end user accesses on the client-side via a Web browser. The end user in this example wants to find out how many, and what type, of coins to use to represent a specific amount of money in either American dollars (USD) or British pounds (GBP). In other words, she uses the Scripting example application to answer questions such as, “What coins do I need to make $2.42?” or “What coins do I need to make £2.42?”
 
-== Building the Application
+The end user enters an amount of money into part of the URL on her browser, then presses enter to submit her request to the Mule ESB Scripting example application. When it receives an end user request, the Mule application performs several tasks to prepare the message payload for processing by one of two scripts. The script calculates how many, and what type, of coins the end user needs to represent a specific amount of money, then the application returns the response to the end user's Web browser. To follow through with the example above, the application returns a response for a USD request that reads `9 quarters, 1 dimes, 1 nickels, 2 pennies`.
 
-You can build the example by either running `ant` or `mvn` from the current directory.
+In addition to executing scripts, this application performs the following processing tasks:
+
+. it routes messages based on their payload content
+. it parses and transforms message payload data
+
+This example should enable you to create an application that incorporates Java-platform scripts. To understand more about Mule ESB’s ability to integrate services and systems, access the Mule xref:mule-examples.adoc[examples] and see other applications in action.
+
+== Assumptions
+
+This document assumes that you are familiar with Mule ESB and the xref:mule-studio-essentials.adoc[Mule Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:mule-studio.adoc[Mule Studio Tutorials].
+
+This document describes the details of the example within the context of *Mule Studio*, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot in an expandable section.
+
+== Set Up
+
+As with this Scripting example, you can create template applications straight out of the box in *Mule Studio* or *Mule Standalone* (Mule ESB without Studio). You can tweak the configurations of these use case-based templates to create your own customized applications in Mule.
+
+Follow the procedure below to create, then run the Scripting application in Mule ESB.
+
+. Complete the procedure in xref:mule-examples.adoc[Examples and Exercises] to create, then run the Scripting template in Mule Studio, or the Scripting example in Mule Standalone (Mule ESB without Studio).
+. Open your Web browser, then type one of two URLs in the address bar: +
+* for a calculation in USD: +
+ `http://localhost:47493/change-machine?amount=2042&currency=USD`
+* for a calculation in GBP:
++
+`http://localhost:47493/change-machine?amount=2.42&currency=GBP`
+
+. Press *enter* to submit your request (the default value is 2.42) and elicit a response from the Mule application (see image below, top for USD; below, bottom for GBP).
++
+image::launched-both.png[launched_both]
+
+. Adjust the URL to change `2.42` to another amount, for example, `6.85`, then press *enter* to submit your request and elicit a response (see image below, top for USD; below, bottom for GBP).
++
+image::tweaked-both.png[tweaked_both]
 
 == How it Works
 
-The example takes input from a HTTP request and transforms the request's body to a Map using the HttpRequestToMap transformer. It then extracts the currency from that Map to determine the script to call. Before actually calling the script the amout will be extracted from the Map, converted into a number and normalized into an integer amout of cents.
+The *Scripting* example application uses a xref:mule-application-architecture.adoc[flow] which processes end user HTTP requests.
 
-*Input*
+The sections below elaborate further on the configurations of the Scripting example application and how it uses scripts to provide responses to end user requests.
 
-[source,xml]
-----
-<flow name="http-inbound">
- <http:inbound-endpoint host="0.0.0.0" port="47493" path="change-machine"
-   exchange-pattern="request-response" transformer-refs="HttpRequestToMap">
-  <not-filter>
-   <wildcard-filter pattern="/favicon.ico"/>
-  </not-filter>
- </http:inbound-endpoint>
- <choice>
-  <when expression="payload.currency == 'USD'" evaluator="groovy">
-   <processor-chain>
-    <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
-    <script:component>
-      <script:script file="greedy.groovy">
-        <property key="currency" value="USD"/>
-       </script:script>
-     </script:component>
-   </processor-chain>
- </when>
- <when expression="payload.currency == 'GBP'" evaluator="groovy">
- <processor-chain>
- <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
- <script:component>
-  <script:script file="greedy.py">
-   <property key="currency" value="GBP"/>
-  </script:script>
- </script:component>
- </processor-chain>
- </when>
-</choice>
-</flow>
-----
+[TIP]
+====
+*For Mule Studio Users*
 
-The actual script is loaded from an external file and is passed a variable called `currency`, which is bound to a local script variable according to the JSR-223 spec.
+In Mule Studio, double-click a xref:studio-building-blocks.adoc[building block] to open its *Properties Panel*, then examine its configuration details. Alternatively, click the *Configuration XML* tab to examine the application's XML configuration file.
 
-*Entry Point for Groovy Script*
+image::config-tab.png[config_tab]
+====
 
-[source,java]
-----
-switch (currency) {
- case "USD": return change(USD, payload)
- case "GBP": return change(GBP, payload)
- default: throw new AssertionError("Unsupported currency: $currency")
-}
-----
+=== HTTP-inbound Flow
 
-*Entry point for Python script*
+image::http-inbound.png[]
 
-[source,java]
-----
-c = Change(currency, payload)c.recursive_change(c.amount)result = "[" + c.result + "]"
-----
+// View the XML
 
-== References
+The *HTTP-inbound* flow makes use of several xref:studio-building-blocks.adoc[building blocks] to process and respond to an end user request.
 
-The Groovy algorithm is adapted from the https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy[Groovy Cookbook] and the Python algorithm is adapted from an article at http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html[O'Reilly's ONLamp Blog]
+==== Endpoint and Transformer
 
-Any language that has a JSR 223-compliant engine can be used with Mule in this manner.
+When an end user request encounters the Scripting application, the first building block it encounters is the request-response **xref:http-endpoint-reference.adoc[HTTP Inbound Endpoint]**. Because it has a two-way message exchange pattern, this HTTP endpoint is responsible for both receiving and returning messages. Note that this endpoint receives end user requests from both the USD and the GDP URLs; Mule makes a decision about how to process the different types of messages later in the HTTP-inbound flow.
+
+[NOTE]
+====
+*Two-Way vs. One-Way*
+
+Notice that the HTTP endpoint has a *two-way message exchange pattern* (as indicated by the small double-arrow icon — below, left). Because it must respond to the requester, the HTTP endpoint in this example has a request-response message exchange pattern.
+
+If an HTTP endpoint has only to input information into an application, it requires a *one-way message exchange pattern* (below, right).
+
+image::http-endpoints.png[http_endpoints]
+====
+
+Next, the HTTP-inbound flow moves the message to a** xref:studio-transformers.adoc[Transformer]** to convert the data format of the message from an HTTP-request to Java http://en.wikipedia.org/wiki/Associative_array[map objects]. To access specific instructions on how to perform this conversion, the transformer references a *Global Body to Parameter Map Transformer*. The image below, left, displays the `Transform HttpRequest to Map` transformer’s properties panel in Studio; note the section outlined in red in which the transformer references the global transformer. The image below, right, displays the Global Body to Parameter Map transformer’s properties panel in Studio. +
+
+image::global-reference.png[global_reference]
+
+// View the XML
+
+[NOTE]
+====
+*What is a Global Element?*
+
+Mule ESB supports *Global Elements* within applications, such as the *Body to Parameter Map Transformer* and the `StringToNumber` *xref:java-component-reference.adoc[Java Component]* in the Scripting example.
+
+Rather than repeatedly writing the code in different flows for elements or connectors that behave exactly the same way, you can create one global element that details your desired behavior or configuration, then reference that global element any number of times in the flows or subflows in your Mule application.
+
+*Read more...*
+
+For example, the code that describes the configuration of the `Transform HttpRequest to Map` transformer in the Scripting example does not exist within the HTTP-inbound flow; rather, the code resides in a global element in the *Global Elements* tab in *Mule Studio* (or at the top of the XML config file).
+
+
+The `StringToNumber` transformer references a global Java component to obtain instructions on how to convert a http://en.wikipedia.org/wiki/String_(computer_science)[string] to a number. (The Java component itself references a *Transformer Class*; see the <<Drill Down>> section below for more details on the Java classes in the Scripting example.)
+====
+
+==== Choice Flow Control (Content-Based Message Router)
+
+With its newly transformed content, the message next encounters the **xref:choice-flow-control-reference.adoc[Choice Flow Control]**. This content-based router checks the payload of the message to discover the currency of the content, then makes a decision about where to route it:
+
+* if the currency is USD, the choice flow control routes the message to the first `Extract Amount` *Set Payload Transformer*
+* if the currency is GBP, the choice flow control routes the message to the second `Extract Amount` set payload transformer
++
+image::choice-router2.png[choice_router2]
+
+// View the XML
+
+Form this point forward, messages follow one of two paths towards a script component:
+
+. the USD path that ends with a *xref:groovy-component-reference.adoc[Groovy Script Component]*
+. the GBP path that ends with a **xref:python-component-reference.adoc[Python Script Component]**  +
+ The transformers that sit between the choice flow control and the script components in each path perform the same tasks; the only difference is their final destination.
+
+==== Transformers
+
+From the message payload, each of the `Extract Amount` set payload transformers obtain the amount of money the end user entered in the client-side URL. They set data on the payload to specify the amount of money the rest of the flow will process.
+
+The pair of `String to Number` transformers reference a global `StringToNumber` Java component which converts the amount of money from a http://en.wikipedia.org/wiki/String_(computer_science)[string] to an integer. This transformation is important because the next message processors, the `Dollars To Cents` transformers, need an integer in order to be able to perform a simple mathematical operation.
+
+Referencing the global `DollarsToCents` Java component, the `Dollars To Cents` transformers multiply the amount of money by 100 so as to convert the amount to a whole number (i.e. pennies).
+
+==== Scripts
+
+Lastly, a message reaches one of two script components: *Groovy* or *Python*.
+
+The Groovy script component accesses a script file, `greedy.groovy`, that converts a whole number into the USD coins it would take to represent a specific amount of money. Adapted from the https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy[Groovy Cookbook], this simple script resides in the application’s `src/main/resources` folder. Note that the groovy script _can_ process a request in either currency, but in this flow it will process only USD requests.
+
+// View the Groovy Script
+
+Adapted from http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html[a greedy coin changer algorithm] the Python script component completes exactly the same task as the Groovy script component, except it uses Python to convert pounds, instead of Groovy to convert dollars. Note that the python script _can_ process a request in either currency, but in this flow it will process only GBP requests. This script also resides in the application’s `src/main/resources` folder.
+
+// View the Python Script
+
+[TIP]
+====
+*Examine the Scripts*
+
+In *Mule Studio*, you can open a script file and view the contents of the Groovy or Python scripts.
+
+. In the *Package Explorer*, click to expand the `src/main/resources` folder.
+. Double-click the `greedy.groovy` file to open the script in a new *Canvas* window in Studio.
+. Double-click the `greedy.py` file to open the script in your text editor.
++
+You can also examine the scripts in *Mule Standalone*.
+. On your local drive, navigate to `mule-enterprise-standalone-3.3.0` > `apps` > `mule-example-scripting-3.3.0` > `classes`.
+. Double-click the file name to open either of the two script files.
+====
+
+When Mule finishes processing a message, the request-response HTTP endpoint returns the response to the end user via her Web browser.
+
+== Drill Down
+
+Both the `StringToNumber` and `DollarsToCents` global Java components in this Scripting example application reference Java classes, which detail what Mule must do with messages that encounter these components. If you want to examine the Java classes more closely, you can access the files in Mule ESB.
+
+=== Accessing the Java Classes in Mule Studio
+
+. In the *Package Explorer*, click to expand the `src/main/java` folder.
+. Click to expand the `org.mule.example.scripting` folder.
+. Double-click any one of the three `.java` files to open the script in a new *Canvas* window in Studio.
+
+=== Accessing the Java Classes in Mule Standalone
+
+. On your local drive, navigate to `mule-enterprise-standalone-3.3.0` > `apps` > `mule-example-scripting-3.3.0` > `classes` > `org` > `mule` > `example` > `scripting`.
+. Double-click to open any of the three `.class` files.
+
+== Related Topics
+
+* For more information on using the Choice Flow Control, see xref:choice-flow-control-reference.adoc[Choice Flow Control Reference].
+* For more information on transformers, see xref:studio-transformers.adoc[Studio Transformers].
+* For more information on scripts, see xref:studio-components.adoc[Studio Components].

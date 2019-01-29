@@ -3,9 +3,69 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-== Introduction
+The following Mule transports provide access to TCP connections:
+
+* The TCP Transport, discussed on this page, which uses the basic TCP transport.
+* The xref:ssl-and-tls-transports-reference.adoc[SSL and TLS Transports], which use TCP with socket-level security.
+
+Other than the type of socket used, these transports all behave quite similarly.
 
 The TCP transport allows sending or receiving messages over TCP connections. TCP is a layer over IP and used to implement many other reliable protocols such as HTTP and FTP. However, you may want to use the TCP transport directly if you require a specific protocol for reading the message payload that is not supported by one of these higher level protocols. This is often the case when communicating with legacy or native system applications that don't support web services.
+
+== Transport Info
+
+[%header,cols="10,9,9,9,9,9,9,9,9,9,9"]
+|===
+a|
+Transport
+
+ a|
+Doc
+
+ a|
+Inbound
+
+ a|
+Outbound
+
+ a|
+Request
+
+ a|
+Transactions
+
+ a|
+Streaming
+
+ a|
+Retries
+
+ a|
+MEPs
+
+ a|
+Default MEP
+
+ a|
+Maven Artifact
+
+|Multicast |https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/multicast/package-summary.html[JavaDoc] http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_multicast/namespace-overview.html[SchemaDoc] |image:check.png[] |image:check.png[] |image:check.png[] | -  | -  | -  |one-way, request-response |request-response |org.mule.transport:mule-transport-multicast
+
+|===
+
+*Legend*
+
+*Transport* - The name/protocol of the transport +
+ *Docs* - Links to the JavaDoc and SchemaDoc for the transport +
+ *Inbound* - Whether the transport can receive inbound events and can be used for an inbound endpoint +
+ *Outbound* - Whether the transport can produce outbound events and be used with an outbound endpoint +
+ *Request* - Whether this endpoint can be queried directly with a request call (via MuleClient or the EventContext) +
+ *Transactions* - Whether transactions are supported by the transport. Transports that support transactions can be configured in either local or distributed two-phase commit (XA) transaction. +
+ *Streaming* - Whether this transport can process messages that come in on an input stream. This allows for very efficient processing of large data. For more information, see Streaming. +
+ *Retry* - Whether this transport supports retry policies. Note that all transports can be configured with Retry policies, but only the ones marked here are officially supported by MuleSoft +
+ *MEPs* - Message Exchange Patterns supported by this transport +
+ *Default MEP* - The default MEP for endpoints that use this transport that do not explicitly configure a MEP +
+ *Maven Artifact* - The group name a artifact name for this transport in http://maven.apache.org/[Maven]
 
 == Namespace and Syntax
 
@@ -20,7 +80,7 @@ XML Schema location:
 
 [source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/3.2/mule-tcp.xsd
+http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/3.3/mule-tcp.xsd
 ----
 
 Connector syntax:
@@ -39,6 +99,8 @@ Connector syntax:
     <tcp:PROTOCOL-TYPE/>
 </tcp:polling-connector>
 ----
+
+=== Protocol Types
 
 PROTOCOL-TYPE defines how messages in Mule are reconstituted from the data packets. The protocol types are:
 
@@ -65,12 +127,12 @@ PROTOCOL-TYPE defines how messages in Mule are reconstituted from the data packe
 
 If no protocol is specified, `safe-protocol` is used.
 
-Endpoint syntax: +
-You can define your endpoints two ways:
+=== Endpoint Syntax
+
+You can define your endpoints two different ways.
 
 . Prefixed endpoint:
 +
-
 [source,xml,linenums]
 ----
 <tcp:inbound-endpoint host="localhost" port="65433"/>
@@ -78,7 +140,6 @@ You can define your endpoints two ways:
 
 . Non-prefixed URI:
 +
-
 [source,xml,linenums]
 ----
 <inbound-endpoint address="tcp://localhost:65433"/>
@@ -94,9 +155,9 @@ Use this transport when communicating using low-level TCP connections. To determ
 
 * Communicating with an external service that uses low-level unsecured TCP connections? If so, use the TCP protocol.
 
-* Are you communicating with a flow or service always located in the same Mule application instance? If so, consider use the xref:vm-transport-reference.adoc[VM transport].
+* Are you communicating with a flow always located in the same Mule application instance? If so, consider use the xref:vm-transport-reference.adoc[VM transport].
 
-* Is it important that messages be persisted until they can be processed? If so, consider using a persistent transport like xref:jms-transport-reference.adoc[JMS] or File.
+* Is it important that messages be persisted until they can be processed? If so, consider using a persistent transport like xref:jms-transport-reference.adoc[JMS] or xref:file-transport-reference.adoc[File].
 
 * Are there advantages to a higher-level protocol built on top of TCP, for instance, the request-response features of xref:http-transport-reference.adoc[HTTP], or the store-and-forward features of xref:email-transport-reference.adoc[Email]? If so, use the transport for that protocol instead.
 
@@ -106,11 +167,11 @@ Use this transport when communicating using low-level TCP connections. To determ
 
 * If you get this far, TCP is a good candidate.
 
-As shown in the examples below, the TCP transport can be used to:
+As shown in the examples below, the TCP transport can be used to
 
-* Create a TCP server
-* Send messages to a TCP server
-* Poll from a TCP server
+* <<Creating a TCP Server>> a TCP server
+* <<Sending Messages to a TCP Server>> messages to a TCP server
+* <<Polling TCP Connector-Specific Attributes>> from a TCP server
 
 == Features
 
@@ -125,6 +186,8 @@ The TCP module allows a Mule application both to send and receive messages over 
 * The number of pending connection requests to allow.
 * Whether to close a client socket after sending a message.
 
+=== Protocol Tables
+
 In addition, since TCP and SSL are stream-oriented and Mule is message-oriented, some application protocol is needed to to define where each message begins and ends within the stream. The table below lists the built-in protocols, describing:
 
 * The XML tag used to specify them
@@ -132,7 +195,7 @@ In addition, since TCP and SSL are stream-oriented and Mule is message-oriented,
 * How it defines a message when reading
 * Any processing it does while writing a message
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |XML tag |Options |Read |Write |Notes
 |<tcp:custom-class-loading-protocol> |rethrowExceptionOnRead, payloadOnly , maxMessageLength, classLoader-ref |Expects the message to begin with a 4-byte length (in DataOutput.writeInt() format) |Precedes the message with a 4-byte length (in DataOutput.writeInt() format) |Like the length protocol, but specifies a classloader used to deserialize objects
@@ -140,18 +203,18 @@ In addition, since TCP and SSL are stream-oriented and Mule is message-oriented,
 |<tcp:direct-protocol> |rethrowExceptionOnRead, payloadOnly |All currently available bytes |none |There are no explicit message boundaries.
 |<tcp:eof-protocol> |rethrowExceptionOnRead, payloadOnly |All bytes sent until the socket is closed |none |
 |<tcp:length-protocol> |rethrowExceptionOnRead, payloadOnly , maxMessageLength |Expects the message to begin with a 4-byte length (in DataOutput.writeInt() format) |Precedes the message with a 4-byte length (in DataOutput.writeInt() format) |
-|<tcp:safe-protocol |rethrowExceptionOnRead, payloadOnly , maxMessageLength Expects the message to begin with the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Expects the message to be preceded by the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Precedes the message with the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Somewhat safer than the length protocol because of the extra check. This is the default if no protocol is specified.
-|<tcp:streaming-protocol |rethrowExceptionOnRead |All bytes sent until the socket is closed |none |
+|<tcp:safe-protocol> |rethrowExceptionOnRead, payloadOnly , maxMessageLength Expects the message to begin with the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Expects the message to be preceded by the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Precedes the message with the string "You are using SafeProtocol" followed by a 4-byte length (in DataOutput.writeInt() format) |Somewhat safer than the length protocol because of the extra check. This is the default if no protocol is specified.
+|<tcp:streaming-protocol> |rethrowExceptionOnRead |All bytes sent until the socket is closed |none |
 |<tcp:xml-protocol> |rethrowExceptionOnRead |A message is an XML document that begins with an XML declaration |none |The XML declaration must occur in all messages
 |<tcp:xml-eof-protocol> |rethrowExceptionOnRead |A message is an XML document that begins with an XML declaration, or whatever remains at EOF |none |The XML declaration must occur in all messages
 |===
 
-Protocol attributes:
+=== Protocol Attributes
 
-[%header%autowidth.spread]
+[%header,cols="4*"]
 |===
-|name |values |default value |notes
-|class |The name of the class that implements the custom protocol |  |See xref:tcp-transport-reference.adoc[below] for an example of writing a custom protocol
+|Name |Values |Default Value |Notes
+|class |The name of the class that implements the custom protocol |  |See <<Extending This Transport>> for an example of writing a custom protocol
 |classLoader-ref |A reference to a Spring bean that contains the custom classloader |  |
 |maxMessageLength |the maximum message length allowed |0 (no maximum ) |A message longer than the maximum causes an exception to be thrown.
 |payloadOnly |true |If true, only the Mule message payload is sent or received. If false, the entire Mule message is sent or received. |Protocols that don't support this attribute always process payloads
@@ -159,60 +222,61 @@ Protocol attributes:
 |rethrowExceptionOnRead |Whether to rethrow exception that occur trying to read from the socket |false |Setting this to "false" avoids logging stack traces when the remote socket is closed unexpectedly
 |===
 
+== Usage
+
 TCP endpoints can be used in one of three ways:
 
-* To create a TCP server that accepts incoming connections, declare an inbound tcp endpoint with a tcp:connector. This creates a TCP server socket that reads requests from and optionally write responses to client sockets.
-* To poll from a TCP server, declare an inbound tcp endpoint with a tcp:polling-connector. This creates a TCP client socket that reads requests from and optionally write responses to the server socket.
-* To write to a TCP server, create an outbound endpoint with a tcp:connector. This creates a TCP client socket that writes requests to and optionally read responses from a server socket.
-
-== Usage
+* To create a TCP server that accepts incoming connections, declare an inbound tcp endpoint with a tcp:connector. This creates a TCP server socket that will read requests from and optionally write responses to client sockets.
+* To poll from a TCP server, declare an inbound tcp endpoint with a tcp:polling-connector. This creates a TCP client socket that will read requests from and optionally write responses to the server socket.
+* To write to a TCP server, create an outbound endpoint with a tcp:connector. This creates a TCP client socket that will write requests to and optionally read responses from a server socket.
 
 To use TCP endpoints, follow the following steps:
 
-. Add the MULE TCP namespace to your configuration:
-* Define the TCP prefix using xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
-* Define the schema location with http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/3.2/mule-tcp.xsd
+. Add the MULE TCP namespace to your configuration: +
+* Define the tcp prefix using xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
+* Define the schema location with http://www.mulesoft.org/schema/mule/tcp[http://www.mulesoft.org/schema/mule/tcp +
+]http://www.mulesoft.org/schema/mule/tcp/3.3/mule-tcp.xsd
 . Define one or more connectors for TCP endpoints.
 
-=== Create a TCP server
+=== Creating a TCP Server
 
-To act as a server that listens for and accepts TCP connections from clients, create a simple TCP connector that inbound endpoints use:
+To act as a server that listens for and accepts TCP connections from clients, create a simple TCP connector that inbound endpoints will use:
 
 [source,xml,linenums]
 ----
 <tcp:connector name="tcpConnector"/>
 ----
 
-=== Poll from a TCP Server
+=== Polling from a TCP Server
 
-To act as a client that repeatedly opens connections to a TCP server and reads data from it, create a polling connector that inbound endpoints use:
+To act as a client that repeatedly opens connections to a TCP server and reads data from it, create a polling connector that inbound endpoints will use:
 
 [source,xml,linenums]
 ----
 <tcp:polling-connector name="tcpConnector"/>
 ----
 
-=== Send messages to a TCP Server
+=== Sending Messages to a TCP Server
 
-To send messages on a TCP connection, create a simple TCP connector that outbound endpoints use:
+To send messages on a TCP connection, create a simple TCP connector that outbound endpoints will use:
 
 [source,xml,linenums]
 ----
 <tcp:connector name="tcpConnector"/>
 ----
 
-. Configure the features of each connector that was created.
-* Begin by choosing the protocol to use to send and receive each message.
-* For each polling connector, choose how often it polls and how long it waits for the connection to complete.
+. Configure the features of each connector that was created. +
+* Begin by choosing the protocol to be used for each message that will be sent or received.
+* For each polling connector, choose how often it will poll and how long it will wait for the connection to complete.
 * Consider the other connector options as well. For instance, if it is important to detect when the remote system becomes unreachable, set `keepAlive` to `true`.
-. Create TCP endpoints.
-* Messages are received on inbound endpoints.
-* Messages are sent to outbound endpoints.
+. Create TCP endpoints. +
+* Messages will be received on inbound endpoints.
+* Messages will be sent to outbound endpoints.
 * Both kinds of endpoints are identified by a host name and a port.
 
 By default, TCP endpoints use the request-response exchange pattern, but they can be explicitly configured as one-way. The decision should be straightforward:
 
-[%header%autowidth.spread]
+[%header,cols="4*"]
 |===
 |Message flow |Connector type |Endpoint type |Exchange Pattern
 |Mule receives messages from clients but sends no response |tcp:connector |inbound |one-way
@@ -229,8 +293,8 @@ By default, TCP endpoints use the request-response exchange pattern, but they ca
 
 [source,xml,linenums]
 ----
-<tcp:connector name="connector" payloadOnly="false">
-    <tcp:eof-protocol /> ❹
+<tcp:connector name="connector">
+    <tcp:eof-protocol payloadOnly="false"/> ❹
 </tcp:connector> ❶
 
 <flow name="echo">
@@ -239,30 +303,8 @@ By default, TCP endpoints use the request-response exchange pattern, but they ca
 </flow>
 ----
 
-*Standard TCP connector in service*
-
-[source,xml,linenums]
-----
-<tcp:connector name="connector" payloadOnly="false">
-    <tcp:safe-protocol />  ❺
-</tcp:connector>  ❶
-
-<model name="echoModel">
-    <service name="echo">
-        <inbound>
-            <tcp:inbound-endpoint host="localhost" port="4444" /> ❷
-        </inbound>
-        <outbound>
-            <pass-through-router>
-                <tcp:outbound-endpoint host="remote" port="5555" /> ❸
-             </pass-through-router>
-        </outbound>
-    </service>
-</model>
-----
-
-This shows how to create a TCP server in Mule. The connector at ❶ defines that a server socket is created that accepts connections from clients. Complete Mule messages are read from the connection (direct protocol) and become the payload of a Mule message (since payload only is false). The endpoint at ❷ applies these definitions to create a server at port 4444 on the local host. The messages read from there are then sent to a remote TCP endpoint at ❸. +
-The flow version uses the EOF protocol (❹), so that every byte sent on the connection is part of the same Mule message. The service version uses the safe protocol (❺), so that multiple messages can be sent on the TCP connection, with each being preceded by a header that specifies its length.
+This shows how to create a TCP server in Mule. The connector at ❶ defines that a server socket will be created that accepts connections from clients. Complete mule messages are read from the connection (direct protocol) will become the payload of a Mule message (since payload only is false). The endpoint at ❷ applies these definitions to create a server at port 4444 on the local host. The messages read from there are then sent to a remote tcp endpoint at ❸. +
+The flow version uses the eof protocol (❹), so that every byte sent on the connection is part of the same Mule message.
 
 *Polling TCP connector in flow*
 
@@ -275,40 +317,17 @@ The flow version uses the EOF protocol (❹), so that every byte sent on the con
 
 <flow name="echo">
     <tcp:inbound-endpoint host="localhost" port="4444" /> ❷
-    <vm:outbound-endpoint path="out" connector-ref="queue" /> ❸
+    <vm:outbound-endpoint path="out"  connector-ref="queue" /> ❸
 </flow>
 ----
 
-*Polling TCP connector in service*
-
-[source,xml,linenums]
-----
-<tcp:polling-connector name="pollingConnector"
-             clientSoTimeout="3000" pollingFrequency="1000">
-    <tcp:direct-protocol payloadOnly="true" />
-</tcp:polling-connector> ❶
-
-<model name="echoModel">
-    <service name="echo">
-        <inbound>
-            <tcp:inbound-endpoint host="localhost" port="4444" /> ❷
-        </inbound>
-        <outbound>
-            <pass-through-router>
-                <vm:outbound-endpoint path="out"  connector-ref="queue" /> ❸
-             </pass-through-router>
-        </outbound>
-    </service>
-</model>
-----
-
-This shows how to create a TCP endpoint that repeatedly reads from an TCP server. The connector at ❶ defines that a connection be attempted every second which waits up to three seconds to complete. Everything read from the connection (direct protocol) becomes the payload of a Mule message (payload only). The endpoint at ❷ applies these definitions to port 4444 on the local host. The messages read from there are then sent to a VM endpoint at ❸.
+This shows how to create a TCP endpoint that repeatedly reads from an TCP server. The connector at ❶ defines that a connection will be attempted every second which will wait up to three seconds to complete. Everything read from the connection (direct protocol) will become the payload of a Mule message (payload only). The endpoint at ❷ applies these definitions to port 4444 on the local host. The messages read from there are then sent to a VM endpoint at ❸.
 
 == Configuration Options
 
-TCP Connector attributes
+=== TCP Connector Attributes
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Name |Description |Default
 |clientSoTimeout |the amount of time (in milliseconds) to wait for data to be available when reading from a TCP server socket |system default
@@ -323,9 +342,9 @@ TCP Connector attributes
 |serverSoTimeout |the amount of time (in milliseconds) to wait for data to be available when reading from a client socket |system default
 |===
 
-Polling TCP Connector-specific attributes
+=== Polling TCP Connector-Specific Attributes
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Name |Description |Default
 |pollingFrequency |How often (in milliseconds) to connect to the TCP sever |1000 milliseconds
@@ -346,7 +365,7 @@ Connects Mule to a TCP socket to send or receive data via the network.
 
 === Attributes of <connector...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |sendBufferSize |integer |no |  |The size of the buffer (in bytes) used when sending data, set on the socket itself.
@@ -365,7 +384,7 @@ Connects Mule to a TCP socket to send or receive data via the network.
 
 === Child Elements of <connector...>
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Name |Cardinality |Description
 |abstract-protocol |0..1 |The class name for the protocol handler. This controls how the raw data stream is converted into messages. By default, messages are constructed as dara is received, with no correction for multiple packets or fragmentation. Typically, change this value, or use a transport that includes a protocol like HTTP.
@@ -377,16 +396,19 @@ The inbound-endpoint element configures the endpoint on which the messages are r
 
 === Attributes of <inbound-endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |host |string |no |  |The host of the TCP socket.
 |port |port number |no |  |The port of the TCP socket.
 |===
 
-No Child Elements of <inbound-endpoint...>
+=== Child Elements of <inbound-endpoint...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Outbound endpoint
 
@@ -394,16 +416,19 @@ The outbound-endpoint element configures the endpoint where the messages are sen
 
 === Attributes of <outbound-endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |host |string |no |  |The host of the TCP socket.
 |port |port number |no |  |The port of the TCP socket.
 |===
 
-No Child Elements of <outbound-endpoint...>
+=== Child Elements of <outbound-endpoint...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Endpoint
 
@@ -411,15 +436,19 @@ The endpoint element configures a global TCP endpoint definition.
 
 === Attributes of <endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |host |string |no |  |The host of the TCP socket.
 |port |port number |no |  |The port of the TCP socket.
 |===
 
-No Child Elements of <endpoint...>
+=== Child Elements of <endpoint...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Polling connector
 
@@ -427,7 +456,7 @@ Connects Mule to a TCP socket to send or receive data via the network.
 
 === Attributes of <polling-connector...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |sendBufferSize |integer |no |  |The size of the buffer (in bytes) used when sending data, set on the socket itself.
@@ -448,7 +477,7 @@ Connects Mule to a TCP socket to send or receive data via the network.
 
 === Child Elements of <polling-connector...>
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Name |Cardinality |Description
 |abstract-protocol |0..1 |The class name for the protocol handler. This controls how the raw data stream is converted into messages. By default, messages are constructed as dara is received, with no correction for multiple packets or fragmentation. Typically, change this value, or use a transport that includes a protocol like HTTP.
@@ -460,15 +489,18 @@ TCP does not guarantee that data written to a socket is transmitted in a single 
 
 === Attributes of <streaming-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
 |===
 
-No Child Elements of <streaming-protocol...>
+=== Child Elements of <streaming-protocol...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Xml protocol
 
@@ -476,14 +508,18 @@ TCP does not guarantee that data written to a socket is transmitted in a single 
 
 === Attributes of <xml-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
 |===
 
-No Child Elements of <xml-protocol...>
+=== Child Elements of <xml-protocol...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Xml eof protocol
 
@@ -491,14 +527,18 @@ Similar to xml-protocol, the xml-eof-protocol element configures the XML protoco
 
 === Attributes of <xml-eof-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
 |===
 
-No Child Elements of <xml-eof-protocol...>
+=== Child Elements of <xml-eof-protocol...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Eof protocol
 
@@ -506,16 +546,19 @@ TCP does not guarantee that data written to a socket is transmitted in a single 
 
 === Attributes of <eof-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
 |payloadOnly |boolean |yes |  |Sends only the payload, not the entire Mule message object or its properties. This defaults to true when the protocol is not specified explicitly (when the safe protocol is used).
 |===
 
-No Child Elements of <eof-protocol...>
+=== Child Elements of <eof-protocol...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Direct protocol
 
@@ -523,16 +566,19 @@ TCP does not guarantee that data written to a socket is transmitted in a single 
 
 === Attributes of <direct-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
 |payloadOnly |boolean |yes |  |Sends only the payload, not the entire Mule message object or its properties. This defaults to true when the protocol is not specified explicitly (when the safe protocol is used).
 |===
 
-No Child Elements of <direct-protocol...>
+=== Child Elements of <direct-protocol...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Safe protocol
 
@@ -540,7 +586,7 @@ Similar to length-protocol, safe-protocol also includes a prefix. Verification o
 
 === Attributes of <safe-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
@@ -548,9 +594,12 @@ Similar to length-protocol, safe-protocol also includes a prefix. Verification o
 |maxMessageLength |integer |no |  |An optional maximum length for the number of bytes in a single message. Messages larger than this will trigger an error in the receiver, but it give an assurance that no out-of-memory error will occur.
 |===
 
-NO Child Elements of <safe-protocol...>
+=== Child Elements of <safe-protocol...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Custom class loading protocol
 
@@ -558,7 +607,7 @@ A length protocol that uses a specific class loader to load objects from streams
 
 === Attributes of <custom-class-loading-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
@@ -567,9 +616,12 @@ A length protocol that uses a specific class loader to load objects from streams
 |classLoader-ref |string |no |  |Allows Spring beans to be defined for class loading
 |===
 
-No Child Elements of <custom-class-loading-protocol...>
+=== Child Elements of <custom-class-loading-protocol...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Length protocol
 
@@ -577,7 +629,7 @@ The length-protocol element configures the length protocol, which precedes each 
 
 === Attributes of <length-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
@@ -585,8 +637,12 @@ The length-protocol element configures the length protocol, which precedes each 
 |maxMessageLength |integer |no |  |An optional maximum length for the number of bytes in a single message. Messages larger than this will trigger an error in the receiver, but it give an assurance that no out-of-memory error will occur.
 |===
 
-No Child Elements of <length-protocol...>
+=== Child Elements of <length-protocol...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Custom protocol
 
@@ -594,7 +650,7 @@ The custom-protocol element allows you to configure your own protocol implementa
 
 === Attributes of <custom-protocol...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |rethrowExceptionOnRead |boolean |no |  |Rethrow the exception if read fails
@@ -602,17 +658,22 @@ The custom-protocol element allows you to configure your own protocol implementa
 |ref |name (no spaces) |no |  |Reference to a spring bean that implements the TcpProtocol interface.
 |===
 
-No Child Elements of <custom-protocol...>
+=== Child Elements of <custom-protocol...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Schema
 
-* http://www.mulesoft.org/schema/mule/tcp/3.2/mule-tcp.xsd[TCP Schema]
-* http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-tcp_xsd/schema-overview.html[TCP Schema Overview]
+The schema can be found http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_tcp/namespace-overview.html[here].
 
 == Javadoc API Reference
 
-The Javadoc for this module can be found here: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/tcp/package-summary.html[TCP]
+The Javadoc for this module can be found here:
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/tcp/package-summary.html[TCP]
 
 == Maven
 
@@ -623,11 +684,11 @@ The TCP Module can be included with the following dependency:
 <dependency>
   <groupId>org.mule.transports</groupId>
   <artifactId>mule-transport-tcp</artifactId>
-  <version>3.2.0</version>
+  <version>3.3.0</version>
 </dependency>
 ----
 
-== Extending this Transport
+== Extending This Transport
 
 When using TCP to communicate with an external program, it may be necessary to write a custom Mule protocol. The first step is to get a complete description of how the external program delimits messages within the TCP stream. The next is to implement the protocol as a Java class.
 
@@ -636,7 +697,7 @@ When using TCP to communicate with an external program, it may be necessary to w
 ** `write(OutputStream os, Object data)` writes a message to the TCP socket
 ** `ResponseOutputStream createResponse(Socket socket)` creates a stream to which a response can be written.
 
-* Protocols which process byte-streams rather than serialized Mule messages can inherit much useful infrastructure by subclassing `org.mule.transport.tcp.protocols.AbstractByteProtocol` This class
+* Protocols which process byte-streams rather than serialized Mule messages can inherit much useful infrastructure by subclassing `org.mule.transport.tcp.protocols.AbstractByteProtocol`This class
 ** implements `createResponse`
 ** handles converting messages to byte arrays, allowing subclasses to implement only the simpler method `writeByteArray(OutputStream os, byte[] data)`
 ** provides methods `safeRead(InputStream is, byte[] buffer)` and `safeRead(InputStream is, byte[] buffer, int size)` that handle the situation where data is not currently available when doing non-blocking reads from the TCP socket

@@ -3,212 +3,212 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-Mule ESB provides several error handling options. You can configure *Exception Strategies* to cover flows, models, or individual services. You can use the *Exception Router* to specify where a message gets sent when an error occurs during message processing. You can also use the *Exception Type* filter for fine-grained control.
+Mule ESB provides numerous options for handling errors. Faults that occur within Mule are referred to as *exceptions*; when an activity in your Mule instance fails, Mule throws an exception. To manage these exceptions, Mule allows you to configure *exception strategies*.
 
-This page describes these various error handling techniques. For information on setting retry policies, which control how a connector behaves when its connection fails, see xref:configuring-reconnection-strategies.adoc[Configuring Reconnection Strategies].
+Mule’s default exception strategy — which implicitly applies to all Mule applications — manages errors (i.e. thrown exceptions) in Mule flows. When your flows require more sophisticated error management, you can implement one or more exception strategies to construct precise, efficient protocols for handling errors.
 
-== Exception Strategies
+From a high level perspective, errors that occur in Mule fall into one of two categories: *System Exceptions*, and *Messaging Exceptions*.
 
-*Exception Strategies* handle the exception conditions that arise when an error occurs during the processing of a message. You can set exception strategies to cover the following scopes:
+== System Exceptions
 
-* On a *flow* to set a common exception strategy for all message processors within that flow.
-* On a *model* to set a common exception strategy for all services within that model.
-* On a *service* to set an exception strategy for any exception within that service.
+Mule invokes a *System Exception Strategy* when an exception is thrown at the _system-level_ (i.e., when no message is involved, exceptions are handled by system exception strategies). For example, system exception strategies handle exceptions that occur:
 
-*Component Exception Strategies* handle *component exceptions*, which occur when a message is being processed though Mule. Typically, you customize an exception handler to control how component exceptions are logged and routed. Only *system exceptions*, which typically occur during connection initialization or disconnection, do not qualify as component exceptions.
+* during application start-up
+* when a connection to an external system fails
 
-*System Exception Strategies* serve as a fallback to catch the following:
+When a system exception strategy occurs, Mule sends an exception notification to registered listeners, logs the exception, and — if the exception was caused by a connection failure — executes the xref:configuring-reconnection-strategies.adoc[reconnection strategy]. System Exception Strategies are not configurable in Mule.
 
-* Exceptions that occur at startup
-* Connection attempts that fail
-* Exceptions not associated with a flow or service, which therefore cannot use a component exception strategy
+=== Example Scenario
 
-Typically, few, if any, options exist beyond logging system exceptions. Therefore, customization of a system exception strategy is generally not necessary.
+Mule establishes a connection to a JMS broker in order to receive a message. When Mule attempts to use the connection to consume a message the connection fails, which causes Mule to invoke the system exception strategy. Because the failure occurred before any message was received for processing, Mule invoked the _system_, rather than _messaging_, exception strategy.
+
+== Messaging Exceptions
+
+Mule invokes a *Messaging Exception Strategy* whenever an exception is thrown within a flow (i.e., whenever a message is involved, exceptions are handled by _messaging_ exception strategies).
+
+When a message being processed through a Mule flow throws an exception, normal flow execution stops and processes transfers to the message processor sequence within the exception strategy. You can incorporate any number of message processors – and in one case, other exception strategies – into an exception strategy to handle the exception precisely as you wish. The diagram below illustrates what happens when a message throws an exception.
+
+image::flow-exception.png[flow_exception]
+
+Mule supports five types of messaging exception strategies, each of which is capable of handling errors that occur in flows which process transactions:
+
+[%header%autowidth.spread]
+|===
+2+|Exception Strategy |Use |Transaction Error Handling
+|n/a
+|<<Default Exception Strategy>>
+|Defined and implicitly applied by default to handle all messaging exceptions that are thrown in Mule applications
+|When a message throws an exception, the default exception strategy rolls back the message and logs the exception.
+|image:catch-1.png[]
+|xref:catch-exception-strategy.adoc[Catch exception strategy]
+|Define a catch exception strategy to customize the way Mule handles any exception. Catch exception strategies consume inbound messages.
+|When a message throws an exception, the catch exception strategy _always_ commits the transaction and consumes the message.
+|image:rollback-1.png[]
+|xref:rollback-exception-strategy.adoc[Rollback exception strategy]
+|Define a rollback exception strategy to ensure that a message that throws an exception in a flow is rolled back for reprocessing (if the message source supports redelivery). Rollback exception strategies do not consume inbound messages.
+|When a message throws an exception, the rollback exception strategy makes one or more attempts to rollback the message and redeliver it for processing (if the message source supports redelivery). If the message exceeds its redelivery attempts, then the rollback exception strategy commits the failed transaction and consumes the message.
+|image:reference.png[]
+|xref:reference-exception-strategy.adoc[Reference exception strategy]
+|Define a reference exception strategy to refer and adhere to the error handling parameters defined in a global catch, rollback or choice exception strategy.
+|When a message throws an exception, the reference exception strategy refers and adheres to the error handling parameters defined in a global catch, rollback or choice exception strategy. (The reference exception strategy itself never actually performs any rollback, commit, or consume activities.)
+|image:choice.png[]
+|xref:choice-exception-strategy.adoc[Choice exception strategy]
+|Define a choice exception strategy to customize the way Mule handles a message that throws an exception based on the message’s content at the moment it throws the exception.
+|When a message throws an exception, the choice exception strategy makes a decision about where to route the message for further processing. (The choice exception strategy itself never actually performs any rollback, commit, or consume activities.)
+|===
+
+=== Characteristics of messaging exception strategies:
+
+* Each flow can contain only one exception strategy.
+* Each exception strategy can contain any number of message processors.
+* Choice exception strategies can contain one or more catch and/or rollback exception strategies. (Rollback and catch exception strategies cannot, however, contain other exception strategies.)
+
+== Default Exception Strategy
+
+Mule ESB’s default exception strategy implicitly and globally handles all messaging exceptions that are thrown in Mule applications. You can override Mule’s default exception strategy by adding a catch, rollback, or choice exception strategy to a flow. Otherwise, when an exception is thrown in a flow, Mule automatically rolls back any pending transaction and logs the exception; if no transaction is involved, the default exception strategy simply logs the exception.
+
+=== When to Use
+
+Allow Mule’s default exception strategy to activate whenever you don’t require a customized strategy for handling errors.
+
+=== Configuring a Default Exception Strategy
+
+Because the default exception strategy is implicitly applied to all Mule flows, you don’t need to specify it explicitly. Mule’s default exception strategy automatically activates whenever an error occurs in any of your flows. The default exception strategy cannot be configured using the Studio interface. However, you can build a global default exception strategy to customize the way Mule implicitly handles errors in your application. Refer to the <<Custom Default Exception Strategies>> section below.
+
+== Custom Default Exception Strategies
+
+You can create one or more global exception strategies to reuse in flows throughout your entire Mule application. First, create a global exception strategy, then add a reference exception strategy to a flow to apply the error handling behavior of your new global exception strategy.
+
+Consult the individual xref:catch-exception-strategy.adoc[catch], xref:rollback-exception-strategy.adoc[rollback] or xref:choice-exception-strategy.adoc[choice] exception strategy pages for details on how to create them globally; consult the xref:reference-exception-strategy.adoc[reference] exception strategy page for details on how to reuse them globally.
+
+=== Creating a Global Default Exception Strategy
+
+Create a global default exception strategy to customize the way Mule _implicitly_ handles all exceptions that occur in your application. To do so, you must first create a global catch, rollback or choice exception strategy for the global default exception strategy to reference. Then, create a global default exception strategy, configuring it to reference the other global exception strategy.
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+. Decide which type of exception strategy to configure to best meet your default exception strategy requirements: catch, rollback or choice.
+. Follow the procedure detailed in one of the following documents to *create a global catch, rollback or choice exception strategy* for your global default strategy to reference:
+* xref:catch-exception-strategy.adoc[Catch Exception Strategy]
+* xref:choice-exception-strategy.adoc[Choice Exception Strategy]
+* xref:rollback-exception-strategy.adoc[Rollback Exception Strategy]
+. In Studio, create a simple *Global Configuration* element (below, left), configure it to reference the global exception strategy you created in step 2 (below, right), then click *OK* to save.
+
++
+image::global-config-all.png[global_config_all]
++
+
+. Mule implicitly invokes your customized global exception strategy each time an exception is thrown in a flow in the application. +
 
 [TIP]
-For details on configuring exception strategies, see: xref:exception-strategy-configuration-reference.adoc[Exception Strategy Configuration Reference]. +
- +
-For examples of the most common exception strategy configurations, see xref:exception-strategy-most-common-use-cases.adoc[Exception Strategy Most Common Use Cases]
+====
+*Shortcut to Create a Global Exception Strategy* +
 
+You can create a global catch, rollback or choice exception strategy (i.e. access the Choose Global Type panel) from the *Global Configuration's* properties panel. Click on the *+* button next to the *Default Exception Strategy* drop-down combo box to create a global exception strategy.
 
-=== Specifying Exception Strategies
-
-The default exception strategy is https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultServiceExceptionStrategy.html[org.mule.exception.DefaultServiceExceptionStrategy], which you configure with the `<default-service-exception-strategy>` element.
+image::global-access.png[global_access]
+====
 
 [TIP]
-*[Mule 3.2]* DefaultServiceExceptionStrategy, which is shared by both the flow and the service approaches to configuration, is now named: +
- +
-https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultMessagingExceptionStrategy.html[org.mule.exception.DefaultMessagingExceptionStrategy] .
+====
+*Shortcut to Designate a Global Default Exception Strategy* +
 
+If you have already created a global exception strategy and it appears on the canvas below all your flows (below, left), you can designate it as the *Global Default Exception Strategy* directly in the Studio canvas.
 
-To configure the default exception strategy so that it applies to all the message processors within a flow, insert the element _after_ all the message processors (i.e., at the end of the flow):
+Right-click your global exception strategy in the canvas (below, right), then select *Set as default exception strategy*. Mule automatically creates a *Global* *Configuration* with a *Default Exception Strategy* that references the exception strategy.
+
+image::global-rightclick2.png[global_rightclick2]
+====
+
+[discrete.view]
+=== Studio XML Editor or Standalone
+
+. Decide which type of exception strategy to configure to best meet your default exception strategy requirements: catch, rollback or choice.
+. Follow the procedure detailed in one of the following documents to *create a global catch, rollback or choice exception strategy* for your global default strategy to reference:
+
+* xref:catch-exception-strategy.adoc[Catch Exception Strategy]
+* xref:choice-exception-strategy.adoc[Choice Exception Strategy]
+* xref:rollback-exception-strategy.adoc[Rollback Exception Strategy]
+
 
 [source,xml,linenums]
 ----
-<flow name="CreditCheck">
-  <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8080"/>
-  <logger message="#[payload]" level="INFO"/>
-...
-  <default-exception-strategy>
-    <vm:outbound-endpoint path="systemErrorHandler"/>
-  </default-exception-strategy>
+<catch-exception-strategy name="Catch_ES_for_Default">
+    <logger level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+
+
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP">
+    </cxf:jaxws-service>
+    ...
+</flow>
+----
++
+*Namespace*:
++
+[source,xml,linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+----
+
+. Add another global element, **`configuration`**, below the global exception strategy.
+. To the configuration global element, add the attributes according to the table below. Refer to code sample below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*defaultExceptionStrategy-ref* |name of your global exception strategy
+|*doc:name* |unique name for the element, if you wish (not required for Standalone)
+|*doc:description* |documentation for the element, if you wish
+|===
+
+[source,xml,linenums]
+----
+<catch-exception-strategy name="Catch_ES_for_Default" when="#[payload.null}">
+    <logger level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+
+<configuration defaultExceptionStrategy-ref="Catch_ES_for_Default" doc:name="Configuration" doc:description="Use as implicit default exception strategy."/>
+
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP">
+    </cxf:jaxws-service>
+    ...
 </flow>
 ----
 
-To configure the default exception strategy so that it applies to all the services within a model, insert the element _before_ all the services:
+=====
 
-[source,xml,linenums]
-----
-<model name="CreditCheck">
-  <default-exception-strategy>
-    <vm:outbound-endpoint path="systemErrorHandler"/>
-  </default-exception-strategy>
-  <service> ... </service>
-  <service> ... </service>
-</model>
-----
+== Other Ways of Handling Errors
 
-To configure the default exception strategy so that it applies to all the components within a service, insert it _at the end_ of the service:
+=== Until Successful Scope
 
-[source,xml,linenums]
-----
-<model name="CreditCheck">
-  <service>
-    ...
-    <default-exception-strategy>
-      <vm:outbound-endpoint path="systemErrorHandler"/>
-    </default-exception-strategy>
-  </service>
-</model>
-----
+*Until Successful* behaves similarly to a rollback exception strategy. This scope attempts to route a message through its child flow until the message is processed successfully. However, you can define the maximum number of processing attempts the Until Successful scope undertakes before it reverts to handling the message as though it were an exception. You can configure a *Failure Expression*, an *Ack Expression*, or a *Dead Letter Queue Reference* to instruct the scope on how to manage messages that it cannot process. In this respect, Until Successful scope behavior is similar to a xref:rollback-exception-strategy.adoc[rollback exception strategy]. Refer to the xref:studio-scopes.adoc[Scopes] documentation for details.
 
-[TIP]
-Set an endpoint on an exception strategy to forward messages that fail to an error queue (or some other destination).
+=== Exception Filter
 
-=== Implicit Exception Strategy
+Mule’s Exception filter stops normal flow execution when it discovers a message that contains a message in the `exceptionPayload` field. By comparison, an exception strategy typically stops normal flow execution when a message throws an exception in the flow. You can combine the two and configure the exception filter to stop normal flow execution _and_ throw an exception, which triggers the exception strategy. Refer to the xref:studio-filters.adoc[Filters documentation] for configuration details.
 
-Every flow has an implicit exception strategy, even when you don't place a <default-exception-strategy> element in it. In other words, not configuring an exception strategy has the same practical effect as inserting an empty <default-exception-strategy> element into your flow.
+=== Reconnection Strategies
 
-=== Exception Strategy Behavior
+Mule’s *Reconnection Strategies* specify how a connector behaves when its connection fails. You can control how Mule attempts to reconnect by specifying a number of criteria: the type of exception, the number and frequency of reconnection attempts, the notifications generated, and more. With a reconnection strategy, you can better control the behavior of a failed connection by configuring it, for example, to reattempt the connection only once every 15 minutes, and to stop trying to reconnect after 10 attempts. Reconnection strategy behavior resembles that of exception strategies, but reconnection strategies provide instructions specifically for — and limited to — reconnection attempts. Refer to the xref:configuring-reconnection-strategies.adoc[Reconnection Strategies documentation] for details.
 
-[TIP]
-Typically, an exception strategy can incorporate only a single message processor (or service), which executes as part of the exception strategy's logic. To incorporate multiple message processors (or services) into a single exception strategy, use the <processor-chain> element.
+=== CXF Error Handling
 
-Once an exception is thrown within a flow or service, the <default-exception-strategy> executes, and the following actions apply:
+Web services that utilize CXF can implement Mule exception strategies (such as the Catch and Rollback exception strategies) that are compatible with CXF. Consult the xref:cxf-error-handling.adoc[CXF Error Handling documentation] for details.
 
-* The exception is logged
-* If no transaction has occured
-** The message is routed through the message processors configured for the exception strategy
-* If a transaction does occur within the exception strategy context
-** The transaction is rolled back, and
-** The message is routed through the message processors configured for the exception strategy
-* If a transaction occurs within the exception strategy context, _and_ that transaction must be committed
-** The message is routed through the message processors configured for the exception strategy
-** The transaction is committed
-* If the payload is a stream, it is shut down
+== See Also
 
-Before the message is routed through the message processors configured for the exception strategy, that message is transformed so that it now contains information about the exception. Thus, a new payload of the following type is created: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/message/ExceptionMessage.html[org.mule.message.ExceptionMessage] . It contains the current payload in the payload attribute and the exception in the exception attribute.
-
-If the flow exchange-pattern is _request-response_, a different message is returned to the caller after <default-exception-strategy> has been executed. The message has https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/NullPayload.html[org.mule.transport.NullPayload] as its payload and the exceptionPayload attribute is set to the following: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/ExceptionPayload.html[org.mule.api.ExceptionPayload].
-
-=== Implementing Custom Exception Strategies
-
-You can implement a strategy of your own that your class can extend through https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionListener.html[org.mule.exception.AbstractExceptionListener]. However, the recommended approach is to extend https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultServiceExceptionStrategy.html[org.mule.exception.DefaultServiceExceptionStrategy], then overload the `defaultHandler()` method. You can set bean properties on your custom exception strategy in the same way as other Mule-configured objects using a `<properties>` element.
-
-The `defaultHandler()` method performs all necessary processing to contain an exception, so an exception must never be thrown from an exception strategy, since the exception strategy needs to manage fatal errors.
-
-For example, when an error queue is being used and the dispatch fails, your error handling strategy should execute the following steps:
-
-* stop the current component
-* send a server notification to alert the system monitor
-* write the event to file
-
-To change the way exceptions are logged, override the `logException()` method from https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionListener.html[org.mule.exception.AbstractExceptionListener].
-
-=== Implementing Custom Exception Strategies
-
-When you implement a custom strategy, your class can extend https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractMessagingExceptionStrategy.html[org.mule.exception.AbstractMessagingExceptionStrategy], since this class provides the logic required to manage transactions and streams. Redefine `handleException(Exception ex, MuleEvent event, RollbackSourceCallback rollbackMethod)` and `handleException(Exception ex, MuleEvent event)` methods to apply your custom behavior but you must not forget to call `super.handleException(Exception ex, MuleEvent event, RollbackSourceCallback rollbackMethod)` and `super.handleException(Exception ex, MuleEvent event)` so transactions, message routing and streams are handled properly.
-
-If you want to change the way exceptions are logged, override the `logException()` method from https://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionStrategy.html[org.mule.exception.AbstractExceptionStrategy].
-
-To transform the message being routed, you must configure message processors inside <custom-exception-strategy> element.
-
-== Using the Exception-based Router
-
-When an exception occurs, the exception-based router https://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/ExceptionBasedRouter.html[org.mule.routing.outbound.ExceptionBasedRouter] determines where the message goes. You can have multiple endpoints specified on the exception-based router, so that if the first endpoint fails with a `FatalConnectionException`, the next endpoint is tried, and then the next.
-
-If all endpoints fail, an https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/routing/RoutingException.html[org.mule.api.routing.RoutingException] is thrown. Note that the exception-based router overrides the endpoint mode, setting it to synchronous, while seeking a successful send, and it uses the endpoint's mode for the last item in the list.
-
-The following example configures an exception-based router:
-
-[source,xml,linenums]
-----
-<outbound>
-  <exception-based-router>
-    <tcp:endpoint host="10.192.111.10" port="10001" />
-    <tcp:endpoint host="10.192.111.11" port="10001" />
-    <tcp:endpoint host="10.192.111.12" port="10001" />
-  </exception-based-router>
-</outbound>
-----
-
-For more information on routers, see xref:using-message-routers.adoc[Using Message Routers].
-
-== Using the Exception Type Filter
-
-You can use the Exception Type filter to gain fine-grained control over messages that produce errors. For example, when a message processed by a synchronous flow gets sent to a validation service, but fails validation, the message and its exception get forwarded to another service AND the message and its exception get returned to the caller. You can achieve this using a chaining router and the `<exception-type-filter>` as follows:
-
-[source,xml,linenums]
-----
-<chaining-router>
-  <vm:outbound-endpoint path="ValidationService" synchronous="true"/>
-  <vm:outbound-endpoint path="ValidationError" synchronous="true">
-    <exception-type-filter expectedType="java.lang.Exception"/>
-  </vm:outbound-endpoint>
-</chaining-router>
-----
-
-For more information on filters, see xref:using-filters.adoc[Using Filters].
-
-== Error Handling with Transactions
-
-If you are using xref:transaction-management.adoc[transactions], you can use the `<commit-transaction>` and `<rollback-transaction>` elements to specify whether a transaction gets committed or rolled back on the basis of the name of the exception that is caught.
-
-You can set a comma-separated list of wildcard patterns that will be matched against the fully qualified classname of the current exception.
-
-You can use the following patterns:
-
-* `java.lang.Exception` — Matches only if the exception is exactly `java.lang.Exception`
-* `java.lang.Exception+` — Matches if the exception is `java.lang.Exception` or a subclass
-* `org.mule.routing.*` — Matches any exception which names starts with `org.mule.routing`
-* `*` — Matches any exception type
-
-For example, the following code rolls back the transaction only if the exception classname begins with `com.ibm.mq.`, otherwise it commits all other transactions:
-
-[source,xml,linenums]
-----
-<default-exception-strategy>
-  <commit-transaction exception-pattern="*"/>
-  <rollback-transaction exception-pattern="com.ibm.mq.*"/>
-  <vm:outbound-endpoint path="handleError"/>
-</default-exception-strategy>
-----
-
-For the following example, rollback occurs if the exception thrown is an instance of +
-`java.lang.IllegalArgumentException`.
-
-[source,xml,linenums]
-----
-<default-service-exception-strategy>
-  <commit-transaction exception-pattern="*"/>
-  <rollback-transaction exception-pattern="java.lang.IllegalArgumentException+"/>
-  <vm:outbound-endpoint path="handleError"/>
-</default-service-exception-strategy>
-----
-
-Mule uses the following criteria to commit or rollback message processing events:
-
-* *Default*: If neither `<rollback-transaction>` nor `<commit-transaction>` return an `exception-pattern` that matches the `exception-pattern` values specified for the applicable exception strategy, the transaction is rolled back.
-* If the returned exception-pattern matches the value specified for the exception-pattern attribute associated with the rollback transaction element of the relevant exception strategy, then the transaction is rolled back.
-* If the returned exception-pattern _doesn’t_ match, _and_ the returned value for the <commit-transaction> exception pattern _does_ match, then the transaction is committed.
-* For all other cases, the transaction is rolled back.
+* To understand how to configure Mule’s exception strategies to handle the most common error handling use cases, read xref:exception-strategy-most-common-use-cases.adoc[Exception Strategy Most Common Use Cases].

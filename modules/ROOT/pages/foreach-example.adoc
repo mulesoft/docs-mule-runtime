@@ -1,0 +1,259 @@
+= Foreach Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This example illustrates the efficiency that iterative processing can add to a Mule ESB application.
+
+A user submitting a database retrieval request to the *Foreach Example* application seeks answers to two questions:
+
+. How many cars are in my inventory?
+. What is the century of manufacture of each car: 20th or 21st?
+
+Mule uses a **xref:foreach.adoc[Foreach]** message processor to extract, and iteratively process, records from a database. Each record in the database contains information about a car in an inventory. However, a record does not indicate a car's manufacture century; it contains only the make, model and year of manufacture of a car. Mule must iteratively examine the message payload of each record, add information to the payload to indicate each car’s manufacture century, then return a response to the end user.
+
+The *Foreach Example* application uses more than a foreach message processor to maximize its efficiency:
+
+. it routes messages based on the message payload contents
+. it parses and transforms message payload data
+. it sets data onto message payloads
+. it handles errors with customized exception strategies
+
+This example will help you to make informed decisions about incorporating iterative (also known as loop-type) processing into your Mule applications. To understand more about Mule ESB’s ability to integrate services and systems, access the Mule xref:mule-examples.adoc[examples] and see other applications in action.
+
+== Assumptions
+
+The MuleSoft team built the Foreach example in *Mule Studio*, Mule ESB’s graphical user interface (GUI). This document describes the details of the example within the context of Mule Studio. Where appropriate, the XML configuration follows the Studio interface screenshot in an expandable section.
+
+This document assumes that you are familiar with Mule ESB and the xref:mule-studio-essentials.adoc[Mule Studio interface]. To increase your familiarity with Mule Studio, consider completing one or more xref:mule-studio.adoc[Mule Studio Tutorials].
+
+== Set Up
+
+As with this Foreach example, you can create template applications straight out of the box in *Mule Studio* or *Mule Standalone* (Mule ESB without Studio). You can tweak the configurations of these use case-based templates to create your own customized applications in Mule.
+
+Follow the procedure below to create, then run the Foreach example application in Mule ESB.
+
+. Complete the procedure in xref:mule-examples.adoc[Examples and Exercises] to create, then run, the Foreach template in Mule Studio, or the Foreach example in Mule Standalone (Mule ESB without Studio).
+. Open your Web browser, then type `http://localhost:9091/populate` in the address bar.
+. Press *enter* to activate the Foreach application and elicit a response in your browser that reads `Successfully populated the database`. (This action populates the database Foreach uses to process requests. The <<Populate Flow>> below describes this activity in detail.)
++
+image::successful-populate.png[successful_populate]
+
+. Type `http://localhost:9091/process` into the address bar of your browser, then press **enter **to elicit a response from the application that indicates: +
+* how many records (cars) Mule extracted from the database (inventory) and iteratively processed
+* the `TYPE` of each car in the inventory: `20th century car` or `21st century car`
+* the `MODEL` and `MODEL_YEAR` of each car
++
+image::processed.png[]
+
+== How it Works
+
+The *Foreach* example application contains two xref:mule-application-architecture.adoc[flows].
+
+. The first flow processes end user requests and returns responses.
+. The second flow creates a table in a database, then populates the table with sample data. (You need not create this flow in your application to query a database; it exists in this example so that you can examine a functional application.)
+
+The sections below offer flow-by-flow descriptions of Foreach's actions as it processes end user requests.
+
+[TIP]
+====
+*For Mule Studio Users*
+
+In Mule Studio, double-click a xref:studio-building-blocks.adoc[building block] to open its *Properties Panel* and examine its configuration details. Alternatively, click the *Configuration XML* tab to examine the application's XML configuration file.
+
+image::config-tab.png[config_tab]
+====
+
+=== Process Flow
+
+This flow uses several xref:studio-building-blocks.adoc[building blocks] to receive, process and respond to end user requests.
+
+image::process-flow.png[process_flow]
+
+//*View the XML*
+
+==== Endpoints
+
+The request-response **xref:http-endpoint-reference.adoc[HTTP Endpoint] **receives the end user request. Because it has a two-way message exchange pattern, this HTTP endpoint both receives requests from, and sends responses to, the end user.
+
+The message then moves to a **xref:database-jdbc-endpoint-reference.adoc[JDBC Endpoint]** which extracts a collection of records from the database; in this case, each record contains information about a car in the end user’s inventory:
+
+* the make and model
+* the year of manufacture
+
+[NOTE]
+====
+*Two-Way vs. One-Way*
+
+Notice that the JDBC endpoint has a *two-way message exchange pattern* (as indicated by the small double-arrow icon — see image below, left). Because it must _retrieve_ information from a database, the JDBC endpoint in this example must have a request-response message exchange pattern.
+
+If a JDBC endpoint has only to _populate_ a database with information, it requires a **one-way message exchange pattern**--- see image below, right.
+
+image::jdbc-endpoitns.png[JDBC_endpoitns]
+====
+
+==== Foreach and Choice
+
+Mule then subjects the message to a **xref:foreach.adoc[Foreach]** iterative processor. With the help of a **xref:choice-flow-control-reference.adoc[Choice Flow Control]**, foreach identifies which vehicles are 20th century cars, and which are 21st century cars.
+
+The foreach scope first splits the collection of database records apart into a list of elements (i.e. a list of cars); each element contains information about the make, model and year of a car. Foreach then feeds each element, one by one, through the message processors within its scope.
+
+The choice flow control examines the `MODEL_YEAR` and makes a decision about where to route the message:
+
+* if the year is less than 2001, the choice flow control routes the element to the first `Set payload type` *Expression Component*
+* if otherwise (i.e. the year is 2001 or greater), the choice flow control routes the element to the second `Set payload type` expression component
+
+image::choice-properties-2.png[choice_properties_2]
+
+//View the XML
+
+Each of the `Set payload type` expression components in the foreach scope adds to the message payload to specify the `TYPE` of car:
+
+* the first component sets the `TYPE` to `20th century car`
+* the second component sets the `TYPE` to `21st century car`
+
+Next, foreach delivers each element to an *xref:studio-endpoints.adoc[Outbound Endpoints].*
+
+* elements with a `20th century car TYPE` move through a *JMS Endpoint* (Java Messaging Service API) and out to an application-external queue.
+* elements with a `21st century car TYPE` move through a **xref:file-endpoint-reference.adoc[File Endpoint] **to record the information in an external file system.
+
+[NOTE]
+Neither the external JMS queue nor the external file system exists. This flow simply demonstrates that you can use outbound endpoints within in a foreach scope to push collection information to other destinations.
+
+To illustrate iterative processing with an example, imagine the JDBC endpoint accesses the database and supplies foreach with a collection containing three elements:
+
+* a 2002 Honda Civic
+* a 1978 Chevy Nova
+* a 2000 Audi TT
+
+. Foreach separates the collection into three elements, then feeds the first one to the choice flow control.
+. The choice flow control examines the payload for the first element to determine if the manufacture year is less than 2001. in this case, the year is greater than 2001, so the flow control routes the element to the second `Set payload type` expression component.
+. The component sets the element `TYPE` to `21st century car`.
+. The element moves to the file outbound endpoint which sends the element’s information, including its new `TYPE`, to an external file system.
+. Foreach feeds the second element to the choice flow control.
+. The choice flow control examines the payload information for the second element to determine if the manufacture year is less than 2001. In this case, the year is less than 2001, so the flow control routes the element to the first `Set payload type` expression component.
+. The component sets the element `TYPE` to `20th century car`.
+. The element moves to the JMS outbound endpoint which forwards the element’s information, including its new `TYPE`, to an external JMS queue.
+. Lastly, foreach feeds the third element into the choice flow control which performs the same examination of the payload and routes the element to the first `Set payload type` expression component.
+. The component sets the element `TYPE` to `20th century car`.
+. Foreach passes the result of its iterative effort — to add `TYPE` to each car — to the `Set Response` transformer.
+
+After iterative processing, the structure and content of the original message payload (a collection) remains. Foreach simply added a new indicator for `TYPE` to each element in the collection.
+
+[%header,cols="2*"]
+|===
+|Message Payload Content Before +
+Iterative Processing |Message Payload Content After +
+Iterative Processing
+|`MODEL_YEAR=2002, MODEL=Honda Civic` +
+ `MODEL_YEAR=1978, MODEL=Chevy Nova` +
+ `MODEL_YEAR=2000, MODEL=Audi TT` |`TYPE=21st century car, MODEL_YEAR=2002, MODEL=Honda Civic` +
+ `TYPE=20th century car,MODEL_YEAR=1978, MODEL=Chevy Nova` +
+ `TYPE=20th century car,MODEL_YEAR=2000, MODEL=Audi TT`
+|===
+
+==== Transformers
+
+Next, foreach passes the message to the *Set Payload Transformer* which examines the number of just-processed elements in the collection. It sets new data on the message payload to indicate the number of elements in the collection — in this case, the number of cars. (The new data answers the end user's first question, "how many cars are in my inventory?".)
+
+The *Parse Template Transformer* then loads a template file into the application, parses the content to resolve expressions, and sets the parsed content as the message payload. In this example, the transformer loads the `foreach_info.html` file from Mule's `src/main/resources` folder, and parses the content to set the font of the end user response to bold. As a result, the end user's browser displays the response in bold font.
+
+==== HTTP Response Builder
+
+Finally, the *HTTP Response Builder* prepares a response to return to the end user. You can use an HTTP Response Builder to configure details such as,
+
+* the response’s *content type*; for example `text/html`, or `application/json`
+* the response’s *HTTP status code*; for example, `200` for “OK”, `500` for “Internal Error”
+* the *Cache Control* directives, which instruct all caching mechanisms in the request-response path how to handle the response
+
+The response builder pushes the message back to the request-response HTTP endpoint, which returns the a response to the end user (see image below). The response indicates:
+
+* the number of cars in the inventory
+* the type, model year, and model of each car +
+
+image::processed.png[]
+
+==== Exception Strategy
+
+Notice that the Process flow also contains a **xref:catch-exception-strategy.adoc[Catch Exception Strategy]**. Rather than use Mule’s xref:error-handling.adoc[default exception strategy], this flow uses a customized exception strategy to handle errors. If an error occurs, the exception strategy catches the exception and its message processors perform three actions:
+
+. The set payload transformer sets the message payload to read, `You need to populate the Database first`.
+. The parse template transformer loads the `foreach_error.html` file from Mule's `src/main/resources` folder into the message. Mule uses the template to construct the end user response; in this case, the `html` template applies a heading that reads `An error has occurred`.
+. The HTTP Response Builder prepares a response to send to the end user which includes an HTTP status code of `500`.
+
+image::error-occurred.png[error_occurred]
+
+=== Populate Flow
+
+This flow creates a table in a database, and populates the table with sample data. The Populate flow exists in this example only to provide a database from which the JDBC endpoint in the Process flow can fetch records. You need not create this flow in your application to query a database; it exists in this example so that you can examine a functional application. Nonetheless, it is a functional flow worth studying.
+
+image::populate-flow.png[populate_flow]
+
+//View the XML
+
+==== Endpoint and Script
+
+As in Process flow, the request-response **xref:http-endpoint-reference.adoc[HTTP Inbound Endpoint] **in the Populate flow receives the end user request. The message then moves to a **xref:groovy-component-reference.adoc[Groovy Script Component]** which creates a table in a database, and populates the table with information about cars (see script, below).
+
+[source,text,linenums]
+----
+jdbcConnector = muleContext.getRegistry().lookupConnector("JDBCConnector");
+qr = jdbcConnector.getQueryRunner();
+conn = jdbcConnector.getConnection();
+qr.update(conn, "CREATE TABLE cars (model varchar(256), model_year integer)");
+qr.update(conn, "INSERT INTO cars values('Ford Sierra', 1982)");
+qr.update(conn, "INSERT INTO cars values('Opel Astra', 2001)");
+----
+
+==== Transformers and HTTP Response Builder
+
+The Populate flow uses a set payload transformer to set a `Successfully populated the database` message on the payload. Then, a parse template transformer loads the `foreach_info.html` into the message, and parses the content to set the font of the end user response to bold. (The end user's browser displays the response in bold font.)
+
+Lastly, the HTTP response builder prepares a response and passes it to the HTTP endpoint to return to the user. Mule presents the user with a message that reads `Successfully populated the database`. +
+ +
+ image:successful-populate.png[successful_populate]
+
+==== Exception Strategy
+
+If an error occurs during processing, this catch exception strategy mimics the actions of the Process flow's exception strategy. The only difference between exception strategies is the content the set payload transformer sets on the payload; the Populate flow’s error message reads, `DB already populated`. +
+ +
+ image:db-populated.png[db_populated]
+
+== Drill Deeper
+
+The Foreach application uses three *Global Elements* to process requests:
+
+* *Derby Data Source*
+* *Database (JDBC) connector*
+* *Active MQ connector*
+
+image::global-elements-tab.png[global_elements_tab]
+
+// View the XML
+
+[NOTE]
+====
+*What is a Global Element?*
+
+Mule ESB uses *Global Elements*, like the *Database (JDBC) Connector* in the Foreach example, to specify transport details and set reusable configurations.
+
+Rather than repeatedly write the same code to apply the same configuration to multiple message processors, you can create one global element that details your configurations or transport details. Then, you can instruct any number of message processors in your Mule application to reference that global element.
+
+In this example, the transport configurations the *JDBC Endpoint* uses do not exist within the Process flow; rather, the configurations reside in a global *JDBC Connector* element. The JDBC endpoint simply references the global JDBC connector to obtain transport configuration details.
+====
+
+Mule uses the global *Derby_Data_Source* element as a database from which the JDBC endpoint can fetch data. The global element uses a Derby open-source relational database (and its embedded JDBC driver) so that you can run the application and see the Foreach example in action.
+
+For transport configuration details, the JDBC endpoint and the JMS endpoint reference the global *JDBCConnector* and *JMSConnector*, respectively (see below left and right).
+
+image::connectors-reference.png[connectors_reference]
+
+// View the XML
+
+== Related Topics
+
+* For more information on using the JDBC endpoint, see xref:database-jdbc-endpoint-reference.adoc[JDBC Endpoint Reference].
+* For more information on iterative processing, see xref:foreach.adoc[Foreach].
+* For more information on routing messages, see xref:choice-flow-control-reference.adoc[Choice Flow Control].
+* For more information on applying exception strategies to flows, see xref:error-handling.adoc[Error Handling].
+* For more information on Derby open source database, reference http://db.apache.org/derby/[Apache's Derby documentation]

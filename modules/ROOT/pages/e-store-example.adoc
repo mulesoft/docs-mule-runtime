@@ -1,0 +1,1118 @@
+= E-store Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+*_Enterprise Edition_*
+
+This example application simulates an online store that demonstrates Mule ESB’s ability to support common e-commerce use cases.
+
+The Mule ESB application enables end users to browse products on the online store, add items to an online cart, then checkout. Following the best practices of enterprise application architecture, this *E-store* example application consists of two parts, each fully implemented in Mule ESB:
+
+. *Client-side Frontend Application* +
+A client-side application which accepts end user requests from an AJAX-based graphical user interface (GUI). This application enables users to perform the following online shopping tasks:
+* display a list of products
+* add products to a cart
+* display contents of a cart
+* checkout (i.e. purchase products) +
+ This front-end application uses AJAX to interact with the GUI on the end user's browser, and JMS to exchange data in http://en.wikipedia.org/wiki/JSON[JSON format] with the back-end application.
+. *Server-side Backend Application* +
+ An application-layer, server-side application which orchestrates services — internal and external — to complete end-user requests. The backend also transforms data into different formats according to the requirements of the external Web services.
+
+To operate as a fully functional example, this application also includes three components that simulate external, 3rd-party Web service providers:
+
+. *Barber’s Paradise Store* +
+ A RESTful Web service with which the E-store backend interacts to support the end-user shopping experience (browsing items, purchasing products and fulfilling orders).
+. *Van Gogh Paint Store* +
+ A SOAP Web service with which the E-store back-end interacts to support the end-user shopping experience (browsing items, purchasing products and fulfilling orders).
+. *Bank* +
+ A RESTful Web service which performs complex validations on data — including both syntactic and semantic validation — in order to authorize end-user payments.
+
+Further, this Mule ESB example includes an AJAX-based graphical user interface (GUI) with which an end user interacts on a browser. This document describes the *E-store User Interface* further in a <<The E-store User Interface>> below.
+
+This example should help you to make informed decisions about using Mule ESB to build or support e-commerce transactions. Learn how to:
+
+* use AJAX to interact with a Web browser from Mule ESB
+* interact synchronously and asynchronously with Mule ESB processes
+* consolidate data from different sources, then apply data transformation logic
+* route messages based on content
+* cache data to maximize the application’s performance
+* transform data using the Mule Expression Language (MEL)
+* interact with a relational database management system using a JDBC connector
+* expose and consume SOAP, REST and JMS services
+* configure an embedded instance of the ActiveMQ JMS message broker
+* handle errors using exception strategies
+* create output files on a file system
+
+To understand more about Mule ESB’s ability to integrate services and systems, access the Mule xref:mule-examples.adoc[examples] and see other applications in action.
+
+== Assumptions
+
+This document assumes that you are familiar with Mule ESB and the xref:mule-studio-essentials.adoc[Mule Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:mule-studio.adoc[Mule Studio Tutorials].
+
+This document describes the details of the example within the context of *Mule Studio*, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot in an expandable section.
+
+== Set Up
+
+As with this E-store example, you can create template applications straight out of the box in *Mule Studio*. You can tweak the configurations of these use case-based templates to create your own customized applications in Mule.
+
+Follow the procedure below to create, then run the E-store application in Mule ESB.
+
+. Complete the procedure in xref:mule-examples.adoc[Examples and Exercises] to create, then run the E-store template in Mule Studio.
+. Open your Web browser.
+. Type `http://localhost:8090/estore/index.html`, then press *enter* to display the E-store client-side user interface (see image below).
++
+image::e-store-intro.png[e-store_intro]
+
+== How it Works
+
+The *E-store* application consists of several xref:mule-application-architecture.adoc[flows and subflows]. These flows integrate Web services that process end user requests to search for, then purchase products. You can build a Mule ESB application with any number of flows in one Mule Flow file (`.mflow`), or organize your flows into several Mule flow (`.mflow`) files. In a large project, like this *E-store* application, you may wish to use multiple `.mflow` files to structure the project in a way that makes it easy for other developers on your team to understand and maintain.
+
+This example application contains six Mule flow files (see image below), each of which contains several flows. Organized according to function, these flow files serve different purposes within the application. +
+ +
+ image:e-store-flows.png[e-store_flows]
+
+[%header,cols="34,33,33"]
+|===
+|Flow File |Role |Description of Function
+|*bank* |3rd-party service provider |Exposes a single REST Web service to simulate a bank’s payment validation and authorization activities.
+|*e-storeBackend* |server-side of E-store application |Orchestrates services to implement the e-store’s application-layer business logic.
+|*e-storeFrontend* |client-side of E-store application |Implements the user-facing AJAX services that support the Web-based end-user interface. This front-end part of the application gathers user session IDs to identify users’ shopping carts to the server-side.
+|*initializedatabase* |Database table creator |Creates the embedded http://db.apache.org/derby/[Derby] database with the necessary tables for storing cart contents. (Mule automatically initializes the database when you run the application.) You need not create this part of the application in your customized application to publish a Web service; it exists in this example so you can examine a functional Web service.
+|*provider-barbersparadise* |3rd-party service provider |Exposes a REST Web service to simulate the Barber's Paradise Store Web service provider. End users can shop for Barber’s Paradise products on the E-store website.
+|*provider-vangoghpaint* |3rd-party service provider |Exposes a SOAP Web service to simulate the Van Gogh’s Paint Store Web service provider. End users can shop for Van Gogh’s Paint products on the E-store website.
+|===
+
+The meat of this example is the **e-storeBackend**. This group of flows orchestrates calls to external resources in order to compile orders and conduct purchases. In the universe of flows in this application, the *e-storeBackend* is the sun.
+
+image::e-store-universe.png[e-store_universe]
+
+The sections below offer use case-based descriptions of the activities the E-store performs to process end user requests.
+
+[TIP]
+====
+*For Mule Studio Users*
+
+In Mule Studio, double-click a xref:studio-building-blocks.adoc[building block] to open its *Properties Panel*, then examine its configuration details. Alternatively, click the *Configuration XML* tab to examine the application's XML configuration file.
+
+image::config-tab.png[config_tab]
+====
+
+== E-store Activities
+
+From a Web browser, a user sends requests to the E-store to perform several tasks. The table below describes the activities that the *e-storeBackend* flows orchestrate (i.e. the different things the e-storeBackend does) upon end-user request. The figure below illustrates the communication between the end-user, the e-store (front- and backends), and the 3rd-party service providers.
+
+[%header,cols="2*"]
+|===
+|User Request |e-storeBackend Activities
+|*<<List All Products>>* |Contacts both the Barber's Paradise Store Web service and Van Gogh Store Web service to fetch a list of all the available products from each, then transforms the list of products JSON http://en.wikipedia.org/wiki/Canonicalization[canonical] format.
+|*<<Add Product to Cart>>* |Registers a selected product on the end-user’s shopping cart. An embedded, application-layer Derby database maintains the state of the cart.
+|*<<View Cart>>* |Queries the embedded Derby database for a list of products in the end user’s cart, then contacts 3rd-party service providers to fetch up-date prices and details of each product. Displays the current contents of the shopping cart on the end user’s browser.
+|*<<Checkout>>* |Uses end user’s credit card information to verify payment authorization with the bank. Aggregates products for each service provider — all the Barbers Paradise products together, all the Van Gogh Paint products together — then submits one fulfillment order to each provider.
+|*<<Clear Cart Contents>>* |Clears the contents of database table which contains the end user’s cart contents.
+|===
+
+image::estore.png[]
+
+The following sub-sections describe Mule ESB’s actions as it processes end user requests (as described briefly in the table above). However, before diving into the use-case details, the first sub-section offers a description of the Web-based user interface.
+
+=== The E-store User Interface
+
+image::e-store-intro.png[e-store_intro]
+
+The E-store example application includes an AJAX-based GUI supported by the http://en.wikipedia.org/wiki/JQuery_UI[JQuery-UI] framework. To examine the code of the client-side interface, access the `index.html` file in the `src/main/app/docroot` folder in Mule.
+
+[TIP]
+====
+*How Do I Access the Index File?* +
+
+. In the *Package Explorer*, click to expand the `src` folder.
+. Click to expand folders to navigate to `main` > `app` > `docroot`.
+. Double-click the `index.html` file to open the file in a new canvas pane in Studio.
+====
+
+Each tab and button on the GUI (with the exception of the *Welcome* tab) corresponds to a flow in the *e-storeFrontend* flow file. When a user clicks on one of the buttons or tabs, Mule activates its corresponding frontend flow to initiate a request to the *e-storeBackend* flows (see table, and code, below).
+
+[%header,cols="2*"]
+|===
+|GUI Tab or Button |e-storeFrontend Flow
+|List all products |e-storeFrontend-listProducts
+|Products |e-storeFrontend-listProducts
+|My Cart |e-storeFrontend-showCart
+|Add to cart |e-storeFrontend-addToCart
+|View my shopping cart |e-storeFrontend-showCart
+|Clear cart contents |e-storeFrontend-clearCart
+|Checkout |e-storeFrontend-getCartTotal
+|Proceed to checkout |e-storeFrontend-getCartTotal
+|Verify payment and submit order |e-storeFrontend-doCheckout
+|===
+
+*View Code for Tabs*
+
+[source,text,linenums]
+----
+tabs = $("#tabs").tabs({selected: 0});
+
+$('#tabs').bind('tabsselect', function(event, ui) {
+    if (ui.tab.hash == "#listProducts") {
+        $("#products").empty();
+        $("#products").append("Loading products, please wait...");
+        mule.rpc("/estore/listProducts", "", listProductsResponse);
+    } else if (ui.tab.hash == "#showCart") {
+        $("#cartProducts").empty();
+        $("#cartProducts").append("Loading cart contents, please wait...");
+        mule.rpc("/estore/showCart", "", showCartResponse);
+    } else if (ui.tab.hash == "#checkout") {
+        $("#checkoutTotal").html("0.00");
+        $("#checkoutComments").html("<p>You don't have any items on your cart yet! Add some on the products tab before checkout!</p>");
+        $("#checkoutForm :input").val("");
+        $("#checkoutForm :input").attr("disabled", true);
+        $("#doCheckoutButton").button({ disabled: true});
+        mule.rpc("/estore/getCartTotal", "", prepareCheckoutResponse);
+    }
+});
+----
+
+*View Code for Add to Cart Button*
+
+[source,text,linenums]
+----
+$('#addProductToCartButton').click(function() {
+    var data = {};
+    data['productCode'] = $("#addToCartForm #productCode").val();
+    data['provider'] = $("#addToCartForm #productProvider").val();
+    data['qty'] = $("#addToCartForm #qty").val();
+    data['price'] = $("#addToCartForm #price").val();
+    mule.rpc("/estore/addToCart", JSON.stringify(data), addToCartResponse);
+})
+----
+
+The `index.html` file imports the **Mule.rpc AJAX client**, along with the Jquery UI scripts, in the HTML header (see code below). The client uses different “channels” to send each user request to its corresponding e-storeFrontend flow. Each flow, in turn, listens to only one channel. Mule transfers all data to and from the end user’s browser in JSON format.
+
+*View the Header*
+
+[source,xml,linenums]
+----
+<head>
+  <link href="css/south-street/jquery-ui-1.8.20.custom.css" rel="stylesheet" type="text/css"/>
+  <link href="css/estore.css" rel="stylesheet" type="text/css"/>
+  <script type="text/javascript" src="js/jquery-1.7.2.min.js"></script>
+  <script type="text/javascript" src="js/jquery-ui-1.8.20.custom.min.js"></script>
+  <script type="text/javascript" src="mule-resource/js/mule.js"></script>
+</head>
+----
+
+=== List All Products
+
+The E-store application enables users to retrieve a list of all the products available for purchase in the online store. The following diagram illustrates E-store’s activities to retrieve a list of available products.
+
+image::model.png[]
+
+==== e-storeFrontend
+
+When an end user submits a request to list all products available for purchase on the e-store, the client-side interface activates the *e-storeFrontend-listProducts* flow in the `e-storeFrontend.mflow file` (see image below).
+
+image::screen-shot-2012-06-18-at-6_43_27-pm.png[Screen+Shot+2012-06-18+at+6.43.27+PM]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-listProducts" doc:name="e-storeFrontend-listProducts">
+        <ajax:inbound-endpoint channel="/estore/listProducts" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/listProducts"></ajax:inbound-endpoint>
+        <response>
+            <object-to-string-transformer doc:name="Object to String"></object-to-string-transformer>
+        </response>
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.listProducts" connector-ref="Active_MQ" doc:name="Request product list to backend"></jms:outbound-endpoint>
+</flow>
+----
+
+The **xref:ajax-endpoint-reference.adoc[AJAX Endpoint]** “listens” for a request from the *mule.rpc client* on the */estore/listProducts* channel (see image below, left), and upon receipt, passes the request to the outbound xref:jms-transport-reference.adoc[*JMS Endpoint*.] The JMS endpoint sends the messages to a JMS queue, `estore.listProducts`, in the e-storeBackend (see image below, right). Mule uses *Global ActiveMQ Connectors* to implement JMS messaging in the E-store application.
+
+image::ajax-and-jms.png[ajax_and_JMS]
+
+[TIP]
+====
+*What is a Global Connector?*
+
+Mule ESB uses *Global Elements*, like the *ActiveMQ Connector* in the E-store example, to specify transport details and set reusable configurations.
+
+Rather than repeatedly write the same code to apply the same configuration to multiple message processors, you can create one global element that details your configurations or transport details. Then, you can instruct any number of message processors in your Mule application to reference that global element.
+====
+
+*View ActiveMQ Connector Code*
+
+[source,xml,linenums]
+----
+<jms:activemq-connector name="Active_MQ" specification="1.1" brokerURL="vm://localhost" validateConnections="true" doc:name="Active_MQ"/>
+----
+
+==== e-storeBackend
+
+The JMS endpoint in the *listProducts* flow listens for requests from the *e-storeFrontend-listProducts* flow on the `estore.listProducts` http://en.wikipedia.org/wiki/Java_Message_Service[JMS queue] (see image below).
+
+image::listproductsa.png[listproductsA]
+
+image::listproductsb.png[listproductsB]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="listProducts" doc:name="listProducts">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.listProducts" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <set-variable variableName="allProducts" value="#\[new java.util.LinkedList()\]" doc:name="Initialize output list"/>
+        <all doc:name="All">
+            <processor-chain>
+                <ee:cache cachingStrategy-ref="listProductsBarbersParadiseCachingStrategy" doc:name="Cache">
+                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/products" method="GET" connector-ref="HttpConnector" doc:name="Fetch products from Barbers Paradise Store"/>
+                </ee:cache>
+                <splitter expression="#[json:]" doc:name="Split received products list"/>
+                <DataMapper:transform config-ref="barbersParadiseToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <expression-transformer expression="flowVars['allProducts'].add(payload)" doc:name="Add product to output list"/>
+            </processor-chain>
+            <processor-chain>
+                <ee:cache cachingStrategy-ref="listProductsVangoghPaintStoreCachingStrategy" doc:name="Cache">
+                    <flow-ref name="subflow-fetchProductsFromVanGoghPaintStore" doc:name="subflow-fetchProductsFromVanGoghPaintStore"/>
+                </ee:cache>
+                <collection-splitter doc:name="Split received collection"/>
+                <DataMapper:transform config-ref="vanGoghPaintToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <expression-transformer expression="flowVars['allProducts'].add(payload)" doc:name="Add product to output list"/>
+            </processor-chain>
+        </all>
+        <expression-transformer expression="allProducts" doc:name="Set payload to output list"/>
+    </flow>
+----
+
+This flow uses a **xref:variable-transformer-reference.adoc[Set Variable Transformer]** to set a new LinkedList variable on the message (see image below). This `allProducts` list is empty, and is about to be filled with data Mule retrieves from the 3rd-party service providers.
+
+image::allproducts.png[allProducts]
+
+Next, Mule must send a request to both Barber’s Paradise and Van Gogh’s paint store to retrieve a list of all the products they offer for sale. To do this, Mule uses an xref:all-flow-control-reference.adoc[*All Router*] which sends the request to both an **xref:http-endpoint-reference.adoc[HTTP Endpoint] *and a *xref:flow-ref-component-reference.adoc[Flow Reference Component]**.
+
+The request-response HTTP endpoint uses a `GET` method to fetch a list of products from Barber’s Paradise’s RESTful Web service (see image below). Mule **xref:cache-scope.adoc[caches]** the response from Barber’s Paradise to reuse the list of products the next time the end user makes the same request. Caching the response decreases the number of calls to the service provider thus improving the application’s performance.
+
+image::get-method.png[get_method]
+
+The HTTP endpoint triggers the *listOrGETProducts* flow in the `providers-barbersParadise.mflow file` through the URL `localhost:9080/barbersparadise/products`. Barber’s Paradise returns a JSON-formatted list of products (see code below).
+
+[source,text,linenums]
+----
+[
+    {
+        "upc": "1827349",
+        "description": "Billy-boy forever-sharp razors",
+        "price": "9.95"
+    },
+    {
+        "upc": "7727362",
+        "description": "Mama Juana aftershave potion",
+        "price": "12.99"
+    },
+    {
+        "upc": "1762738",
+        "description": "Ultrasmooth shave foam",
+        "price": "3.50"
+    },
+    {
+        "upc": "87668334",
+        "description": "UltraQuickHeal scar tissues",
+        "price": "1.95"
+    }
+]
+----
+
+Upon receipt of the list, Mule uses a *Splitter* with an empty JSON expression (`"#[json:]"`) to split the collection of data into individual items, such as the one displayed in the code below.
+
+[source,text,linenums]
+----
+{
+        "upc": "1827349",
+        "description": "Billy-boy forever-sharp razors",
+        "price": "9.95"
+    }
+----
+
+Next, Mule employs an **https://docs.mulesoft.com/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper Transformer]** to map the data from one format to another (see image and table below). This mapping normalizes the data, making it usable by the E-store application (see example of normalized data below).
+
+image::datamapping1.png[dataMapping1]
+
+[%header,cols="2*"]
+|===
+|From |To
+|upc |productId
+|description |productDescription
+|_n/a_ |providerId
+|price |price
+|===
+
+[source,text,linenums]
+----
+{
+        "productId": "1827349",
+        "productDescription": "Billy-boy forever-sharp razors",
+        "providerId": "BARBER",
+        "price": "9.95"
+}
+----
+
+Mule then uses a an *Object to String Transformer* to convert the list data from a Java object to a string. This action prepares the content for Mule to add it to the list variable. The *Expression Transformer* uses an *expression* to add the payload to the `allProducts` variable.
+
+image::expression-transform.png[expression_transform]
+
+The process Mule uses to fetch a list of products from Van Gogh’s Paint Store differs slightly because the Van Gogh exposes a SOAP Web service. Upon receipt of a message from the choice router, the flow reference component directs the message to the *subflow-fetchProductsFromVanGoghPaintStore* subflow. +
+
+image::fetch-subflow.png[fetch_subflow]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-fetchProductsFromVanGoghPaintStore" doc:name="subflow-fetchProductsFromVanGoghPaintStore">
+        <cxf:jaxws-client operation="listProducts" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" port="80" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+The **xref:soap-component-reference.adoc[SOAP Component]** configures the client-side request that the HTTP Endpoint sends to Van Gogh’s Web service (see image below).
+
+image::soap-vangogh.png[SOAP_VanGogh]
+
+The subflow injects the Web service response — a collection ---into the main *listProducts* flow where Mule caches the data. The **xref:splitter-flow-control-reference.adoc[Collection Splitter]** splits the collection into individual items before the DataMapper maps each item into a normalized, usable format for the E-store application (see table below).
+
+[%header,cols="2*"]
+|===
+|From |To
+|upc |productId
+|brand |productDescription
+|color |productDescription
+|_n/a_ |providerId
+|price |price
+|===
+
+As in the Barber’s Paradise process, Mule transforms the normalized data from a Java object to a string, then adds the data to the `allProducts` variable. The *Set Payload to output list* expression transformer explicitly sets the message payload to the contents of the `allProducts` variable allProducts. The payload now contains an aggregated list of products available from Barber’s Paradise and Van Gogh’s Paint in E-store’s JSON format.
+
+Mule returns the message to the *e-storeFrontend-listProducts* flow, which uses AJAX to send the response to the end user’s browser.
+
+image::listofproducts.png[]
+
+=== Add Product to Cart
+
+The E-store application enables users to add items to a virtual shopping cart. The following diagram illustrates the actions the E-store application performs to add an item to a cart. +
+ +
+ image:model2.png[]
+
+==== e-storeFrontend
+
+When an end user drags an item in the GUI from the product list to the cart column, the client-side interface activates the *e-storeFrontend-addToCart* flow in the `e-storeFrontend.mflow file` (see image below).
+
+image:add-to-cart-flow.png[add_to_cart_flow]!
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-addToCart" doc:name="e-storeFrontend-addToCart">
+        <ajax:inbound-endpoint channel="/estore/addToCart" responseTimeout="10000" doc:name="/estore/addToCart"></ajax:inbound-endpoint>
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property>
+        <jms:outbound-endpoint queue="estore.addToCart" connector-ref="Active_MQ" doc:name="Request add product to cart to backend"></jms:outbound-endpoint>
+    </flow>
+----
+
+In this flow, the AJAX endpoint listens for a request on the */estore/addToCart* channel. The request contains product code, provider name, quantity and price. The **xref:property-transformer-reference.adoc[Property Transformer] **extracts the http://en.wikipedia.org/wiki/Session_ID[session ID] of the end user’s AJAX session from the *comtd.clien* property (on the inbound properties of the message). Mule then uses an xref:mule-expression-language-mel.adoc[expression] to set a new *sessionId* variable on the message (see image below). Mule uses the this sessionID variable to associate a specific end user to his cart, thereby ensuring the user sees only the contents of his own cart.
+
+image::property-variable.png[property_variable]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id">
+----
+
+The JMS endpoint sends the message to a JMS queue, `estore.addToCart`, in the e-storeBackend.
+
+==== e-storeBackend
+
+The JMS endpoint in the *addToCart* flow listens for requests the *e-storeFrontend-addToCart* flow sends to the `estore.addToCart` JMS queue (see image below).
++
+image::add-to-cart-flow2.png[add_to_cart_flow2]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="addToCart" doc:name="addToCart">
+        <jms:inbound-endpoint queue="estore.addToCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="one-way" queryKey="query-addToCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Store product on cart table"/>
+    </flow>
+----
+
+The outbound **xref:database-jdbc-endpoint-reference.adoc[JDBC Endpoint] **in this flow performs two tasks:
+
+. it accesses the database
+. it saves data to the database
+
+To perform these tasks, the JDBC endpoint works in conjunction with two other elements: a *Global JDBC Connector* and a *SQL Query*, or stored procedure.
+
+The xref:jdbc-transport-reference.adoc[*JDBC Connector*] — a global element in the E-store example application — helps the JDBC Endpoint with its tasks (listed above).
+
+. As a xref:connecting-using-transports.adoc[connector], it helps the JDBC endpoint access the database by providing specific details about how to connect to it, such as where it exists (in this case, the Derby database is embedded in the E-store application), and how to gain access to it (username and password for database). See image below, top.
+. It stores SQL queries (i.e. stored procedures), one of which the JDBC endpoint in this flow references to save data to the database (below, right). `query-addToCart` inserts the *product code* and *session id* into the shopping cart table on the embedded Derby database. See image below, bottom.
++
+image::global-jdbc-all.png[global_jdbc_all]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<spring:beans>
+        <spring:bean id="Derby_Data_Source" class="org.enhydra.jdbc.standard.StandardXADataSource" destroy-method="shutdown">
+            <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+            <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+        </spring:bean>
+    </spring:beans>
+    <jdbc:connector name="JDBCConnector" dataSource-ref="Derby_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="JDBCConnector">
+        <jdbc:query key="query-addToCart" value="INSERT INTO cart (session_id, product_id, provider, quantity) VALUES (#[header:inbound:sessionId], #[json:productCode], #[json:provider], #[json:qty])"/>
+        <jdbc:query key="query-showCart" value="SELECT * FROM cart WHERE session_id = #[header:inbound:sessionId]"/>
+        <jdbc:query key="query-clearCart" value="DELETE FROM cart WHERE session_id = #[header:inbound:sessionId]"/>
+    </jdbc:connector>
+----
+
+[NOTE]
+====
+*Using Expressions to Extract Values*
+
+Mule uses expressions to extract values from different parts of the message. The table below illustrates some of the data Mule extracts from messages in the E-store application.
+
+[%header,cols="34,33,33"]
+|===
+|Extracts Data |Source |Expression
+|the session id |the message's inbound property sessionId +
+ (created in the * e-storeFrontend-addToCart* flow) |#[header:inbound:sessionId]
+|the product code |message properties |#[json:productCode]
+|provider name |message properties |#[json:provider]
+|quantity |message properties |#[json:qty]
+|===
+
+Mule evaluates the expressions against the message payload which contains JSON-formatted data in the properties.
+====
+
+Because the end user does not expect a reply from the application when adding an item to the cart, the application doesn’t need to send a response. The *e-storeFrontend-addToCart* flow sends the message to the backend flow, thereby ending its processing; the *addToCart* flow inserts the data into the database asynchronously (relative to the frontend flow), thereby ending its processing.
+
+=== View Cart
+
+The E-store application enables users to view the items, including their cost, in the virtual shopping cart. The following diagram illustrates the actions the E-store application performs to display cart contents to the end user. +
+ +
+ image:showcart.png[]
+
+==== e-storeFrontend
+
+When an end user clicks the *My Cart* tab on the GUI, the client-side interface activates the *e-storeFrontend-showCart* flow in the `e-storeFrontend.mflow file` (see image below).
+
+image::front-show-cart.png[front_show_cart]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-showCart" doc:name="e-storeFrontend-showCart">
+        <ajax:inbound-endpoint channel="/estore/showCart" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/showCart"></ajax:inbound-endpoint>
+        <response>
+            <object-to-string-transformer doc:name="Object to String"></object-to-string-transformer>
+        </response>
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property>
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ" doc:name="Request cart contents to backend"></jms:outbound-endpoint>
+    </flow>
+----
+
+The AJAX endpoint listens for a request on the */estore/showCart* channel. As in the *e-storeFrontend-addToCart* flow, a property transformer sets a session ID variable on the message. Then, a JMS endpoint sends the message to the `estore.showCart` queue in the e-storeBackend.
+
+==== e-storeBackend
+
+The JMS endpoint in the *showCart* flow listens for requests the *e-storeFrontend-showCart* flow sends to the `estore.showCart` JMS queue (see image below).
+
+image::show-cart-flow.png[show_cart_flow]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="showCart" doc:name="showCart">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <flow-ref name="subflow-showCart" doc:name="subflow-showCart"/>
+    </flow>
+----
+
+Using a flow reference component, Mule sends the message to the *subflow-showCart* for processing (see image below). Because calculating the total value of items in the cart is an operation an end user may frequently perform, Mule uses a subflow to retrieve cart contents and calculate their total value. This design — a flow referencing a subflow for frequent calculations — follows the http://en.wikipedia.org/wiki/Package_Principles#Principles_of_Package_Cohesion[common reuse principle] of computer programming.
+
+image::subflow-showcart.png[subflow_showCart]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-showCart" doc:name="subflow-showCart">
+        <jdbc:outbound-endpoint exchange-pattern="request-response" queryKey="query-showCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Fetch cart contents from database"/>
+        <set-variable variableName="grandTotal" value="#[0]" doc:name="Initialize grand total"/>
+        <set-variable variableName="cartItems" value="#[new java.util.LinkedList()]" doc:name="Initialize cart items list"/>
+        <foreach doc:name="Foreach">
+            <choice doc:name="Choice">
+                <when expression="payload['PROVIDER'].equals('Barber\'s Paradise Store')">
+                    <processor-chain>
+                        <enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+                            <ee:cache cachingStrategy-ref="fetchProductDetailsCachingStrategy" doc:name="Cache">
+                                <core:flow-ref name="subflow-fetchProductDetailsFromBarbersParadise" doc:name="subflow-fetchProductDetailsFromBarbersParadise"/>
+                            </ee:cache>
+                        </enricher>
+                    </processor-chain>
+                </when>
+                <when expression="payload['PROVIDER'].equals('Van Gogh\'s Paint Store')">
+                    <processor-chain>
+                        <enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+                            <ee:cache cachingStrategy-ref="fetchProductDetailsCachingStrategy" doc:name="Cache">
+                                <core:flow-ref name="subflow-fetchProductDetailsFromVanGoghPaintStore" doc:name="subflow-fetchProductDetailsFromVanGoghPaintStore"/>
+                            </ee:cache>
+                        </enricher>
+                    </processor-chain>
+                </when>
+            </choice>
+            <DataMapper:transform config-ref="consolidateProductDetailsOnCart" doc:name="Consolidate cart item info and subtotal">
+                <DataMapper:input-arguments>
+                    <DataMapper:input-argument key="price">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).price]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="providerId">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).providerId]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="product_id">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).productId]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="productDescription">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).productDescription]</DataMapper:input-argument>
+                </DataMapper:input-arguments>
+            </DataMapper:transform>
+            <object-to-string-transformer doc:name="Object to String"/>
+            <set-variable variableName="grandTotal" value="#[grandTotal + Float.parseFloat((new groovy.json.JsonSlurper().parseText(payload)).subtotal)]" doc:name="Sum item subtotal to grand total"/>
+            <expression-transformer expression="flowVars['cartItems'].add(payload)" doc:name="Add cart item to list"/>
+        </foreach>
+        <set-property propertyName="cartTotal" value="#[grandTotal]" doc:name="Set cartTotal message property with grand total"/>
+        <expression-transformer expression="cartItems" doc:name="Set payload to cart items list"/>
+    </sub-flow>
+----
+
+First, the JDBC endpoint uses the `query-showCart` query to retrieve the *productID* and *quantity* of each item in the cart, which Mule identifies by the end user’s sessionID.
+
+Mule then uses a pair of variable transformers to set two empty variables on the message: `grandTotal` and `cartItems`. The rest of this flow works to calculate a value for the `grandTotal` and find items to populate the LinkedList for the `cartItems`.
+
+Mule passes the message into the scope of a **xref:foreach.adoc[Foreach] **iterative processor. From the Derby database, the JDBC endpoint retrieved a collection of Java maps, each of which contains a key-value pair — field name and field value — for each row in the cart table. Foreach breaks the collection into individual items (key-value pairs), then iteratively processes them (i.e. processes them one at a time) through each **xref:mule-studio-essentials.adoc[message processors]** within its scope.
+
+Foreach passes the first item in the collection to the **xref:choice-flow-control-reference.adoc[Choice Router] **which uses expressions to route the item to one of two processing branches:
+
+* if the payload of the item indicates that the provider is Barber’s Paradise, `expression="payload['PROVIDER'].equals('Barber\'s Paradise Store')"`, the first expression configured in the choice router evaluates to true; Mule sends the message to the first branch
+* if the payload of the item indicates that the provider is Van Gogh’s Paint, `expression="payload['PROVIDER'].equals('Van Gogh\'s Paint Store')"`, the second expression configured in the choice router evaluates to true; Mule sends the message to the second branch
++
+image::choice-router.png[choice_router]
+
+*View the XML*
+
+Each of the two branches begins with a flow reference component which directs the message to a separate subflow for further processing. Note that Mule flow wraps each flow reference component with two scopes:
+
+. **xref:cache-scope.adoc[Cache]**– to cache the result of the subflow’s processing.
+. *xref:message-enricher.adoc[Message Enricher]* – to enrich the message payload with data. Mule _enriches_ message payloads, rather than _changing_ the contents, so that other message processors in the application can access the original payload. In this flow, the message enrichers store the results of the subflow’s processing on the message's `productDetails` outbound property.
+
+===== Fetch Product Details from Barber’s Paradise
+
+image::fetch-from-barbers.png[fetch_from_Barbers]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-fetchProductDetailsFromBarbersParadise" doc:name="subflow-fetchProductDetailsFromBarbersParadise">
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/products/#[payload['PRODUCT_ID']]" doc:name="Fetch product info from Barber's Paradise Store"/>
+        <data-mapper:transform config-ref="barbersParadiseToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+----
+
+The *subflow-fetchProductDetailsFromBarbersParadise* sends an HTTP request to Barber’s Paradise RESTful Web service to acquire the latest product pricing details from the vendor. The DataMapper in the subflow maps the JSON data from the service provider into a normalized, JSON format that the E-store application can use. Lastly, the Object to String transformer converts the data to a string format before injecting it into the main *showCart* flow.
+
+===== Fetch Product Details from Van Gogh’s Paint
+
+image::fetch-from-vangoghs.png[fetch_from_VanGoghs]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-fetchProductDetailsFromVanGoghPaintStore" doc:name="subflow-fetchProductDetailsFromVanGoghPaintStore">
+        <expression-transformer expression="payload['PRODUCT_ID']" doc:name="Assing product id to payload"/>
+        <flow-ref name="subflow-invokeVanGoghGetProductInfoSOAPService" doc:name="subflow-invokeVanGoghGetProductInfoSOAPService"/>
+        <data-mapper:transform config-ref="vanGoghPaintToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+    <sub-flow name="subflow-invokeVanGoghGetProductInfoSOAPService" doc:name="subflow-invokeVanGoghGetProductInfoSOAPService">
+        <cxf:jaxws-client operation="getProductInfo" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" port="80" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+The *subflow-fetchProductDetailsFromVanGoghPaintStore* uses an expression transformer to identify the product ID on the message payload. The subflow then invokes yet _another_ subflow, **subflow-invokeVanGoghGetProductInfoSOAPService**, to prepare, then send a SOAP request to Van Gogh’s Paint’s Web service that acquires the latest product pricing details from the vendor. The DataMapper in the fetchProductDetails subflow maps the JSON data from the service provider into a normalized, JSON format that the E-store application can use. Lastly, the Object to String transformer converts the data to a string format before injecting it into the main *showCart* flow.
+
+==== ...Back in the showCart Flow
+
+After it sends each item in the collection through foreach’s message processors, Mule uses another DataMapper to convert and consolidate the updated product information (see image below). DataMapper also calculates each item’s subtotal by multiplying the product’s price by the quantity the end user requested. +
+ +
+ image:datamapper-subflow.png[dataMapper-subflow]
+
+In DataMapper’s *Input* pane, Mule displays fields from the payload which represent the names of the rows in the cart table in the Derby database. Mule stored these product details as message properties when it called Barber’s Paradise and Van Gogh’s Paint’s Web services for updated product details. The two message enrichers, each named **Store product details as message property (enrich)**, stored the product details as properties (see image below). +
+ +
+ image:enriched-productdetails.png[enriched_productdetails]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+----
+
+In DataMapper’s *Output* pane, Mule displays the consolidated output in JSON format, including the calculation of the item’s subtotal (see content in red rectangle in image above). After Mule maps the data, the message payload for each item in the collection appears as follows:
+
+[source,text,linenums]
+----
+{
+        "productId": "1827349",
+        "productDescription": "Billy-boy forever-sharp razors",
+        "providerId": "BARBER",
+        "price": "9.95",
+        "qty": "1",
+        "subtotal": "9.95"
+}
+----
+
+Mule then transforms the Java object (a map) to a string to prepare the contents for a grand total calculation. The variable transformer uses an expression to calculate, then set the `grandTotal` variable on the payload (see image below). Recall that Mule created an empty `grandTotal` variable earlier in the subflow; this transformer simply populates the empty variable. +
+ +
+ image:grandtotal.png[grandTotal]
+
+The last expression transformer sets the `cartItems` variable on the payload. Recall that Mule created an empty LinkedList variable called `cartItems` earlier in the subflow; this transformer simply populates the empty list.
+
+Mule returns the message to the *e-storeFrontend-showCart* flow, which uses AJAX to send the response to the end user’s browser. +
+ +
+ image:showcart-browser.png[showCart_browser]
+
+=== Checkout
+
+The E-store application enables users to pay for purchases and submit orders to vendors. This “checkout” activity involves two steps:
+
+. calculating, then displaying the Grand Total to the end user
+. processing the payment, then submitting orders to vendors
+
+The following diagram illustrates the actions the E-store application performs to recalculate the Grand Total, then authorize the payment and submit vendor orders. +
+ +
+ image:checkout.png[]
+
+==== e-storeFrontend – Grand Total
+
+When an end user clicks the *Checkout* tab on the GUI, the client-side interface activates the *e-storeFrontend-getCartTotal* flow in the `e-storeFrontend.mflow file` (see image below). +
+ +
+ image:getgrandtotal.png[getGrandTotal]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-getCartTotal" doc:name="e-storeFrontend-getCartTotal">
+        <ajax:inbound-endpoint channel="/estore/getCartTotal" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/getCartTotal"></ajax:inbound-endpoint>
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property>
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ" doc:name="Request cart contents to backend"></jms:outbound-endpoint>
+        <expression-transformer expression="#[header:inbound:cartTotal]" doc:name="Set cart total property as payload"></expression-transformer>
+    </flow>
+----
+
+The AJAX endpoint listens for a request on the */estore/getCartTotal* channel. As in the *e-storeFrontend-addToCart* flow, a property transformer sets a session ID variable on the message. Then, a two-way JMS endpoint sends the message to the `estore.showCart` queue in the e-storeBackend. When it receives a response from the e-storeBackend, the JMS endpoint passes the message to an expression transformer which sets the calculated `cartTotal` as a property on the message payload.
+
+The *e-storeFrontend-getCartTotal* flow sends a response to the end user’s browser which displays the Grand Total of the cart on the *Checkout* page. +
+ +
+ image:grandtotal-browser.png[grandTotal_browser]
+
+==== e-storeBackend – Grand Total
+
+The JMS endpoint in the *showCart* listens for requests the *e-storeFrontend-getCartTotal* flow sends to the `estore.showCart` queue. Rather than dedicating a separate flow to calculating the Grand Total of the end user’s order, Mule reuses the *showCart* flow (and its supporting subflows in the e-storeBackend) to acquire the value.
+
+==== e-storeFrontend – Processing Order
+
+When an end user populates the payment information fields on the GUI, then clicks the *Verify payment and submit order* button, the client-side interface activates the *estoreFrontend-doCheckout* flow in the `e-storeFrontend.mflow file` (see image below).
+
+image::docheckout-flow.png[doCheckout_flow]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-doCheckout" doc:name="e-storeFrontend-doCheckout">
+        <ajax:inbound-endpoint channel="/estore/doCheckout" responseTimeout="10000" doc:name="/estore/doCheckout"></ajax:inbound-endpoint>
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property>
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.doCheckout" connector-ref="Active_MQ" doc:name="Request checkout to backend"></jms:outbound-endpoint>
+    </flow>
+----
+
+The AJAX endpoint listens for a request on the */estore/doCheckout* channel. As in the *e-storeFrontend-addToCart* flow, a property transformer sets a session ID variable on the message. Then, a JMS endpoint sends the message to the `estore.doCheckout` queue in the e-storeBackend.
+
+==== e-storeBackend – Processing Order
+
+The JMS endpoint in the *doCheckout* flow listens for requests the *e-storeFrontend-doCheckout* flow sends to the `estore.doCheckout` JMS queue (see image below). +
+ +
+ image:parta.png[partA] +
+
+
+image::partb.png[partB]
+
+image::partd.png[partD]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="doCheckout" doc:name="doCheckout">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.doCheckout" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <enricher doc:name="Enrich message with cart details">
+            <core:flow-ref name="subflow-showCart" doc:name="subflow-showCart"/>
+            <enrich source="#[message.outboundProperties['cartTotal'].toString()]" target="#[header:outbound:grandTotal]"></enrich>
+            <enrich source="#[payload]" target="#[header:outbound:cartContents]"></enrich>
+        </enricher>
+        <enricher doc:name="Enrich message with payment authorization results">
+            <core:flow-ref name="subflow-authorizePayment" doc:name="subflow-authorizePayment"/>
+            <enrich source="#[xpath:/authorizationResponse/result]" target="#[header:outbound:paymentResult]"></enrich>
+            <enrich source="#[xpath:/authorizationResponse/reason]" target="#[header:outbound:paymentReason]"></enrich>
+        </enricher>
+        <choice doc:name="Choice">
+            <when expression="#[header:paymentResult=APPROVED]">
+                <processor-chain>
+                    <set-variable variableName="orders" value="#[new java.util.LinkedList()]" doc:name="Initialize order numbers list"/>
+                    <set-variable variableName="orderSorter" value="#[new com.mulesoft.example.estore.util.OrderSorter((new groovy.json.JsonSlurper().parseText(payload)).cardholderName, (new groovy.json.JsonSlurper().parseText(payload)).deliveryAddress)]" doc:name="Initialize orders sorter"/>
+                    <foreach collection="#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['cartContents'].toString()))]" doc:name="For each item on the cart">
+                        <expression-component doc:name="Classify item in orders sorter">#[flowVars['orderSorter'].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]</expression-component>
+                    </foreach>
+                    <foreach collection="#[flowVars['orderSorter'].getSortedOrders()]" doc:name="For each order">
+                        <choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Barber\'s Paradise Store']">
+                                <processor-chain>
+                                    <DataMapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <DataMapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+                    </foreach>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;APPROVED\&quot;, \&quot;orders\&quot;: &quot; + flowVars[&quot;orders&quot;].toString() + &quot;}&quot;" doc:name="Build checkout sucessful message"/>
+                </processor-chain>
+            </when>
+            <when expression="#[header:paymentResult=FAILED]">
+                <processor-chain>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;&quot; + message.outboundProperties[&quot;paymentReason&quot;] + &quot;\&quot;}&quot;" doc:name="Build payment rejected message"/>
+                </processor-chain>
+            </when>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;Unable to process payment with bank due to communication problems or invalid credit card information. Check you're submitting a 16-digit credit card number, a 3-digit security code, a name and an address.\&quot;}&quot;" doc:name="Build error response"/>
+        </catch-exception-strategy>
+    </flow>
+----
+
+Using a flow reference component, Mule sends the message to the *subflow-showCart* for processing, then uses expressions to enrich the payload with two properties: the `grandTotal` and `cartContents` (see message enricher image below). +
+ +
+ image:enrich-total-contents.png[enrich_total_contents]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<enrich source="#[message.outboundProperties['cartTotal'].toString()]" target="#[header:outbound:grandTotal]"/>
+<enrich source="#[payload]" target="#[header:outbound:cartContents]"/>
+----
+
+Next, Mule uses another flow reference component to invoke the **subflow-authorizePayment**.
+
+===== Authorization Subflows
+
+image::authorization-subflows.png[authorization_subflows]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-requestPaymentAuthorizationToBank" doc:name="subflow-requestPaymentAuthorizationToBank">
+        <remove-property propertyName="cartContents" doc:name="Remove cart contents property to call bank"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="10000" path="bank/authorizePayment" doc:name="Request payment authorization to bank"/>
+    </sub-flow>
+    <sub-flow name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore">
+        <cxf:jaxws-client operation="placeOrder" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+Before submitting a request for payment authorization to the bank, the *subflow-authorizePayment* uses a DataMapper to transform the end user’s credit card data from JSON into the XML format that the bank’s Web service expects. The table below describes the data that Mule maps.
+
+[%header,cols="2*"]
+|===
+|From (JSON) |To (XML)
+|creditCardNumber : string |ns0:creditCardNumber : string
+|securityCode : string |ns0:securityCode : string
+|cardholderName : string |ns0:cardholderName : string
+|grandTotal : string |ns0: decimal : string
+|===
+
+Mule transforms the payload from Java object to a string, then uses a flow reference component to send the message to yet another subflow, **subflow-requestPaymentAuthorizationToBank**.
+
+In the *PaymentAuthorizationToBank* subflow, Mule first prepares a request to send to the bank by removing its `cartContent` property. This prevents Mule from unnecessarily sending a list of the cart’s contents to the bank (see image of property transformer below). +
+ +
+ image:remove-property.png[remove_property]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<remove-property propertyName="cartContents" doc:name="Remove cart contents property to call bank"/>
+----
+
+Then, the request-response HTTP endpoint sends a request to the bank’s RESTful Web service to authorize payment. The <<3rd-Party Web Services>> (in the `bank.mflow` file) performs the following validations:
+
+* *syntactic* - confirms that XML format of the message conforms to its http://en.wikipedia.org/wiki/XML_schema[XSD schema]; for example, that the security code contains three integers
+* *semantic* - confirms that the data conforms to specific business rules; for example, that the security code matches the credit card number, or that the amount of the transaction does not exceed $1000
+
+When it has completed processing the request, the bank’s Web service returns one of three responses; refer to table below.
+
+[%header,cols="5*"]
+|===
+|Payment +
+ Authorized? |Issue |responseResult |responseReason |Exception
+|yes |none |approved |none |none
+|no |failed semantic validation |failed |included |none
+|no |failed syntactic validation |failed |none |included
+|===
+
+If the response from the bank includes an exception — perhaps the credit card number is missing a digit — Mule catches the exception in the **xref:catch-exception-strategy.adoc[Catch Exception Strategy]**. The expression transformer in the exception strategy (located in the footer of the *doCheckout* flow) uses expressions to prepare an error for the end user. Mule sends the error message as a response to the e-storeFrontend flow, then to the end user’s browser. (If the response from the bank involves a failure of the semantic validation, Mule deals with the error further in the flow; see *...Back in the doCheckout Flow* section below.)
+
+The *subflow-requestPaymentAuthorizationToBank* sends the bank’s response to the *subflow-authorizePayment* which, in turn, sends the result to the main *doCheckout* flow.
+
+===== ...Back in the doCheckout Flow
+
+The enricher uses the results of the subflow’s processing to enrich the message with two more properties: `paymentResult` and `paymentReason`. +
+ +
+ image:xpath-enricher.png[xpath_enricher]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<enrich source="#[xpath:/authorizationResponse/result]" target="#[header:outbound:paymentResult]"/>
+<enrich source="#[xpath:/authorizationResponse/reason]" target="#[header:outbound:paymentReason]"/>
+----
+
+Next, Mule uses a expressions in a choice router to determine how to route a message:
+
+* if the `paymentResult` property is **`APPROVED`**, Mule routes the message to the first branch off the choice router to initiate orders to vendors
+* if the `paymentResult` property is **`FAILED`**, Mule routes the message to the second branch off the choice router to prepare a “payment rejected” message for the end user +
++
+image::choice-sucess-fail.png[choice_sucess_fail]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[header:paymentResult=APPROVED]">
+                <processor-chain>
+                    <set-variable variableName="orders" value="#[new java.util.LinkedList()]" doc:name="Initialize order numbers list"/>
+                    <set-variable variableName="orderSorter" value="#[new com.mulesoft.example.estore.util.OrderSorter((new groovy.json.JsonSlurper().parseText(payload)).cardholderName, (new groovy.json.JsonSlurper().parseText(payload)).deliveryAddress)]" doc:name="Initialize orders sorter"/>
+                    <foreach collection="#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['cartContents'].toString()))]" doc:name="For each item on the cart">
+                        <expression-component doc:name="Classify item in orders sorter">#[flowVars['orderSorter'].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]</expression-component>
+                    </foreach>
+                    <foreach collection="#[flowVars['orderSorter'].getSortedOrders()]" doc:name="For each order">
+                        <choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+                    </foreach>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;APPROVED\&quot;, \&quot;orders\&quot;: &quot; + flowVars[&quot;orders&quot;].toString() + &quot;}&quot;" doc:name="Build checkout sucessful message"/>
+                </processor-chain>
+            </when>
+            <when expression="#[header:paymentResult=FAILED]">
+                <processor-chain>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;&quot; + message.outboundProperties[&quot;paymentReason&quot;] + &quot;\&quot;}&quot;" doc:name="Build payment rejected message"/>
+                </processor-chain>
+            </when>
+        </choice>
+----
+
+With payment approved, Mule prepares requests to submit one order for products to each of the two vendors. (In other words, Mule aggregates a list of products for each vendor to avoid sending multiple orders to each of them.) First, the two of variable transformers in the first branch off the choice router set two variables on the message, respectively:
+
+. `orders` – an empty LinkedList variable to capture order numbers,
+. `orderSorter` - a simple Java class that employs a map of order objects to organize the cart items by vendor (see Java class below). The *keys* of the map are the names of the vendors; the *values* are order objects, which contains order items.
+
+*View Java Class*
+
+[source,text,linenums]
+----
+public void sortOrderItem(String providerId, OrderItem item) {
+        if (!orders.containsKey(providerId)) {
+            Order order = new Order();
+            order.setCustomerName(this.customerName);
+            order.setDeliveryAddress(this.deliveryAddress);
+            order.setProviderId(providerId);
+            orders.put(providerId, order);
+        }
+        orders.get(providerId).addOrderItem(item);
+    }
+----
+
+Before Mule can sort order items, it must first create them. A foreach iterative processor feeds each item in the collection (Java map) through the expression component to create an `OrderItem` object for each cart item (see expression below).
+
+[source,text,linenums]
+----
+#[flowVars['orderSorter'\].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]
+----
+
+Mule then uses another foreach iterative processor and another choice router to break apart the `orderSorter` collection of `orderItems`. It then routes individual items to one of two branches according to vendor (see choice router image below).
+
+* if the `providerID` is `Barber\’s Paradise Store`, Mule routes the message to the first branch off the choice router
+* if the `providerID` is `Van Gogh\’s Paint Store`, Mule routes the message to the second branch off the choice router
++
+image::choice-orderprovider.png[choice_orderProvider]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Barber\'s Paradise Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+----
+
+In both branches, the next message processor, a DataMapper, transforms the order — a Java object — into the format required by the vendor:
+
+* for Barber’s Paradise, Mule converts the object to JSON-formatted data (see below, top)
+* for Van Gogh’s Paint, Mule converts the object to a slightly different object (see below, bottom) +
++
+image::mapped-orders.png[mapped_orders]
+
+Mule then sends the prepared order requests to the two vendors. To Barber’s Paradise, Mule sends the request via the HTTP endpoint in the *doCheckout* flow; to Van Gogh’s Paint, Mule invokes the *subflow-placeOrderOnVanGoghPaintStore* to prepare, then send a SOAP request (see image below). +
+
+image::place-vangogh-order.png[place_VanGogh_order]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<sub-flow name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore">
+        <cxf:jaxws-client operation="placeOrder" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+Each Web service provider responds with an order number, which Mule transforms from an object to a string. Then, using an expression transformer, Mule sets each vendor’s order number into the `orders` LinkedList variable created earlier in the flow (see image below). +
+ +
+ image:add-order-numbers.png[add_order_numbers]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+----
+
+The last message processor in the flow, an expression transformer, uses an expression to prepare a message to display to the end user in the browser. The message contains the result of the payment authorization, `APPROVED`, and an order number for each vendor.
+
+Mule returns the message to the *e-storeFrontend-doCheckout* flow, which uses AJAX to send the response to the end user’s browser. +
+ +
+ image:docheckout-browser.png[doCheckout_browser]
+
+=== Clear Cart Contents
+
+The E-store application enables users to clear the virtual cart of its contents.
+
+==== e-storeFrontend
+
+When a user clicks the *Clear cart contents* button on the GUI, the client-side interface activates the *e-storeFrontend-clearCart* flow in the `e-storeFrontend.mflow file` (see image below). +
+ +
+ image:clear-cart-flow.png[clear_cart_flow]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="e-storeFrontend-clearCart" doc:name="e-storeFrontend-clearCart">
+        <ajax:inbound-endpoint channel="/estore/clearCart" responseTimeout="10000" doc:name="/estore/clearCart"></ajax:inbound-endpoint>
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property>
+        <jms:outbound-endpoint queue="estore.clearCart" connector-ref="Active_MQ" doc:name="Request clear cart to backend"></jms:outbound-endpoint>
+    </flow>
+----
+
+The AJAX endpoint listens for a request on the */estore/clearCart* channel. As in the *e-storeFrontend-addToCart* flow, a property transformer sets a session ID variable on the message. Then, a JMS endpoint sends the message to the `estore.clearCart` queue in the e-storeBackend.
+
+==== e-storeBackend
+
+The JMS endpoint in the *clearCart* flow listens for requests the *e-storeFrontend-clearCart* flow sends to the `estore.clearCart` queue (see image below). +
+
+image::clearcart-flow.png[clearCart_flow]
+
+*View the XML*
+
+[source,xml,linenums]
+----
+<flow name="clearCart" doc:name="clearCart">
+        <jms:inbound-endpoint queue="estore.clearCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="one-way" queryKey="query-clearCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Delete cart contents"/>
+    </flow>
+----
+
+Referencing the global JDBC connector, this flow uses an outbound JDBC endpoint to execute the `clearCart` query (see images below). In the embedded Derby database, this query deletes the contents of the cart table associated with the end user’s session ID. +
+ +
+ image:clear-cart-query.png[clear_cart_query]
+
+== 3rd-Party Web Services
+
+This example application includes flows which enable the E-store application to function. The *bank*, **provider-vangoghpaint**, and *provider-barbersparadise* flow files consists of several flows and subflows which conspire to provide Web service responses to Web service requests from the **e-storeBackend**.
+
+Without these 3rd-party Web service providers, there would be no mechanism for processing Web service requests in the E-store example application. Ergo, these flows exist to simulate the various real-life Web service providers to which a Web service client might submit a request.
+
+While this document does not explore the 3rd-party Web services in detail, you can examine their contents in Mule Studio. Double-click one of the 3rd-party `.mflow` files in the *Package Explorer* to open the configuration in a separate canvas tab (see image below). +
+ +
+ image:bank-open.png[bank_open]
+
+== Related Topics
+
+* For more information on configuring the Anypoint DataMapper, see https://docs.mulesoft.com/anypoint-studio/v/6/datamapper-user-guide-and-reference[DataMapper Transformer Reference].
+* For more information on using the JDBC endpoint, see xref:database-jdbc-endpoint-reference.adoc[JDBC Endpoint Reference].
+* For more information on the Catch Exception Strategies in this example, see xref:catch-exception-strategy.adoc[Catch Exception Strategy].
+* For more information on routing messages, see xref:choice-flow-control-reference.adoc[Choice Flow Control].
+* For more information on setting variables on messages, see xref:variable-transformer-reference.adoc[Variable Transformer].
+* For more information on caching Web service responses, see xref:cache-scope.adoc[Cache Scope].
+* For more information on iterative processing, see xref:foreach.adoc[Foreach].
+* For more information on configuring a SOAP component, see xref:soap-component-reference.adoc[SOAP Component].

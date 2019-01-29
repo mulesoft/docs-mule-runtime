@@ -3,75 +3,100 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-[ <<Running the Application>> ] [ <<How it Works>> ] [ The Web Service Version ]
+This example demonstrates how to invoke a Web Service from Mule ESB, transform the result using http://en.wikipedia.org/wiki/Xslt[XSLT], and deserialize the result to a StockQuote Java bean. The application demonstrates the use of http://en.wikipedia.org/wiki/Representational_state_transfer[REST], http://en.wikipedia.org/wiki/SOAP[SOAP] and http://en.wikipedia.org/wiki/Wsdl[WSDL] to invoke the service. The process is as follows:
 
-This example demonstrates how to invoke an ASPX web service from Mule ESB, transform the result using XSLT, and deserialize the result to a StockQuote Java bean. The example demonstrates using REST and Web Services to invoke the service.
+* The application uses an xref:http-endpoint-reference.adoc[HTTP Inbound Endpoint] to receive a query from a user
+* It extracts the quote symbol from the query and invokes the http://www.webservicex.net/ws/WSDetails.aspx?CATID=2&WSID=9[Stock Quote Service] with the symbol
+* When the Stock Quote Service replies, the application first transforms the result using the xref:xslt-transformer-reference.adoc[XSLT Transformer], then uses the xref:xml-to-object-transformer-reference.adoc[XML to Object Transformer] to transform it to a StockQuote Java bean.
+* Finally, it sends the quote back to the browser, transforming it back into plain text.
 
-The configuration uses a HTTP endpoint to receive a stock symbol from a user, invokes the StockQuote service, transforms the result using the XSLT transformer, and then uses the XmlToObject transformer to convert the result into a StockQuote Java bean. The quote is then sent back to browser, transforming it once more into plain text.
+== Assumptions
 
-This page describes how to run the Stock Quote example and walks you through its configuration.
+This document assumes that you are familiar with Mule ESB and the xref:mule-studio-essentials.adoc[Mule Studio interface]. To increase your familiarity with Studio, consider completing one or more xref:mule-studio.adoc[Mule Studio Tutorials].
 
-== Running the Application
+This document describes the details of the example within the context of *Mule Studio*, Mule ESB’s graphical user interface (GUI). Where appropriate, the XML configuration follows the Studio interface screenshot in an expandable section.
 
-. Make sure you have met the prerequisites and installed Mule according to the [MULE3INTRO:Installing Mule] instructions.
-. At the command line, navigate to the `examples/stockquote` directory under your Mule home directory.
-. Copy the pre-built application archive to the application folder ($MULE_HOME/apps)
-. Start Mule
-. Now invoke one of the following URLs, depending on which example flavor you want to run: +
- http://localhost:48309/stockquote?symbol=IBM&method=REST +
- http://localhost:48309/stockquote?symbol=IBM&method=SOAP +
- http://localhost:48309/stockquote?symbol=IBM&method=WSDL
-. The stock information is displayed.
-. To stop Mule, type 'CTRL-C' in the Mule console window.
+== Set Up
+
+As with this Stock Quote example, you can create template applications straight out of the box in *Mule Studio* or *Mule Standalone* (Mule ESB without Studio). You can tweak the configurations of these use case-based templates to create your own customized applications in Mule.
+
+Follow the procedure below to create, then run the Stock Quote application in Mule ESB.
+
+. Complete the procedure in Examples and Exercises to create, then run the Stock Quote template in Mule Studio, or the Stock Quote example in Mule Standalone (Mule ESB without Studio).
+. Open a Web browser.
+. Depending on which flavor of the example you want to use, type one of the following URLs into the address bar of your browser, then press *enter*. +
+* http://localhost:48309/stockquote?symbol=IBM&method=REST
+* http://localhost:48309/stockquote?symbol=IBM&method=SOAP
++
+The last four characters in the URL determine the method the application will use to query the Stock Quote Service. The `symbol` parameter allows you to choose the stock symbol whose quote you wish to obtain (in the example above, `IBM`).
+. Press enter to elicit a response from the application to display data similar to the following:
++
+image::app-output.png[app.output]
 
 == How it Works
 
-This section walks through the configuration of the REST version of the Stock Quote example, but the Web Service configuration is very similar. Assuming you've already seen the [MULETEMP:Echo Example], this section will discuss the configuration without going into step-by-step detail.
+=== Global Configuration Elements
 
-First, because the proxy settings are in an external properties file, we specify the file in the Mule context:
+Some configuration elements for this application are stored in external files. To load the configuration from these files, the application uses Global Elements. To view the Global Elements for the application, click the *Global Elements* tab under the Studio canvas. The image below highlights the *Global Elements* tab, and displays the Global Elements configured in this example. +
++
+image::global-elements.png[global.elements]
 
-[source,xml]
+The first Global Element is a *Property Placeholder*. It loads the properties contained in a configuration file into the Mule context. To see the configuration for this Global Element, double-click *Properties Placeholder* in the *Global Elements* tab.
+
+image::stockquote-property-placeholder.png[StockQuote+Property+Placeholder]
+
+[source,xml,linenums]
 ----
 <context:property-placeholder location="proxy.properties"/>
 ----
 
-Next, we configure the HTTP connector with the properties whose values are defined in the proxy.properties file:
+In this case, the Property Placeholder reads the file `stockquote.properties` (see below).
 
-[source,xml]
+[source,text,linenums]
 ----
-  <http:connector name="HttpConnector"                  proxyHostname="${proxyHostname}"                  proxyPassword="${proxyPassword}"                  proxyPort="${proxyPort}"                  proxyUsername="${proxyUsername}"/>
-----
-
-
-The next section is the configuration for the transformers. There are four transformers, which will be chained together. Note that the XSLT transformer references the XSLT file in the `xsl` subdirectory under the `stockquote` directory. The XSLT file can be anywhere on your classpath.
-
-[source,xml]
-----
-  <xm:xml-to-object-transformer name="XmlToObject"/>  <xml-entity-decoder-transformer name="XmlDecoder"/>  <xm:xslt-transformer name="Xslt" xsl-file="xsl/rest-stock.xsl"/>  <object-to-string-transformer name="ToString"/>
+port1=48309
 ----
 
+The next five global elements define the configuration for the transformers. Note that the XSLT transformer references the XSLT file in the application's `xsl` subdirectory. The XSLT file can be anywhere on your classpath.
 
-Next, we set up a flow as the main entry point into this example. This flow receives requests sent to the HTTP URL and transforms the request's body to a Map using the HttpRequestToMap transformer. It then extracts the method from the Map to determine which sub-flow to call for processing.
+image::stockquote-global-elements.png[Stockquote+Global+Elements]
 
-[source,xml]
-----
-<flow name="HTTP input">    <http:inbound-endpoint host="localhost" port="48309" path="stockquote">        <http:body-to-parameter-map-transformer />        <response>            <object-to-string-transformer />        </response>    </http:inbound-endpoint>    <choice>        <when expression="payload.method == 'REST'" evaluator="groovy">            <flow-ref name="REST" />        </when>        <when expression="payload.method == 'SOAP'" evaluator="groovy">            <flow-ref name="SOAP" />        </when>        <when expression="payload.method == 'WSDL'" evaluator="groovy">            <flow-ref name="WSDL" />        </when>    </choice>    <transformer ref="XmlToObject" /></flow>
-----
+//  View the XML
 
+=== HTTP_input Flow
 
-The component is the REST service component, which uses the REST service wrapper to proxy a REST service to act like a local Mule component. The REST service wrapper has a number of properties configured. The `serviceUrl` is the URL of the REST service to invoke. The `payloadParameterName` is the name of the parameter to associate with the message payload. In this case, we have only one parameter name, "symbol". The `httpMethod` can either be GET or POST.
+The HTTP_input flow is the main entry point for queries to this example application. It receives HTTP requests sent to the application's URL, and determines which subflow to call for processing the request.
++
+image::stockquote-http-input.png[StockQuote+HTTP+Input]
 
-[source,xml]
-----
-<flow name="REST">    <transformer ref="ExtractSymbol" />    <http:rest-service-component serviceUrl="http://www.webservicex.net/stockquote.asmx/GetQuote"        httpMethod="POST">        <http:payloadParameterName value="symbol" />    </http:rest-service-component>    <transformer ref="XmlDecoder" />    <transformer ref="XsltRest" /></flow>
-----
+//  View the XML
 
+The first building block in the flow, an xref:http-endpoint-reference.adoc[HTTP Endpoint], receives the HTTP request from the application's URL. The second building block, a *Body to Parameter Map* transformer, parses the HTTP request into a map. The flow then uses a Flow Processing Strategy to extract the method from the map (REST, SOAP or WSDL), then call the appropriate subflow for processing.
 
-== The Web Service Version
+=== REST Subflow
 
-The Web Service version works very similarly to the REST version but has different service configuration. The Web Service version explicitly configures an outbound pass-through router that that takes the input from one endpoint and passes it directly to the outbound CXF endpoint. The outbound endpoint is configured with parameters that map to the Stock Quote service.
+image::stockquote-rest-flow.png[Stockquote+rest+flow]
 
-[source,xml]
-----
-<flow name="SOAP">    <transformer ref="ExtractSymbol" />    <outbound-endpoint address="http://www.webservicex.net/stockquote.asmx">        <cxf:jaxws-client clientClass="net.webservicex.StockQuote" operation="GetQuote"            port="StockQuoteSoap" wsdlLocation="classpath:stockquote.wsdl" />    </outbound-endpoint>    <transformer ref="XmlDecoder" />    <transformer ref="XsltSoap" /></flow>
-----
+//  View the XML
+
+The REST subflow uses a *Set Payload* transformer to extract the value of the stock symbol from the payload. (This value is defined in the URL; in this example the value is `IBM`.) Subsequently the flow sets the `Content-Type` property for the payload, which it posts as a form to the REST service using the HTTP Outbound Endpoint. Finally, it decodes the response and applies the XSLT transformation using the `rest-stock.xsl` file.
+
+=== SOAP Subflow
+
+This subflow is very similar to the REST subflow except for its service configuration. Instead of using REST, it employs a xref:soap-component-reference.adoc[SOAP Component] in the *soapClient* subflow to invoke the Stock Quote Service with the extracted symbol as parameter.
+
+image::soapflows.png[SOAPflows]
+
+//  View the XML
+
+The second building block in the flow, called *Soap Client*, is a xref:flow-ref-component-reference.adoc[Flow Reference Component]. It invokes the soapClient subflow, which in turn uses an HTTP Endpoint to post the extracted symbol as a form to the Stock Quote Service. The soapClient flow waits for a reply, then forwards it back to the SOAP subflow. The SOAP subflow decodes the reply, then applies the XSLT transformation using the `soap-stock.xsl` file.
+
+=== WSDL Subflow
+
+Like the REST and SOAP subflows, the WSDL Subflow uses the Set Payload transformer to extract the value of the stock symbol from the payload. It then uses a xref:generic-endpoint-reference.adoc[Generic Outbound Endpoint] to post the request form to the Stock Quote Service.
+
+image::stockquote-wsdl-flow.png[Stockquote+WSDL+flow]
+
+//  View the XML
+
+The Outbound Endpoint in the WSDL subflow uses the `wsdl-cxf` prefix in its configured address. The limitation of this approach is that it only supports handling primitive data types. The correct approach in a real-life scenario is to use `jaxws-client` or `simple-client` as the address prefix.

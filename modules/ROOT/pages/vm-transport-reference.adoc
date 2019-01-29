@@ -1,26 +1,80 @@
-= In Memory (VM) Transport Reference
+= VM Transport Reference
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-== Introduction
+The VM transport can be used for intra-JVM communication between Mule xref:mule-application-architecture.adoc[flows]. This transport by default uses in-memory queues but can optionally be configured to use persistent queues. (Note, however, that VM file persistency does not work on clusters.)
 
-The In Memory transport can be used for intra-JVM communication between Mule xref:using-flows-for-service-orchestration.adoc[Flows] and/or xref:using-mule-services.adoc[Services]. This transport by default uses in-memory queues but can optionally be configured to use persistent queues.
+== Transport Info
+
+[%header,cols="10,9,9,9,9,9,9,9,9,9,9"]
+|===
+a|
+Transport
+
+ a|
+Doc
+
+ a|
+Inbound
+
+ a|
+Outbound
+
+ a|
+Request
+
+ a|
+Transactions
+
+ a|
+Streaming
+
+ a|
+Retries
+
+ a|
+MEPs
+
+ a|
+Default MEP
+
+ a|
+Maven Artifact
+
+|VM |https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/vm/package-summary.html[JavaDoc] http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_vm/namespace-overview.html[SchemaDoc] |image:check.png[] |image:check.png[] |image:check.png[] |XA |image:check.png[] |  |one-way, request-response |one-way |org.mule.transports:mule-transport-vm
+
+|===
+
+*Legend*
+
+*Transport* - The name/protocol of the transport +
+ *Docs* - Links to the JavaDoc and SchemaDoc for the transport +
+ *Inbound* - Whether the transport can receive inbound events and can be used for an inbound endpoint +
+ *Outbound* - Whether the transport can produce outbound events and be used with an outbound endpoint +
+ *Request* - Whether this endpoint can be queried directly with a request call (via MuleClient or the EventContext) +
+ *Transactions* - Whether transactions are supported by the transport. Transports that support transactions can be configured in either local or distributed two-phase commit (XA) transaction. +
+ *Streaming* - Whether this transport can process messages that come in on an input stream. This allows for very efficient processing of large data. For more information, see Streaming. +
+ *Retry* - Whether this transport supports retry policies. Note that all transports can be configured with Retry policies, but only the ones marked here are officially supported by MuleSoft +
+ *MEPs* - Message Exchange Patterns supported by this transport +
+ *Default MEP* - The default MEP for endpoints that use this transport that do not explicitly configure a MEP +
+ *Maven Artifact* - The group name a artifact name for this transport in http://maven.apache.org/[Maven]
 
 == Namespace and Syntax
 
 XML namespace:
 
+[source,text,linenums]
 ----
-xmlns:vm "http://www.mulesoft.org/schema/mule/vm"
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
 ----
 
-XML schema location:
+XML Schema Location:
 
 [source,text,linenums]
 ----
 http://www.mulesoft.org/schema/mule/vm
-http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/vm/3.3/mule-vm.xsd
 ----
 
 Connector syntax:
@@ -30,31 +84,31 @@ VM with persistent queues:
 [source,xml,linenums]
 ----
 <vm:connector name="persistent">
-    <vm:queue-profile persistent="true" maxOutstandingMessages="500"/>
+   <vm:queue-profile maxOutstandingMessages="500">
+       <default-persistent-queue-store/>
+   </vm:queue-profile>
 </vm:connector>
 ----
 
-VM with in-memory queues (or no queue, for request-response endpoints):
+VM with in-memory queues:
 
-[source,xml]
+[source,xml,linenums]
 ----
 <vm:connector name="memory" />
 ----
 
 Endpoint Syntax:
 
-. Prefixed endpoint:
+* Prefixed endpoint:
 +
-
-[source,xml]
+[source,xml,linenums]
 ----
 <vm:outbound-endpoint path="out"/>
 ----
 
-. Non-prefixed URI:
+* Non-prefixed URI:
 +
-
-[source,xml]
+[source,xml,linenums]
 ----
 <outbound-endpoint address="vm://out">
 ----
@@ -65,14 +119,16 @@ There are no specific transformers for the VM transport.
 
 == Considerations
 
-The VM transport has often been used to implement complex integrations made up of multiple services. Improvements in Mule 3 obviate the need for VM in many cases. +
-Because of the introduction of MessageProcessor in most Mule elements, you can accomplish more complex integrations without tying together services. You can use http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/flow-ref.html[Flow References] to directly reference one flow from another without a transport in the middle.
+The VM transport has often been used to implement complex integrations made up of multiple applications. Improvements in Mule 3 obviate the need for VM in many cases. You can use xref:flow-ref-component-reference.adoc[Flow References] to directly reference one flow from another without a transport in the middle.
 
-VM is still useful in certain situations. Suppose, for instance, that most of the parts of your solution are local, but some need to be decoupled for testing, or because some need to be made remote.
+VM is still useful in certain situations. Suppose, for instance, that most of the parts of your solution are local, but some will need to be decoupled for testing, or because some will need to be made remote.
 
 [WARNING]
-*WARNING* +
+====
+*WARNING*
+
 Each application in a Mule instance has its own, unique set of VM endpoints. Thus the VM transport cannot be used to communicate between different Mule applications.
+====
 
 == Features
 
@@ -80,39 +136,34 @@ The in memory (VM) transport has two modes of operation: One for use with _reque
 
 *_request-response:_*
 
-When using _request-response_ endpoints, messages are delivered directly from an outbound vm endpoint to the inbound vm endpoint that is listening on the same path. This delivery is blocking and occurs in the same thread. If there is no inbound _request-response_ vm endpoint in the same Mule application listening on this path, then dispatching of the message from the outbound endpoint fails.
+When using _request-response_ endpoints, messages are delivered directly from an outbound vm endpoint to the inbound vm endpoint that is listening on the same path. This delivery is blocking and occurs in the same thread. If there is no inbound _request-response_ vm endpoint in the same Mule application listening on this path, then dispatching of the message from the outbound endpoint will fail.
 
 *_one-way:_*
 
-When using _one-way_ endpoints, messages are delivered to the corresponding inbound endpoint via a queue. This delivery is non-blocking. If there is no inbound _one-way_ endpoint in the same Mule application listening on this path, then, although dispatching of the message succeeds, the message remains in the queue. By default, this queue is in memory, but it is also possible to configure a persistent queue that uses the file system as its persistence mechanism.
-
-[WARNING]
-*NOTE* +
-You cannot send a message from a request-response endpoint to a one-way endpoint or the other way around. This causes the send to fail, or the message stays in the queue and never arrives at the expected destination.
+When using _one-way_ endpoints, messages are delivered to the corresponding inbound endpoint via a queue. This delivery is non-blocking. If there is no inbound _one-way_ endpoint in the same Mule application listening on this path, then, although dispatching of the message will succeed, the message will remain in the queue. By default, this queue is in memory, but it is also possible to configure a persistent queue that will use the file system as its persistence mechanism.
 
 == Usage
 
-To use VM endpoints:
+To use VM endpoints, follow these three steps. Each of these steps is explained in further detail, below.
 
-. Add the MULE VM namespace to your configuration:
-* Define the VM prefix using xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
-* Define the schema location with http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
-. Optionally, define one or more connectors for VM endpoints.
+. Add the MULE VM namespace to your configuration: +
+* Define the vm prefix using xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+* Define the schema location with http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.3/mule-vm.xsd
+. Optionally, define one or more connectors for VM endpoints. +
 * Create a VM connector:
 +
-[source,xml]
+[source,xml,linenums]
 ----
 <vm:connector name="vmConnector"/>
 ----
-
 +
-If none is created, all VM endpoints use a default connector.
-. Create VM endpoints.
-* Messages are received on inbound endpoints.
-* Messages are sent to outbound endpoints.
-* Both kinds of endpoints are identified by a path name.
+If none is created, all VM endpoints will use a default connector.
+. Create VM endpoints. +
+* Messages will be received on inbound endpoints.
+* Messages will be sent to outbound endpoints.
+* Both kinds of endpoints are identified by a path name or address.
 
-=== Namespace Declaration
+=== Declaring the VM Namespace
 
 To use the VM transport, you must declare the VM namespace in the header of the Mule configuration file. For example:
 
@@ -125,34 +176,73 @@ To use the VM transport, you must declare the VM namespace in the header of the 
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
       xsi:schemaLocation="
-               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
-               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd">
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.3/mule-vm.xsd">
 ----
 
-=== Connector Configuration
+=== Configuring VM Connectors
 
-The configuration of the VM connector is optional. Configuring a connector allows you to configure a http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/queue-profile.html[Queue Profile] which allows persistence to be used. You can also set the maximum queue size.
+The configuration of the VM connector is optional. Configuring a connector allows you to configure a Queue Profile.
 
-=== Endpoints
+==== How Queues are Used in VM Transports
 
-xref:configuring-endpoints.adoc[Endpoints] are configured as with all transports.
+By default, Mule uses queues in the asynchronous processing of messages that use the VM transport. The VM transport can be used for flows, where all the message processing is done in the JVM in which the Mule instance is running.
 
-The VM transport-specific endpoints are configured using the VM namespace and use a _path_ attribute. For example:
+When requests come into a receiver for a flow that uses the VM transport, they are stored on a queue until threads from a thread pool can pick them up and process them. The receiver thread is then released back into the receiver thread pool so it can carry another incoming message. Each message waiting in the queue can be assigned a different thread from the pool of threads.
 
-[source,xml]
+You configure a queue for a VM transport through a queue profile. The queue profile specifies how the queue behaves. Typically, you do not need to configure the queue profile for performance, since the default configuration is usually sufficient, that is, the queue is not the bottleneck. (Performance is usually limited by the component or one of the endpoints). For other reasons, you still might want to specify a maximum queue size, or enable persistence on the queue (which is disabled by default).
+
+You configure the queue profile using the <queue-profile> element. For a VM transport, you specify the <queue-profile> element on the connector.
+
+Here are the attributes of the <queue-profile> element:
+
+[%header,cols="5*"]
+|===
+a|
+*Name*
+
+ a|
+*Type*
+
+ a|
+*Required*
+
+ a|
+*Default*
+
+ a|
+*Description*
+
+|`maxOutstandingMessages` |integer |no |0 |Defines the maximum number of messages that can be queued. The default, 0, means there is no limit on the number of messages that can be queued.
+|`persistent` |boolean |no |false |Specifies whether Mule messages are persisted to a store. Primarily, this is used for persisting queued messages to disk so that the internal state of the server is mirrored on disk in case the server fails and needs to be restarted.
+|===
+
+Based on the persistent attribute value you specify, Mule chooses a persistence strategy to use for the queue. By default, Mule use two persistence strategies:
+
+* `MemoryPersistenceStrategy`, which is a volatile, in-memory persistence strategy.
+* `FilePersistenceStrategy`, which uses a file store to persist messages to a (non-volatile) disk, and therefore maintains messages even if Mule is restarted.
+
+=== Configuring Endpoints
+
+Endpoints are configured as with all transports.
+
+The VM transport specific endpoints are configured using the vm namespace and use a _path_ or _address_ attribute. For example:
+
+[source,xml,linenums]
 ----
 <vm:outbound-endpoint path="out" exchange-pattern="one-way"/>
 ----
 
-If you need to invoke a VM endpoint from https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/module/client/MuleClient.html[Mule Client], use an xref:mule-endpoint-uris.adoc[Endpoint URI]. The format of an endpoint URI for VM is as follows:
+If you need to invoke a VM endpoint from Mule client, use an endpoint URI. The format of an endpoint uri for VM is as follows:
 
+[source,text,linenums]
 ----
-vm://path
+vm://<your_path_here>
 ----
 
-=== Using Transactions
+== Using Transactions
 
-_one-way_ VM queues can take part in distributed xref:transaction-management.adoc[XA Transactions]. To make a VM endpoint transactional, use a configuration like the following:
+_One-way_ VM queues can take part in distributed xref:transaction-management.adoc[XA Transactions]. To make a VM endpoint transactional, use a configuration like the following:
 
 [source,xml,linenums]
 ----
@@ -167,7 +257,7 @@ Using XA requires that you add a transaction manager to your configuration. For 
 
 === Transactional Inbound VM Queues
 
-Inbound VM endpoints support fully transactional flows. For instance, the following configuration creates a VM queue (because the inbound endpoint is one-way), and process messages read from this queue synchronously and transactionally:
+Inbound VM endpoints support fully transactional flows. For instance, the following configuration will create a VM queue (because the inbound endpoint is one-way), and process messages read from this queue synchronously and transactionally:
 
 [source,xml,linenums]
 ----
@@ -200,23 +290,19 @@ XA transactions are also supported:
 
 [source,xml,linenums]
 ----
-<vm:connector name="vmConnector"> ❶
-
-<vm:connector name="persistentVmConnector" queueTimeout="1000"> ❷
-   <queue-profile maxOutstandingMessages="100" persistent="true"/> ❸
+<vm:connector name="persistentVmConnector" queueTimeout="1000"> ❶
+   <queue-profile maxOutstandingMessages="100" persistent="true"/>
 </vm:connector>
 
 <flow>
-    <vm:inbound-endpoint path="in" exchange-pattern="request-response" connector-ref="vmConnector" /> ❹
-    <component class="org.mule.CompoenntClass"/>
-    <vm:inbound-endpoint path="in" connector-ref="persistentVmConnector" /> ❺
+    <vm:inbound-endpoint path="in" exchange-pattern="request-response"/> ❷
+    <component class="org.mule.ComponentClass"/>
+    <vm:outbound-endpoint exchange-pattern="one-way" path="out" connector-ref="persistentVmConnector" /> ❸
 </flow>
 ----
 
-The first connector ❶ uses default connector configuration. +
-The second connector ❷ configures a queue profile and queueTimeout.
-
-The flow uses two VM endpoints, the inbound endpoint ❹ uses a _request-response_ exchange pattern. The outbound endpoint ❺ use a _one-way_ endpoint as well as an alternative connector with persistence configured.
+The first vm endpoint ❷ (inbound) uses a _request-response_ exchange pattern and the default connector configuration, thus no connector definition is needed. +
+The second vm endpoint ❸ (outbound) uses a _one-way_ exchange pattern and a customized connector configuration ❶ with a queue profile and queueTimeout.
 
 == Configuration Reference
 
@@ -230,7 +316,7 @@ The VM transport is used for intra-VM communication between components managed b
 
 === Attributes of <connector...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |queueTimeout |positiveInteger |no |  |The timeout setting for the queue used for asynchronous endpoints
@@ -238,11 +324,11 @@ The VM transport is used for intra-VM communication between components managed b
 
 === Child Elements of <connector...>
 
-[%header%autowidth.spread]
+[%header,cols="34,33,33"]
 |===
 |Name |Cardinality |Description
 |queueProfile |0..1 |DEPRECATED. USE "<queue-profile>" instead.
-|queue-profile |0..1 |Configures the properties of this connector's queue (see xref:configuring-queues.adoc[Configuring Queues]).
+|queue-profile |0..1 |Configures the properties of this connector's queue (see [Configuring Queues]).
 |===
 
 == Inbound endpoint
@@ -251,15 +337,18 @@ The endpoint on which this connector receives messages from the transport.
 
 === Attributes of <inbound-endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
 |===
 
-No Child Elements of <inbound-endpoint...>
+=== Child Elements of <inbound-endpoint...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Outbound endpoint
 
@@ -267,15 +356,18 @@ The endpoint to which this connector sends messages.
 
 === Attributes of <outbound-endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
 |===
 
-No Child Elements of <outbound-endpoint...>
+=== Child Elements of <outbound-endpoint...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Endpoint
 
@@ -283,30 +375,447 @@ An endpoint "template" that can be used to construct an inbound or outbound endp
 
 === Attributes of <endpoint...>
 
-[%header%autowidth.spread]
+[%header,cols="5*"]
 |===
 |Name |Type |Required |Default |Description
 |path |string |no |  |The queue path, such as dispatchInQueue to create the address vm://dispatchInQueue.
 |===
 
-No Child Elements of <endpoint...>
+=== Child Elements of <endpoint...>
 
-
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Transaction
 
 The transaction element configures a transaction. Transactions allow a series of operations to be grouped together so that they can be rolled back if a failure occurs. For more information, see xref:transaction-management.adoc[Transaction Management].
 
-No Child Elements of <transaction...>
+=== Child Elements of <transaction...>
 
+[%header,cols="34,33,33"]
+|===
+|Name |Cardinality |Description
+|===
 
 == Schema
 
-The schema for the VM module appears http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd[here]. Its structure is http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[here].
+Namespace "http://www.mulesoft.org/schema/mule/vm"
+
+Targeting Components:
+
+** 5 global elements, 2 local elements, 4 <<Complex Type Summary>>, 1 attribute group
+
+=== Schema Summary
+
+[cols="2*"]
+|===
+2.+|The VM transport is used for intra-VM communication between components managed by Mule.
+a|
+Target Namespace:
+a|http://www.mulesoft.org/schema/mule/vm
+a|Defined Components:
+a|5 global elements, 2 local elements, 4 <<Complex Type Summary>>, 1 attribute group
+a|Default Namespace-Qualified Form:
+a|Local Elements: qualified; Local Attributes: unqualified
+a|Schema Location:
+a|http://www.mulesoft.org/schema/mule/vm/3.3/mule-vm.xsd; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/connector.html#xml_source[XML source]
+a|Imports Schemas (3):
+a|http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-schemadoc_xsd/schema-overview.html[mule-schemadoc.xsd], http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/schema-overview.html[mule.xsd], http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/xml_xsd/schema-overview.html[xml.xsd]
+a|Imported by Schema: a|_mule-all-included.xsd
+|===
+
+=== All Element Summary
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/connector.html[connector]
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html[vmConnectorType]
+
+a|
+Content:
+
+ a|
+complex, 7 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 8 elements
+
+a|
+Subst.Gr:
+
+ a|
+may substitute for element http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/abstract-connector.html[mule:abstract-connector]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/connector.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+never
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/endpoint.html[endpoint]
+
+An endpoint "template" that can be used to construct an inbound or outbound endpoint elsewhere in the configuration by referencing the endpoint name.
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/globalEndpointType.html[globalEndpointType]
+
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Subst.Gr:
+
+ a|
+may substitute for element http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/abstract-global-endpoint.html[mule:abstract-global-endpoint]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/endpoint.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+never
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/inbound-endpoint.html[inbound-endpoint]
+
+The endpoint on which this connector receives messages from the transport.
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/inboundEndpointType.html[inboundEndpointType]
+
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Subst.Gr:
+
+ a|
+may substitute for element http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/abstract-inbound-endpoint.html[mule:abstract-inbound-endpoint]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/inbound-endpoint.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+never
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/outbound-endpoint.html[outbound-endpoint]
+
+The endpoint to which this connector sends messages.
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/outboundEndpointType.html[outboundEndpointType]
+
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Subst.Gr:
+
+ a|
+may substitute for element http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/abstract-outbound-endpoint.html[mule:abstract-outbound-endpoint]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/outbound-endpoint.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+never
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/queue-profile.html[queue-profile]
+
+Configures the properties of this connector's queue (see [Configuring Queues]).
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/queueProfileType.html[mule:queueProfileType]
+
+a|
+Content:
+
+ a|
+complex, 1 attribute, 1 element
+
+a|
+Defined:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a8[locally] witnin http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html[vmConnectorType] complexType in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/queue-profile.html#xml_source[XML source]
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/queueProfile.html[queueProfile]
+
+DEPRECATED.
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/queueProfileType.html[mule:queueProfileType]
+
+a|
+Content:
+
+ a|
+complex, 1 attribute, 1 element
+
+a|
+Defined:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a9[locally] witnin http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html[vmConnectorType] complexType in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/queueProfile.html#xml_source[XML source]
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/transaction.html[transaction]
+
+The transaction element configures a transaction.
+
+[cols="2*"]
+|===
+a|
+Type:
+
+ a|
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/baseTransactionType.html[mule:baseTransactionType]
+
+a|
+Content:
+
+ a|
+empty, 2 attributes
+
+a|
+Subst.Gr:
+
+ a|
+may substitute for element http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/elements/abstract-transaction.html[mule:abstract-transaction]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/elements/transaction.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+never
+
+|===
+
+=== Complex Type Summary
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/globalEndpointType.html[globalEndpointType]
+
+[cols="2*"]
+|===
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/globalEndpointType.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+at 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/globalEndpointType.html#a3[location]
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/inboundEndpointType.html[inboundEndpointType]
+
+[cols="2*"]
+|===
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/inboundEndpointType.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+at 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/inboundEndpointType.html#a3[location]
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/outboundEndpointType.html[outboundEndpointType]
+
+[cols="2*"]
+|===
+a|
+Content:
+
+ a|
+complex, 12 attributes, attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 15 elements
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/outboundEndpointType.html#xml_source[XML source]
+
+a|
+Used:
+
+ a|
+at 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/outboundEndpointType.html#a3[location]
+
+|===
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html[vmConnectorType]
+
+[cols="2*"]
+|===
+a|
+Content:
+
+ a|
+complex, 7 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a7[attributes], attr. http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule_xsd/complexTypes/annotatedType.html#a5[wildcard], 8 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a10[elements]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#xml_source[XML source]
+
+a|
+Includes:
+
+ a|
+definitions of 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a6[attribute], 2 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a8[elements]
+
+a|
+Used:
+
+ a|
+at 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/complexTypes/vmConnectorType.html#a3[location]
+
+|===
+
+=== Attribute Group Summary
+
+http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/attributeGroups/addressAttributes.html[addressAttributes]
+
+[cols="2*"]
+|===
+a|
+Content:
+
+ a|
+1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/attributeGroups/addressAttributes.html#a5[attribute]
+
+a|
+Defined:
+
+ a|
+globally in http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/schema-overview.html[mule-vm.xsd]; see http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/attributeGroups/addressAttributes.html#xml_source[XML source]
+
+a|
+Includes:
+
+ a|
+definition of 1 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/attributeGroups/addressAttributes.html#a4[attribute]
+
+a|
+Used:
+
+ a|
+at 3 http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-vm_xsd/attributeGroups/addressAttributes.html#a2[locations]
+
+|===
+
+'''''
+
+[%autowidth.spread]
+|===
+|XML schema documentation generated with http://www.filigris.com/products/docflex_xml/#docflex-xml-re[DocFlex/XML RE] 1.8.5 using http://www.filigris.com/products/docflex_xml/xsddoc/[DocFlex/XML XSDDoc] 2.5.0 template set. All content model diagrams generated by http://www.altova.com/xmlspy[Altova XMLSpy] via http://www.filigris.com/products/docflex_xml/integrations/xmlspy/[DocFlex/XML XMLSpy Integration].
+|===
 
 == Javadoc API Reference
 
-The Javadoc for this module can be found here: https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/vm/package-summary.html[VM]
+The Javadoc for this module can be found here:
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/vm/package-summary.html[VM]
 
 == Maven
 
@@ -323,3 +832,5 @@ The In Memory Transport can be included with the following dependency:
 == Best Practices
 
 Be certain that inbound request-response endpoints are paired with outbound request-response endpoints and inbound one-way endpoints are paired with outbound one-way endpoints.
+
+Consider setting up your application following a xref:reliability-patterns.adoc[reliability pattern].

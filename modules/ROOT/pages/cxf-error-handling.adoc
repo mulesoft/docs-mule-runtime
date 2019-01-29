@@ -1,0 +1,171 @@
+= CXF Error Handling
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: cxf, soap connector, error handling
+
+== Overview
+
+When publishing, consuming or proxying information, a http://en.wikipedia.org/wiki/Apache_CXF[CXF Web service] configured in Mule may encounter errors. Mule offers a set of *Exception Strategies* for efficiently xref:error-handling.adoc[handling errors], two of which are especially useful when you need to customize error handling behavior for flows that involve CXF Web Services.
+
+Mule handles errors in one of two ways, depending on whether the CXF Web service is publishing, consuming or proxying information:
+
+. Mule returns a SOAP Fault message to the caller
+. Mule propagates the original cause of the error in the flow
+
+The table below describes which error handling behavior Mule enforces depending on what the CXF Web service is doing when a fault or exception is thrown.
+
+[%header,cols="5*"]
+|===
+|CXF Web Service Activity |Error Condition |Fault/Exception Thrown |Return SOAP Fault to caller |Propagate original cause of error in the Mule flow
+|Publishing |Something goes wrong while the Web service component in a flow is publishing a CXF Web service. |An exception is thrown by the component. |x |
+|Publishing |Something goes wrong while the flow (not the Web service component) is processing a message. |An exception is thrown by the element in the flow that encounters the error. |x |
+|Consuming |Something goes wrong during message processing and the Web service being consumed returns a SOAP fault. |A fault is thrown by the CXF Client message processor. |  |x
+|Proxying |Something goes wrong during message processing and the consumed Web service returns a SOAP fault. |No fault is thrown by the CXF message processors. |x |
+|Proxying |Something goes wrong while the flow is processing the incoming message being proxied. |An exception is thrown within flow. |x |
+|===
+
+[NOTE]
+====
+When Mule returns a SOAP fault to a caller, it sets the HTTP status code to 500 “Internal Server Error”.
+====
+
+The sections below describe how to use Mule's xref:error-handling.adoc[*Default Exception Strategy*], a xref:rollback-exception-strategy.adoc[*Rollback Exception Strategy*] or a xref:catch-exception-strategy.adoc[*Catch Exception Strategy*] to handle errors in a flow with a CXF Web service.
+
+== Default Exception Strategy
+
+You can use Mule's default exception strategy to handle exceptions thrown in any flow that publishes, consumes or proxies a Web service. If your Web service does not require any customized error handling behavior, the default exception strategy effectively handles any exceptions that occur.
+
+Because the default exception strategy is implicitly applied in all Mule flows, you need not define it explicitly. Use an explicitly-defined rollback or catch exception strategy to customize any exception strategy behavior.
+
+== Rollback Exception Strategy
+
+You can customize a rollback exception strategy to handle exceptions and ensure that Mule returns a SOAP fault to the caller, or propagates the exception in the flow.
+
+[%header,cols="34,33,33"]
+|===
+|Web Service Activity |Fault/Exception Thrown |Error Handling Behavior
+|Publishing |An exception is thrown by the component. |The rollback exception strategy handles the exception. It returns a SOAP fault message to the caller with the cause of the error.
+|Publishing |An exception is thrown while the Mule flow (not the component) is processing a message. |The rollback exception strategy handles the exception. It returns a SOAP fault message to the caller with the cause of the error.
+|Consuming |A fault is thrown by the CXF client message processor that receives a SOAP fault from the consuming Web service. |The rollback exception strategy handles the fault. It sets the cause of the fault in the exceptionPayload of the message and propagates the message in the flow.
+|Proxying |An exception is thrown while processing the incoming message being proxied. |The rollback exception strategy handles the exception. It returns a SOAP fault message to the caller with the cause of the error.
+|===
+
+=== Applying the Rollback Exception Strategy
+
+Refer to xref:rollback-exception-strategy.adoc[Rollback Exception Strategy] for detailed instructions on how to apply one to a flow.
+
+=== Example
+
+While Mule is publishing a HelloWorld Web service, the Web service component throws an exception because the name it receives as an argument is empty.
+
+In this case, the rollback exception strategy handles the exception and sends an email with the cause of the exception; it returns a SOAP fault message to the caller and sets the HTTP status code to 500 “Internal Server Error”. The flow of this example is exhibited below.
+
+image::rollback.png[]
+
+==== View the XML
+
+[source,xml,linenums]
+----
+<flow name="CXFWebService1">
+    <http:inbound-endpoint host="localhost" port="8080" path="hello"/>
+    <cxf:jaxws-service serviceClass="org.mule.module.cxf.HelloWorld"/>
+    <component class="org.mule.module.cxf.HelloWorldImpl"/>
+    <rollback-exception-strategy>
+        <transformer ref="ErrorMessageTransformer"/>
+        <smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"
+host="${smtp.host}" port="${smtp.port}"
+to="${email.toAddress}"
+from="${email.fromAddress}"
+subject="${email.subject}" doc:name="SMTP"/>
+    </rollback-exception-strategy>
+</flow>
+----
+
+What follows is the SOAP fault message that is returned to the caller.
+
+[source,xml,linenums]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <soap:Fault>
+            <faultcode>soap:Server</faultcode>
+            <faultstring>Invalid name is empty</faultstring>
+        </soap:Fault>
+    </soap:Body>
+</soap:Envelope>
+----
+
+== Catch Exception Strategy
+
+You can customize a catch exception strategy _neither_ to return a SOAP fault to the caller _nor_ to propagate the exception in the flow when an exception is thrown. After processing the exception event, the catch exception strategy returns the message processing result to the caller.
+
+The catch exception strategy returns the event processed through the configured message processors.
+
+For instance, use the catch exception strategy when:
+
+* you want a Mule flow to recognize all messages – even those which contain errors – as “processed”
+
+* you want a Mule flow to handle errors without returning a SOAP fault message to the caller
+
+[%header%autowidth.spread]
+|===
+|Web Service Activity |Fault/Exception Thrown |Error handling Behavior
+|Publishing |An exception is thrown by the component. |The catch exception strategy handles the exception. It does _not_ return a SOAP Fault message to the caller.
+|Publishing |An exception is thrown by a message processor when it encounters an error. |The catch exception strategy handles the exception. It does _not_ return a SOAP fault message to the caller.
+|Consuming |A fault is thrown by the CXF client message processor in the flow that receives a SOAP fault from the consuming Web service. |The catch exception strategy handles the fault; it does _not_ propagate the error.
+|Proxying |An exception is thrown while Mule is processing the incoming message. |The catch exception strategy handles the exception. It does _not_ return a SOAP Fault message to the caller.
+|===
+
+=== Applying a Catch Exception Strategy
+
+Refer to xref:catch-exception-strategy.adoc[Catch Exception Strategy] for detailed instructions on how to apply one to a flow.
+
+=== Example 1
+
+While Mule is publishing a HelloWorld Web service, the Web service component throws an exception because the name it receives as an argument is empty.
+
+In this case, a catch exception strategy transforms the message contents to string format and displays the name as “Anonymous”. (In other words, when the Web service consumer does not provide a name, the Web service will still publish its results and display “Anonymous” in place of a name.) The catch exception strategy does not return a SOAP Fault message to the caller. The flow of this example is exhibited below.
+
+image::catch.png[]
+
+==== View the XML
+
+[source,xml,linenums]
+----
+<flow name="CXFWebService1">
+    <http:inbound-endpoint host="localhost" port="8080" path="hello"/>
+    <cxf:jaxws-service serviceClass="org.mule.module.cxf.HelloWorld"/>
+    <component class="org.mule.module.cxf.HelloWorldImpl" />
+    <catch-exception-strategy>
+        <object-to-string-transformer/>
+        <append-string-transformer message=" Anonymous"/>
+    </catch-exception-strategy>
+</flow>
+----
+
+=== Example 2
+
+While Mule is consuming a HelloWorld Web service, an error occurs and the Web service fails.
+
+In this case, a catch exception strategy instructs the processor to make a second attempt to consume the same service through a host in a different location. Mule returns the result of the second attempt to the caller. The flow of this example is exhibited below.
+
+image::catch2_1.png[]
+
+==== View the XML
+
+[source,xml,linenums]
+----
+<flow name="CXFWebService1" processingStrategy="synchronous">
+    <inbound-endpoint address="vm://helloWorld" exchange-pattern="request-response"/>
+    <cxf:jaxws-client serviceClass="org.mule.module.cxf.HelloWorld" operation="sayHi"/>
+    <http:outbound-endpoint host="localhost" port="${port1}" path="hello"
+        method="GET" exchange-pattern="one-way" />
+    <catch-exception-strategy>
+        <set-payload value="#[groovy:message.getOriginalPayload()]"/>
+        <cxf:jaxws-client serviceClass="org.mule.module.cxf.example.HelloWorld" operation="sayHi"/>
+        <http:outbound-endpoint host="localhost" port="${port2}" path="hello"
+    method="GET" exchange-pattern="one-way" />
+    </catch-exception-strategy>
+</flow>
+----

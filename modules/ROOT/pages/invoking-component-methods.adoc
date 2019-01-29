@@ -1,0 +1,272 @@
+= Invoking Component Methods
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This example demonstrates different ways entry point resolvers are used when you invoke a component. As discussed in the previous example. Mule uses end point resolvers to determine the appropriate method when an endpoint receives data. The type of data determines which kind of resolver to apply. For example, there are different resolvers for dynamic data, pre-defined data type, methods the incorporates annotations, and the Callable interface.
+
+This example also explains how use a _Transformer_ to transform one Java type to another.
+
+== What You Will Learn
+
+This example demonstrates four ways in which endpoint resolvers can be applied: s A
+
+* Case 1 - Using a dynamic data resolver to resolve a lone entry point method
+* Case 2 - Using a dynamic data resolver to resolve between two entry point methods
+* Case 3 - Using the annotated entry point resolver to resolve a method with annotations
+* Case 4 - Using the Callable interface with the `oneCall` method
+
+== Build It Now! _(15 minutes)_
+
+=== Prerequisites
+
+This tutorial continues the xref:adding-business-logic-to-a-flow.adoc[Adding Business Logic to a Flow] example. At this point, you should have created a flow called `_hello.mflow_` and a POJO component named `_Hello_` with a single method called `_sayHello_`. The `_sayHello_` method returns the text "Hello" with the name that you pass in.
+
+=== Case 1 - Using a Dynamic Data Resolver to Resolve a Lone Entry Point
+
+In this part, we create a _Custom Transformer_ called _HttpRequestToNameString_ so that we can pass in a string to the Hello component. This entails creating a class for the Transformer, dragging a Transformer into the flow, creating a reference to the class, and running the example to make sure that the dynamic endpoint resolver works.
+
+. Create a Java class for the new transformer called _HttpRequestToNameString_. As shown in the previous example, to create a class, you right-click the `_src/main/java_` folder and select New -> Class. The New Java Class dialog appears.
+
+. Add the following information in the New Class dialog:
++
+* Package - _com.test.transformer_
+* Class name - _HttpRequestToNameString_
+* Superclass - _org.mule.transformer.AbstractMessageTransformer_ (You can browse for this.)
+* Method stubs - _Inherited abstract method_
+
+The following figure shows the New Java Class dialog, with the information entered.
+
+image::studioconfigurenewclass.png[configure new class]
+
+[start="3"]
+. Click Finish to complete the class specifications. The source editor appears with the code and method stub for the new class, as shown below.
++
+image::studiomethodstub.png[align="center"]
+
+. Replace the `return null:` line after the `// TODO` comment with the following snippet:
++
+[source,text,linenums]
+----
+String name = message.getInboundProperty("name");
+        String lastName = message.getInboundProperty("lname");
+
+        return name+" "+lastName;
+----
++
+The new code defines the incoming data strings and changes the return statement to return the first and last names. Note that the _Hello_ component gets the name and last name strings from the Mule InboundProperty. Mule sets inputs that are passed in the request as inbound properties. You can use the get methods to obtain the value for these properties.
+
+. Double-click the _hello.mflow_ tab to display the flow graph and drag a Java Transformer into the flow between http source and the Hello component.
++
+image::studioaddtransformercomponent.png[align="center"]
+
+. Double-click the Customer Transformer icon to display the Pattern Properties dialog. Add the following data:
+
+* Display Name - HttpRequestToNameString Transformer
+* Transformer Class - com.test.transformer.HttpRequestToNameString
++
+image::studioconfiguretransformercomponent.png[align="center"]
++
+Specifying the Transformer class creates a reference from the flow to the class. Supplying a display name makes it easy to identify the transformer. Click OK.
+
+. To run the example, right-click _hello.mflow_ in the project tree and select Run As... -> Mule Application. Note that Mule prompts you to save any unsaved files before proceeding. Access this URL: `http://localhost:8082/?name=jas&lname=bhatia` in a browser. You browser should display Hello jas bhatia as shown in the following figure
++
+image::studiocase1browseroutput.png[align="center"]
+
+The dynamic data end point resolver finds the sayHello method successfully.
+
+=== Case 2 - Using a Dynamic Data Resolver to Resolve between Two Entry Point Methods
+
+In this part, we are going to create an object and a transformer and add a method to the component that can accept the object's data.
+
+[start="8"]
+. Create a new Java class called _User_, as you did in steps 1 - 3, using the following data:
+
+* Package - _com.test_
+* Class name - _User_
+* Superclass - _java.lang.Object_ (the default)
+* Method stubs - none (uncheck andy default settings)
+
+. When the source editor is displayed, add the following codes to the class. This code is used to set and return the first name and last name.
++
+[source,text,linenums]
+----
+private String name;
+    private String lname;
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getName() {
+        return this.name;
+    }
+
+     public void setLname(String lname) {
+        this.lname = lname;
+    }
+
+    public String getLname() {
+        return this.lname;
+    }
+----
++
+image::studiousercode.png[align="center"]
+
+. Create a new Java class under _src/main/java_ called _HttpRequestToUser_ to convert the input string to User object data. Request steps 1 - 3 and supply the following data:
+
+* Package - _com.test.transformer_
+* Class name - _HttpRequestToUser_
+* Superclass - _org.mule.transformer.AbstractMessageTransformer_
+* Method stubs - _Inherited abstract method_
++
+Click _Finish_ when you are done.
+
+. Paste the following code into the Source Editor to match the figure below.
++
+[source,text,linenums]
+----
+User user = new User();
+
+String name = message.getInboundProperty("name");
+String lastName = message.getInboundProperty("lname");
+user.setLname(lastName);
+user.setName(name);
+return user;
+----
++
+image::studiohttprequesttousercode.png[align="center"]
+
+. Double-click the Transformer icon in the flow and change the transformer to refer to the new class as follows:
+
+* Display Name - _HttpRequestToUser Transformer_
+* Transformer Class - _com.test.transformer.HttpRequestToUser_
+
+. Right-click the flow in the project tree and select Run As... -> Mule Application. This time there is no output, because _HelloComponent_ has only one method and that method can accept a `string` type only we sent data of type `com.test.User`. If you check the output console, you see the message `org.mule.model.resolvers.EntryPointNotFoundException`. So let's add a second method to handle the user data.
+
+. Click the _HelloComponent.java_ tab and change the code to add a source method called `sayHelloUser` as shown in the following figure.
++
+image::studioaddhellocomponentmethod.png[align="center"]
+
+. Run the project again and use the same URL:
++
+`http://localhost:8082/?name=Jas&lname=bhatia`
++
+image::studiocase2browseroutput.png[align="center"]
+
+The reason it works now is that the dynamic data end point resolver has two methods to choose from in _HelloComponent_. The _sayHello_ method can accept the correct type for the _com.test.User_ object.
+
+=== Case 3 - Using the Annotated Entry Point Resolver to Resolve a Method with Annotations
+
+Annotations allow flow objects to be created solely within the component code. The `@ContainsTransformerMethods` annotations for creating Mule transformer makes it easy to define and discover customer transformer. You can perform a conversion in a method by the `@Transformer` annotation.
+
+[start="16"]
+. Create a new Java class using the following data:
+
+* Package - _com.test.transformer_
+* Class name - _AnnotatedTransformer_
+* Superclass - _org.mule.transformer.AbstractMessageTransformer_
+* Method stubs - _Inherited abstract method_
+
+. Paste the following code into the Source Editor to match the figure below.
++
+[source,java,linenums]
+----
+package com.test.transformer;
+
+import org.mule.api.annotations.ContainsTransformerMethods;
+import org.mule.api.annotations.Transformer;
+import org.mule.api.annotations.param.InboundHeaders;
+import org.mule.api.annotations.param.Payload;
+
+import com.test.User;
+
+    @ContainsTransformerMethods
+    public class AnnotatedTransformer {
+
+        @Transformer
+        public User stringToUser(@Payload String s, @InboundHeaders("name") String name,
+            @InboundHeaders("lname") String lname) {
+        User user = new User ();
+        user.setLname(lname);
+        user.setName(name);
+        return user;
+        }
+    }
+----
++
+image::studiocase3code.png[align="center"]
++
+This code uses the following annotations:
++
+* `@ContainsTransformerMethods` tells Mule that this class contains an annotated transformer method
+* `@Transformer` registers this method with Mule so that it can be used when you want to transformer `String` type to `com.test.User` type.
+* `@Payload` automatically transforms the payload type to the specified type, in this case, String.
+* `@InboundHeaders` checks for an inbound header called "name" and assigns it to `String` name. `@InboundHeaders` for "lname" works the same way.
++
+At this point, you need to register this class with Mule. Currently, Mule Studio does not have the capability to define a Spring bean. The work-around creates a Spring bean in the Configuration XML file.
+
+. Open the flow and click the _Configuration XML_ tab below the source editing window. Add the following line of code so that it appears as shown in the figure below.
++
+[source,xml,linenums]
+----
+<spring:bean id="annotatedTrans" class="com.test.transformer.AnnotatedTransformer"/>
+----
++
+image::studioaddtoxml.png[align="center"]
+
+. Click the _Message Flow_ tab. Delete the existing Java transformer so that your flow looks like the following:
++
+image::studioflowshouldlooklike.png[align="center"]
+
+. Open _HelloComponent_ and remove the say _sayHello_ method. Add `@Payload` to the `sayHelloUser` method, as shown in the following figure.
++
+image::step20.png[align="center"]
+
+. Run the example again using `http://localhost:8082/?name=Jas&lname=bhatia`
++
+You will see this working as before:
++
+image::studiocase3browseroutput.png[align="center"]
++
+`@Payload` has automatically converted String to User object and has initialized User object on the component method.
+
+=== Case 4 - Using the Callable Interface with the onCall Method
+
+With the Callable interface, your flow can accept multiple types of incoming data with a single method named _onCall_. If you implement a callable interface on your component, Mule always invokes the _onCall_ method on the component no matter how many other methods a present. The only exception is if you override the Callable interface by defining an annotated method. Thus, it's important to make sure that you have removed annotated methods if you want to invoke the _onCall_ method.
+
+[start="22"]
+. Change the code in _HelloComponent_ to match the following diagram. In particular, add `import.org.mule.api.lifecylce.Callable`; and `implements Callable` to the class declaration and paste in the following code:
++
+[source,java,linenums]
+----
+@Override
+public Object onCall(MuleEventContext eventContext) throws Exception {
+    return "Hello Callable user "+eventContext.getMessage().getInboundProperty("name");
+}
+----
++
+image::studiocase4code.png[align="center"]
+
+. Run the example again using `http://localhost:8082/?name=Jas&lname=bhatia`
++
+image::studiocase4browseroutput.png[align="center"]
+
+As you can see, the Callable interface provides yet another technique for resolving component methods.
+
+=== What Just Happened
+
+You learned how component entry points are resolved using a dynamic data entry point resolver, annotations, and the Callable interface.
+
+== References
+
+xref:developing-components.adoc[Developing Components]
+
+xref:creating-flow-objects-and-transformers-using-annotations.adoc[Using Annotations]
+
+
+== Next Steps
+
+Next: xref:using-outbound-endpoints-to-publish-data.adoc[Using Outbound Endpoints to Publish Data]
+
+Previous: xref:transforming-data-in-a-flow.adoc[Transforming Data in a Flow]

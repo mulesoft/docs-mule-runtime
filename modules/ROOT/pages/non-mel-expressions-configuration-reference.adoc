@@ -1,0 +1,159 @@
+= Non-MEL Expressions Configuration Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[TIP]
+The new *Mule Expression Language (MEL)* obviates the need to use old expressions in Mule. Refer to xref:mule-expression-language-mel.adoc[Mule Expression Language MEL] for details on how to use MEL.
+
+* <<Expression Attributes>>
+* <<Expression Syntax>>
+* <<Spring Property Placeholders and Expressions>>
+* <<Expression Evaluator Reference>>
+* <<Expression Enricher Reference>>
+
+This page provides reference information for configuring *pre-Mule 3.3 style* expressions.
+
+== Expression Attributes
+
+The XML configuration elements in Mule that support expressions have three common attributes that define the expression to execute, the evaluator to use, and the option of defining a custom evaluator.
+
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|`expression` |The expression to evaluate. The syntax of this attribute will change depending on the evaluator being used.
+|`evaluator` a|
+The expression evaluator to use. Expression evaluators must be registered with the
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/expression/ExpressionManager.html[ExpressionEvaluatorManager]
+
+before they can be used. Using the custom evaluator allows you to define your custom evaluator via the `custom-evaluator` attribute. Note that some evaluators such as Xpath, Groovy, and Bean are loaded from other Mule modules (xref:xml-module-reference.adoc[XML] and xref:scripting-module-reference.adoc[Scripting], respectively). These modules must be on your classpath before their evaluators can be used.
+
+|`custom-evaluator` |The name of a custom evaluator to use. This evaluator must be registered in the local registry before it can be used.
+|===
+
+Expressions can be used in a number of other scenarios such as filters, routing, and endpoints.
+
+== Expression Syntax
+
+There are two ways of specifying expressions depending on where the expression is being used. Typically, expression-based elements such as the expression transformer, expression filter, and expression-based routers such as the expression message splitter, will have specific attributes for `expression`, `evaluator`, and `custom-evaluator`. For example:
+
+[source,xml,linenums]
+----
+<expression-filter evaluator="header" expression="my-header!=null"/>
+----
+
+For these elements, you can set only a single expression for the element. When defining expressions for things like property values, you can set multiple expressions using the following syntax:
+
+[source,text,linenums]
+----
+#[<evaluator>:<expression>]
+----
+
+The syntax requires that you precede an expression with `#[`, and then define the evaluator followed by a colon (:) and the expression to execute. Finally, you terminate the expression with a `]`. You can define multiple expressions as a string. For example:
+
+[source,xml,linenums]
+----
+<message-properties-transformer>
+    <add-message-property name="GUID" value="#[string:#[xpath:/msg/header/ID]-#[xpath:/msg/body/@ref]]"/>
+</message-properties-transformer>
+----
+
+For a list of available evaluators, see <<Expression Evaluator Reference>> below.
+
+=== Optional Values
+
+As of Mule 2.2, you can use an asterisk to indicate an optional property in the expression. For example the following expression would indicate that foo and car must be present, but bar is optional:
+
+[source,text,linenums]
+----
+#[headers:foo,bar*,car]
+----
+
+== Spring Property Placeholders and Expressions
+
+Spring and Mule have had long-time support for property placeholders that allow developers to inject static properties into their configuration when their application starts up. The property values are defined in Java property files that are passed into the framework on start up. The following example shows a properties file that defines configuration information used by a Mule endpoint:
+
+*MyApplication.properties*
+
+[source,text,linenums]
+----
+web.proxy.host=192.168.2.2
+web.proxy.port=8081
+----
+
+The Mule configuration file can embed these properties as placeholders.
+
+[source,xml,linenums]
+----
+<mule ...>
+    <http:connector name="HttpConnector" proxyHostname="${web.proxy.host}" proxyPort="${web.proxy.port}"/>
+</mule>
+----
+
+These property placeholders are resolved during the start-up phase of your application. Mule expressions are evaluated continuously for every message received or sent.
+
+== Expression Evaluator Reference
+
+Following are the default expression evaluators that are loaded at runtime. Not all expression evaluators are supported by every type of expression-based object. For example, the attachment evaluator is available to routers but not filters.
+
+[%header,cols="34,33,33"]
+|===
+|Name |Example |Comments
+|attachment |`#[attachment:supporting-docs]` |Not supported by expression filters.
+|attachments |`#[attachments:attach1,attach2]` |Returns a `java.util.Map` of attachments. Not supported by expression filters.
+|attachments-list |`#[attachments-list:attach1,attach2]` |Returns a `java.util.List` of attachments objects. Not supported by expression filters. You can specify `*` to retrieve all attachments or a wildcard pattern to select attachments by name.
+|bean |`#[bean:fruit.isWashed]` |The bean property expression. Use "." or "/" as element delimiter.
+|endpoint |`#[endpoint:myEP.address]` |Use `endpointName.property`. Not supported by expression filters.
+|exception-type |`#[exception-type:java.lang.RuntimeException]` |Matches an exception type. Only supported by expression filters.
+|function |`#[function:datestamp:dd-MM-yyyy]` |Performs a function: now, date, datestamp, systime, uuid, hostname, ip, or count. Not supported by expression filters.
+|groovy |`#[groovy:payload.fruit.washed]` |Evaluates the expression using the Groovy language.
+|header |`#[header:Content-Type]` |Evaluates the specified part of the message header.
+|headers |`#[headers:Content-Type,Content-Length]` |Returns a `java.util.Map` of headers. Not supported by expression filters. You can specify `#[headers:*]` to get all headers.
+|headers-list |`#[headers-list:Content-Type,Content-Length]` |Returns a `java.util.List` of header values. Not supported by expression filters.
+|json |`#[json://fruit]` a|
+See
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/json/JsonExpressionEvaluator.html[JsonExpressionEvaluator]
+
+for expression syntax
+
+|json-node |`#[json-node://fruit]` a|
+(As of Mule 3.1) Returns the node object from the json expression as is. See
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/json/JsonExpressionEvaluator.html[JsonExpressionEvaluator]
+
+for expression syntax.
+
+|jxpath |`#[jxpath:/fruit]` |JXPath expression that works on both XML/DOM and Beans.
+|map-payload |`#[map-payload:key]` |Returns a value from within a `java.util.Map` payload. Not supported by expression filters.
+|message |`#[message:correlationId]` |Available expressions are `id`, `correlationId`, `correlationSequence`, `correlationGroupSize`, `replyTo`, `payload`, `encoding`, and `exception`. Not supported by expression filters.
+|ognl |`#[ognl:[MULE:0].equals(42)]` |Set the `evaluator` attribute on the `<expression-filter>` element to `ognl` when specifying an xref:using-filters.adoc[OGNL filter].
+|payload |`#[payload:com.foo.RequiredType]` a|
+If expression is provided, it will be a class to be class loaded. The class will be the desired return type of the payload. See `getPayload(Class)`in
+
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessage.html[MuleMessage]
+
+. Not supported by expression filters.
+
+|payload-type |`#[payload:java.lang.String]` |Matches the type of the payload. Only supported by expression filters.
+|process |`#[process:processorName:valueToProcess]` |*Since Mule 3.1.0* Invokes a message processor within an expression. This processor can be any component, transformer, custom processor, processor chain or flow. This evaluator is most useful when used with a nested expression that determines the value that will be processed by the referenced message processor.
+|regex |`#[regex:the quick brown (.*)]` |Only supported by expression filters.
+|string |`#[string:Value is #[xpath://foo] other value is #[header:foo].]` |Evaluates the expressions in the string.
+|variable |`#[variable:variableName]` |Used for retrieving values of flow variables.
+|wildcard |`#[wildcard:*.txt]` |Only supported by expression filters.
+|xpath |`#[xpath://fruit]` |The expression is an http://www.zvon.org/xxl/XPathTutorial/Output/example1.html[XPath expression].
+|xpath-node |`#[xpath-node://fruit]` |(As of Mule 2.2) Returns the node object from the XPath expression as is.
+|===
+
+== Expression Enricher Reference
+
+*(From 3.1.0)* +
+ Following are the default expression enrichers that are loaded at runtime.
+
+[%header,cols="34,33,33"]
+|===
+|Name |Example |Comments
+|variable |`#[variable:variableName]` |Used for storing variable values in a flow.
+|header |`#[header:Content-Type]` |Adds/overwrites the specified message header.
+|===

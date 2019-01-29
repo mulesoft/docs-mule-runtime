@@ -1,0 +1,166 @@
+= Variable Transformer Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Use a *variable transformer* to set or remove a variable on the message. The scope of this variable is limited to the flow where it is set; when the message leaves the flow, the variable does not carry over to the next flow or application. (By contrast, variables specified through the xref:session-variable-transformer-reference.adoc[session variable transformer] persist as long as the message continues to be processed within your Mule application, regardless of flow.)
+
+*<<Complete Code Example>>*
+
+The variable transformer differs from the session variable transformer and the property transformer. See the table below for a comparison of these three transformers.
+
+[%header%autowidth.spread]
+|===
+|  |Variable Transformer |Session Variable Transformer |Property Transformer
+|*Use* |Use to set or remove a variable on the message, tied to the current flow. |Use to set or remove a variable that is tied to the current message for its entire lifecycle, across multiple flows, applications, and even servers. |Use to set, remove, or copy properties on the outbound scope of a message.
+|*Persistence* |Variables set with a variable transformer persist only for the current flow and cannot cross the transport barrier. |Session variables set with a session variable transformer persist for the entire message lifecycle, regardless of transport barriers. |Once a message hits an outbound-endpoint, all properties in the outbound scope are sent with the message, in the form of transport-specific metadata (HTTP headers for an HTTP outbound-endpoint, for example).
+|===
+
+Once you have set a variable, you can invoke it using the **`flowVars`** map in a Mule expression. For example, if you have set a variable with the name "`FVname`" and the value "`FVvalue`", you can later invoke that variable using the expression `#[flowVars['FVname']]`, which evaluates to `FVvalue`.
+
+== Configuration
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+image::studio-variabletransformerppp.png[Studio_VariableTransformerPPP]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Display Name* |Variable |Customize to display a unique name for the transformer in your application. a|
+[source,text,linenums]
+----
+doc:name="Variable"
+----
+.2+|*Operation* |Set Variable |Select to set a new variable on your message (as shown in example screenshot above). a|
+[source,xml,linenums]
+----
+<set-variable>
+----
+
+|Remove Variable |Select to delete an existing variable from your message. a|
+[source,xml,linenums]
+----
+<remove-variable>
+----
+
+|*Name* |String or Mule Expression |Specify the name for the variable that you are creating or identify the name of the variable that you are removing. If you are removing variables, this field accepts a wildcard "*" character. a|
+[source,text,linenums]
+----
+variableName="MyNewVariableName"
+----
+
+|*Value* |String or Mule Expression |This field displays only if you are setting a new variable. Specify the value using either a string or a Mule expression. a|
+[source,text,linenums]
+----
+value="MyNewVariableValue"
+----
+|===
+
+[discrete.view]
+=== XML Editor or Standalone
+
+[source,text,linenums]
+----
+#Set Variable
+
+<set-variable variableName="MyNewVariableName" value="MyNewVariableValue" doc:name="Variable"/>
+
+
+#Remove Variable
+
+<remove-variable variableName="NameofVariabletoRemove" doc:name="Variable"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*set-variable* |Set a new variable on your message (as shown in example above).
+|*remove-variable* |Delete an existing variable from your message.
+|===
+
+[%header,cols="2*"]
+|===
+|Element Attribute |Description
+|*doc:name* a|
+Customize to display a unique name for the transformer in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*variableName* a|
+The name of the variable that you are setting or removing. Can be a string or a Mule expression.
+
+Note: If you are using the remove-variable element, you may use a wildcard "*" character. For example, a remove-variable transformer with a variable name "http.*" removes all variables with a name that begins with "http." from the message.
+
+|*value* |The value of the variable that you are setting. This attribute is only relevant for the set-variable element. Can be a string or a Mule expression.
+|===
+
+=====
+
+== Example
+
+In many cases, it is useful to preserve the original payload of a message, before it is processed, for use later in the flow or to use it in an exception strategy. For this purpose, you can store the message's payload in a variable (named, in the example below, "originalRequest") where you can retrieve it later if needed. In this example, if the HTTP endpoint or the groovy component fails to process the message, the logger in the flow's exception strategy logs the failed request by retrieving it from the originalRequest variable.
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. Place the variable transformer building block after the inbound endpoint of the flow, before other processing takes place on the message.
++
+image::studio-variabletransformingflow.png[Studio_VariableTransformingFlow]
+
+. Configure the variable transformer according to the screenshot below.
++
+image::studio-variabletransformer.png[Studio_VariableTransformer]
+
+. Configure the exception strategy of the flow with a logger that retrieves this variable in the event an exception occurs.
++
+image::studio-loggervariabletransformer.png[Studio_LoggerVariableTransformer]
+
+[discrete.view]
+=== XML Editor or Standalone
+
+[source,xml,linenums]
+----
+<flow name="VariableTransformingFlow1" doc:name="VariableTransformingFlow1">
+     <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+     <set-variable variableName="originalRequest" value="#[payload]" doc:name="Save Request"/>
+     <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+     <scripting:component doc:name="Groovy">
+         <scripting:script engine="Groovy"/>
+     </scripting:component>
+     <catch-exception-strategy doc:name="Catch Exception Strategy">
+         <logger level="INFO" doc:name="Log Request" message="Error processing #[flowVars['originalRequest']]" />
+     </catch-exception-strategy>
+</flow>
+----
+
+=====
+
+== Complete Code Example
+
+View namespace
+
+[source,xml,linenums]
+----
+<flow name="VariableTransformingFlow1" doc:name="VariableTransformingFlow1">
+      <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <set-variable variableName="originalRequest" value="#[payload]" doc:name="Save Request"/>
+      <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+      <scripting:component doc:name="Groovy">
+         <scripting:script engine="Groovy"/>
+      </scripting:component>
+      <remove-variable variableName="NameofVariabletoRemove" doc:name="Variable"/>
+      <catch-exception-strategy doc:name="Catch Exception Strategy">
+         <logger level="INFO" doc:name="Log Request" message="Error processing #[flowVars['originalRequest']]" />
+      </catch-exception-strategy>
+</flow>
+----
+
+== See Also
+
+* Read about related transformers, the xref:session-variable-transformer-reference.adoc[session variable transformer] and the xref:property-transformer-reference.adoc[properties transformer], which you can use to set properties and variables for different scopes.
