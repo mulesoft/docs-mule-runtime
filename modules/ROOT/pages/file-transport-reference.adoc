@@ -37,7 +37,7 @@ xmlns:file="http://www.mulesoft.org/schema/mule/file"
 
 [source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.3/mule-file.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd
 ----
 
 === Connector Syntax
@@ -45,10 +45,10 @@ http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/fil
 [source,xml,linenums]
 ----
 <!-- Typical Connector for Inbound Endpoint: Read files -->
-<file:connector name="input" fileAge="500" autoDelete="true" pollingFrequency="100" moveToDirectory="/backup" moveToPattern="#[header:originalFilename].backup"/>
+<file:connector name="input" fileAge="500" autoDelete="true" pollingFrequency="100" moveToDirectory="/backup" moveToPattern="#[message.inboundProperties['originalFilename']].backup"/>
 
 <!-- Typical Connector for Outbound Endpoint: Write files -->
-<file:connector name="output" outputAppend="true" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+<file:connector name="output" outputAppend="true" outputPattern="#[server.dateTime]-#[message.inboundProperties['originalFilename']]" />
 ----
 
 === Endpoint Syntax
@@ -59,23 +59,23 @@ File endpoints can be expressed using standard File URI syntax:
 file://<path>[MULE:?params]
 ----
 
-For example, to connect to a directory called /temp/files -
+For example, to connect to a directory called /temp/files.
 
-==== *Unix*
+*Unix Syntax*
 
 ----
 file:///temp/files
 ----
 
-Note the extra slash to denote a path from the root (absolute path).
+*Note*: The extra slash denotes a path from the root (absolute path).
 
-==== *Windows*
+*Windows Syntax*
 
 ----
 file:///C:/temp/files
 ----
 
-The Unix style still works in Windows if you map to a single drive (the one Mule was started from).
+The Unix style works in Windows if you map to a single drive (the one Mule was started from).
 
 To specify a relative path use:
 
@@ -88,7 +88,6 @@ Or:
 ----
 file://temp
 ----
-
 
 *Note*: Only two slashes are used for the protocol, so it's a relative path.
 
@@ -104,20 +103,20 @@ Or:
 file://?address=./temp
 ----
 
-To connect to a Windows network drive:
+To connect to a windows network drive:
 
 ----
-file:////192.168.0.1/temp/
+file:192.168.0.1/temp/
 ----
 
-==== *Inbound Endpoint*
+*Inbound Endpoint*
 
 [source,xml,linenums]
 ----
 <file:inbound-endpoint connector-ref="input" path="/tmp/input"/>
 ----
 
-==== *Outbound Endpoint*
+*Outbound Endpoint*
 
 [source,xml,linenums]
 ----
@@ -137,8 +136,6 @@ As it can be seen, Mule ESB provides lots of functionality ready to use that can
 * When configured to use a working directory, Mule add two properties to the message to indicate the source from which the file was read: +
 ** `sourceFileName`: contains the same value as the originalFilename property which Mule uses when no workDirectory is configured
 ** `sourceDirectory`: contains the same value as the originalDirectory property which Mule uses when no workDirectory is configured.
-+
-
 
 == Features
 
@@ -147,8 +144,9 @@ As it can be seen, Mule ESB provides lots of functionality ready to use that can
 
 == Usage
 
-To use the file transport in your Mule configuration, <<Schema>> and use the `<file`:`connector>`, `<file`:`inbound-endpoint>` and/or `<file`:`outbound-endpoint>` elements. Refer to the <<Example Configurations>> below. +
-You also can use the following expressions inside attributes (check here for more information):
+To use the file transport in your Mule configuration, <<Schema>> and use the `<file`:`connector>`, `<file`:`inbound-endpoint>` and/or `<file`:`outbound-endpoint>` elements. Refer to the <<Example Configurations>> below.
+
+You can use the following expressions inside attributes:
 
 * #[function:dateStamp]
 * #[function:datestamp:dd-MM-yy]
@@ -156,7 +154,9 @@ You also can use the following expressions inside attributes (check here for mor
 * #[function:uuid]
 * #[header:originalFilename]
 * #[function:count]
-* #[header:_message property name_]
+* #[message.inboundProperties['_messagepropertyname'_]
+
+For the dateTime functions that were added to MEL with Mule 3.4, see MEL Date and Time Functions.
 
 == Example Configurations
 
@@ -170,8 +170,8 @@ The following simple example copies files from _/tmp/input_ ❸ to _/tmp/output_
       xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xsi:schemaLocation="
          http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd
-         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.3/mule-file.xsd">
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd">
 
     <file:connector name="input" autoDelete="false" ❶ pollingFrequency="1000" ❷ />
 
@@ -184,9 +184,7 @@ The following simple example copies files from _/tmp/input_ ❸ to _/tmp/output_
 </mule>
 ----
 
-*Note*: In these code examples, `spring-beans-current.xsd` is a placeholder. To locate the correct version, see http://www.springframework.org/schema/beans/.
-
-The following example moves files ❶ from _/tmp/input_ to _/tmp/output_ every 5 second (5000 ms) ❸, saving a backup file of the original file (with the extension backup) in _/tmp/backup_ ❹. The new file is renamed with the current date and time as prefix ❺. Note that *fileAge* prevents moving files that are still being generated as the file has to be untouched for at least half a second ❷.
+The following example moves files ❶ from _/tmp/input_ to _/tmp/output_ every 5 second (5000 ms) ❸, saving a backup file of the original file (with the extension backup) in _/tmp/backup_ ❹. The new file is renamed with the current date and time as prefix ❺. Note that *fileAge* prevents moving files that are still being generated as the file has to be untouched for at least half second ❷.
 
 [source,xml,linenums]
 ----
@@ -196,8 +194,8 @@ The following example moves files ❶ from _/tmp/input_ to _/tmp/output_ every 5
       xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xsi:schemaLocation="
          http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd
-         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.3/mule-file.xsd">
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd">
 
     <file:connector name="input" autoDelete="true" ❶ fileAge="500" ❷ pollingFrequency="5000" ❸ />
 
@@ -206,9 +204,9 @@ The following example moves files ❶ from _/tmp/input_ to _/tmp/output_ every 5
     <flow name="moveFile">
         <file:inbound-endpoint connector-ref="input" path="/tmp/input"
                       moveToDirectory="/tmp/backup"
-                      moveToPattern="#[header:originalFilename].backup"/>
+                      moveToPattern="#[message.inboundProperties['originalFilename']].backup"/>
         <file:outbound-endpoint connector-ref="output" path="/tmp/output"
-                      outputPattern="#[function:datestamp]-#[header:originalFilename]"/>
+                      outputPattern="#[function:datestamp]-#[message.inboundProperties['originalFilename']]"/>
     </flow>
 </mule>
 ----
@@ -221,8 +219,8 @@ The following example shows different connector configurations. The third exampl
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.3/mule-file.xsd
-          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd">
+          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd">
 
     <file:connector name="sendConnector" outputAppend="true" outputPattern="[TARGET_FILE]" />
 
@@ -238,7 +236,7 @@ The following example shows different connector configurations. The third exampl
     <flow name="RefreshFileManager">
         <file:inbound-endpoint connector-ref="inboundFileConnector"
             path="C:/temp/filewatcher/inbox" moveToDirectory="C:/temp/filewatcher/history"
-            moveToPattern="#[function:datestamp]-#[header:originalFilename]" /> ❸
+            moveToPattern="#[function:datestamp]-#[message.inboundProperties['originalFilename']]" /> ❸
 
         ...
     </flow>
@@ -283,7 +281,7 @@ File Transport *outbound endpoint* attributes
 
 The File connector configures the default behavior for File endpoints that reference the connector. If there is only one File connector configured, all file endpoints use that connector.
 
-=== Attributes of Connector
+=== Attributes of connector
 
 [%header%autowidth.spread]
 |===
@@ -547,9 +545,7 @@ Access the http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http
 
 == Javadoc API Reference
 
-https://www.mulesoft.org/docs/site/3.3.0/apidocs/org/mule/transport/file/package-summary.html[Javadoc for Mule 3.3.0] for File Transport.
-
-https://www.mulesoft.org/docs/site/3.3.1/apidocs/org/mule/transport/file/package-summary.html[Javadoc for Mule 3.3.1] for File Transport.
+https://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/file/package-summary.html[Javadoc] for File Transport.
 
 == Maven
 

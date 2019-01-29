@@ -1,0 +1,149 @@
+= Mule Endpoints and Connectors
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+image:connector-1.png[] As elements which receive or send messages between Mule and one or more external sources, endpoints and connectors in Mule fall into the category of *message sources. These are elements through which data enters or exits a Mule flow.
+
+Because they sit at the "ends" of Mule flows, they are often referred to as *endpoints*, and are labeled in Mule according to the kind of communication they facilitate such as FTP, Ajax, JMS, or HTTP. However, message sources may manifest as *Anypoint Connectors*, or simply, Connectors. The distinction between the two types of message sources exists to distinguish the enterprise-specific endpoints from the non-enterprise specific. For example, an SMTP endpoint facilitates connection to any mail server thus it exists in Mule as an endpoint; a Facebook Connector facilitates connection specifically to Facebook thus it exists as an Anypoint Connector. (Note: in Studio, Anypoint Connectors are referred to by their legacy name: Cloud Connectors.)
+
+
+== Inbound and Outbound
+
+There are two types of message sources in Mule flows: *inbound* and *outbound*.
+
+*Inbound message sources*, as you might infer from the name, receive new messages from a channel or resource thus triggering the execution of a flow. An inbound message source reads the data it receives, packages the content as a message, then passes it to the first message processor in a Mule flow. A message source can receive data by:
+
+* using a server socket
+* polling a remote socket or resource
+* registering a listener
+
+Inbound endpoints use one of two *message exchange patterns* (MEPs) in a Mule flow.
+
+* An endpoint with a *one-way* exchange pattern simply accepts information from an external source for processing by Mule. For example, an JMS endpoint would use a one-way exchange pattern to accept messages from an external queue and process them in Mule (the queue doesn't expect a post-processing response).
+
+* An endpoint with a *request-response* exchange pattern not only accepts information from an external source, it also returns a response to the external source that "called" the Mule flow. For example, an HTTP endpoint might use a request-response exchange pattern to accept a Web service request from a caller, then return a response after Mule has processed the message.
+
+*Outbound message sources* send messages from Mule to an external system or application. Usually, these outbound message sources are set at the end of a Mule flow or subflow, sending a message out to an external system after Mule has processed the message to transform it, enrich it, or otherwise act upon it. An outbound message source receives the message payload and routing instructions from the message processor which precedes it in a flow, then sends the message to its destination.
+
+Outbound message sources always use a one-way message exchange pattern, since they do not expect any input from an external source; they must only send output.
+
+image::flow-endpoints2.png[flow_endpoints2]
+
+[NOTE]
+====
+Where it must respond to the requester, an endpoint uses a *request-response message exchange pattern* (as indicated by the small double-arrow icon — below, left).
+
+If an endpoint has only to input information into an application, it requires a *one-way message exchange pattern* (below, right).
+
+image::mep-ways.png[mep_ways]
+====
+
+== Transports and Connectors
+
+Message sources in Mule make use of *transports* to carry messages from application to application in the Mule framework. In the context of Enterprise Ingetration Patterns (EIP), transports implement message channels and provide consistent connectivity to an underlying data source or message channel. Whenever there is a message source in Mule, there is a corresponding transport working in the background to establish and maintain communication. For example, the HTTP transport handles messages sent to an HTTP endpoint in Mule via HTTP protocol.
+
+In Mule, you can also configure a transport to apply synchronous *transformers* to the response before returning it to the caller.
+
+The heart of a transport is the *connector* which maintains the configuration and state for the transport. In other words, connectors contain nearly all the connectivity details that Mule needs to actually connect with another system or application.
+
+Many individually configured endpoints in various Mule flows in an application can reference a single connector for transport details. For example, a Mule application with four different HTTP inbound endpoints may all reference the same globally configured HTTP connector in which specifics such as security, protocol and proxy settings are set. Because they all reference the same connector and use the same transport, all four HTTP endpoints behave consistently within the application.
+
+== Examples
+
+=== HTTP Endpoint
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <http:connector name="HTTP_Connector" cookieSpec="netscape" validateConnections="true" sendBufferSize="0" receiveBufferSize="0" receiveBacklog="0" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0" doc:name="HTTP\HTTPS">
+        <reconnect/>
+    </http:connector>
+
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" connector-ref="HTTP_Connector"/>
+    </flow>
+
+</mule>
+----
+
+=== Database Endpoint
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd">
+
+    <jdbc-ee:mysql-data-source name="MySQL_Data_Source" user="test" password="test" url="jdbc:mysql://localhost:3306/[dbName]" transactionIsolation="UNSPECIFIED" doc:name="MySQL Data Source"/>
+
+    <jdbc-ee:connector name="Database_Connector" dataSource-ref="MySQL_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="Database"/>
+
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <jdbc-ee:inbound-endpoint queryKey="test" queryTimeout="-1" pollingFrequency="1000" connector-ref="Database_Connector" doc:name="Database">
+            <jdbc-ee:query key="test" value="test"/>
+        </jdbc-ee:inbound-endpoint>
+    </flow>
+
+</mule>
+----
+
+=== JMS Endpoint
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+
+    <jms:activemq-connector name="Active_MQ" username="test" password="test" brokerURL="tcp://localhost:61616" validateConnections="true" doc:name="Active MQ"/>
+
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <jms:inbound-endpoint queue="test" connector-ref="Active_MQ" doc:name="JMS Endpoint"/>
+    </flow>
+
+</mule>
+----
+
+=== Salesforce Connector
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+
+    <sfdc:config name="Salesforce" username="test" password="test" securityToken="test" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <sfdc:subscribe-topic config-ref="Salesforce" topic="test" doc:name="Salesforce "/>
+    </flow>
+
+</mule>
+----
+
+== See Also
+
+* *NEXT STEP*: Read on about xref:mule-components.adoc[components].
+* Skip ahead to understand the structure of a xref:mule-message-structure.adoc[Mule message].

@@ -3,11 +3,13 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-== Overview
+The *Foreach* scope splits a collection into elements and processes them iteratively through the processors embedded in the scope, then returns the original message to the flow.
 
-This scope simplifies the splitting and aggregation of message collections.
+*<<Complete Example Code>>*
 
-Typically, a flow that processes messages containing a collection of elements must use one flow control to split the collection into individual elements, which it processes iteratively, then use another flow control to re-aggregate the elements into a new collection so they can be passed out of the flow. Several of Mule ESB’s xref:studio-flow-controls.adoc[flow controls] support such splitting-and-re-aggregation, but even when carefully chosen for a specific task, they cannot match the convenience of the *Foreach Scope*.
+== Using Foreach vs. Splitter and Aggregator Pairs
+
+Typically, to create a flow that processes messages containing a collection of elements you must use one flow control to split the collection into individual elements, which the flow processes iteratively, then you must use another flow control to re-aggregate the elements into a new collection so they can be passed out of the flow. Several of Mule ESB’s xref:routers.adoc[flow controls] support such splitting-and-re-aggregation, but they cannot match the convenience of the Foreach scope.
 
 This use of splitter and aggregator pairs also presents several potential limitations:
 
@@ -18,33 +20,30 @@ This use of splitter and aggregator pairs also presents several potential limita
 Foreach provides several advantages over splitter-aggregator pairs:
 
 * Foreach splits collections into elements, then processes them iteratively _without losing any of the message payload_.
-* After Foreach splits a message collection and processes the individual elements, it doesn't re-aggregate those individual elements into a MuleMessageCollection; rather, it returns a reference to the original message. (This results in "Java in, Java out" rather than "Java in, MuleMessageCollection out").
+* After Foreach splits a message collection and processes the individual elements, it doesn't re-aggregate those individual elements into a MuleMessageCollection; rather, it returns the original message. (This results in "Java in, Java out" rather than "Java in, MuleMessageCollection out.")
 * The Foreach scope is versatile; it can iteratively process elements from any type of collection, including maps, lists, arrays, and MuleMessageCollections.
 * The Foreach scope can split and process collections of elements that are not part of the message payload. For example, Foreach can process message property collections (metadata) from the message header.
 
+[WARNING]
+====
+If the elements are *mutable objects* (for example, a bean with different fields in it) and any of the message processors embedded in your Foreach scope modifies a value of the original object (for example, one of the fields), then the changes to the fields will persist once the foreach returns the original message to the flow.
+
+In other words, Foreach does not make a deep copy of the data when processing a message nor when returning the original message to the flow.
+====
+
 == Configuring Foreach
 
-. Drag and drop the Foreach scope icon from the Studio palette onto the Message Flow canvas.
-+
-image::drag-foreach.png[drag_foreach]
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
 
-. Double-click the icon to open the Scope Properties panel.
-. On the *General* tab, enter a *Display Name* for the scope, and — according to the requirements of your context — configure any of the four Attributes. +
+. Add a Foreach scope in your flow at the point where you want to initiate the Foreach scope processing. +
 +
-image::foreach-properties.png[foreach_properties]
-+
-[%header,cols="10,10,75"]
-|===
-|Attribute |Default Value |Description
-|Collection |  |(Optional) Enter an expression that tells Foreach where to find the data it must split and process. For example, enter an expression that instructs Foreach to split and process a collection from the header section – rather than the payload. Unless this field specifies otherwise, Foreach assumes that the message payload is the collection.
-|Counter Variable Name |counter |(Optional) Enter a name in this field to label the variable that Foreach uses to record the number of the elements it has processed. If your collection already uses the label `counter` for another variable, enter a different label for the *Counter Variable Name*, such as `index`.
-|Batch Size |1 |(Optional) Enter an integer to indicate the number of elements in each batch that Foreach processes. Potentially, these batches promote quicker processing. For example, if a collection has 200 elements and you set the batch size to 50, Foreach will iteratively process 4 batches of 50 elements.
-|Root Message Variable Name |rootMessage |(Optional) Enter a name in this field to label the variable that Foreach uses to reference the complete, unsplit message collection. If your collection already uses the label `rootMessage` for another variable, enter a different label for the *Root Message Variable Name*.
-|===
+image::studio-foreach-flow1-1.png[Studio_Foreach_flow1-1]
 
-. Click the *Documentation* tab to add notes about the scope, if you wish, and then click *OK* to save your changes.
-. Drag building blocks from the palette into the Foreach scope to build a subflow that will process each element within the message collection. The Foreach scope can contain any number of message processors as well as references to child flows.
-+
+. Insert one or more message processors inside the Foreach scope area to define how Mule should process each element within the message collection. The Foreach scope can contain any number of message processors as well as references to child flows.
+
 [WARNING]
 ====
 The only type of message processor you _cannot_ drag into a Foreach scope is an *inbound endpoint*.
@@ -52,28 +51,78 @@ The only type of message processor you _cannot_ drag into a Foreach scope is an 
 If you drag a two-way endpoint into a Foreach scope, Mule automatically converts it to an outbound-only endpoint.
 ====
 
+[%header,cols="4*"]
+|===
+|Field |Default Value |Description |XML
+|*Display Name* |For Each |Customize to display a unique name for the scope in your application. a|`doc:name="For Each"`
+|*Collection* |  |(Optional) Enter an expression that tells Foreach where to find the data it must split and process. For example, enter an expression that instructs Foreach to split and process a collection from the header section – rather than the payload. Unless this field specifies otherwise, Foreach assumes that the message payload is the collection. a|`collection="#[payload.topic]"`
+|*Counter Variable Name* |counter |(Optional) Enter a name in this field to label the variable that Foreach uses to record the number of the elements it has processed. If your collection already uses the label `counter` for another variable, this field will be blank and you will need to enter a different label for the *Counter Variable Name*, such as `index`. a|`counterVariableName="counter"`
+|*Batch Size* |1 |(Optional) Enter an integer to indicate the number of elements in each batch that Foreach processes. Potentially, these batches promote quicker processing. For example, if a collection has 200 elements and you set the batch size to 50, Foreach will iteratively process 4 batches of 50 elements. a|`batchSize="50"`
+|*Root Message Variable Name* |rootMessage |(Optional) Enter a name in this field to label the variable that Foreach uses to reference the complete, unsplit message collection. If your collection already uses the label `rootMessage` for another variable, this field will be blank and you will need to enter a different label for the *Root Message Variable Name*. a|`rootMessageVariableName="rootMessage"`
+|===
+
+[discrete.view]
+=== XML Editor or Standalone
+
+. Add a foreach element to your flow at the point where you want to initiate a foreach processing block. Refer to the code sample below. +
+
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*foreach* |Use to create a block of message processors that iteratively process elements within a collection.
+|===
+. Configure the scope according to the table below. +
+
++
+[%header,cols="34,33,33"]
+|===
+|Element Attribute |Default Value |Description
+|*doc:name* |For Each a|
+Customize to display a unique name for the async scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*collection* |Payload |(Optional) Enter an expression that tells Foreach where to find the data it must split and process. For example, enter an expression that instructs Foreach to split and process a collection from the header section – rather than the payload. Unless this attribute specifies otherwise, Foreach assumes that the message payload is the collection.
+|*counterVariableName* |counter |(Optional) Specify to label the variable that Foreach uses to record the number of the elements it has processed. If your collection already uses the label `counter` for another variable, you will need to select a unique name.
+|*batchSize* |1 |(Optional) Specify an integer to indicate the number of elements in each batch that Foreach processes. Potentially, these batches promote quicker processing. For example, if a collection has 200 elements and you set the batch size to 50, Foreach will iteratively process 4 batches of 50 elements.
+|*rootMessageVariableName* |rootMessage |(Optional) Specify to label the variable that Foreach uses to reference the complete, unsplit message collection. If your collection already uses the label `rootMessage` for another variable, you will need to select a unique name.
+|===
+
+. Add nested elements beneath your `foreach` element to define how Mule should process each element within the message collection. The Foreach scope can contain any number of message processors as well as references to child flows.
+
+[source,xml,linenums]
+----
+<foreach collection="#[payload.name]" doc:name="For Each" counterVariableName="counter" rootMessageVariableName="rootMessage" batchSize="5">
+    <some-nested-element/>
+    <some-other-nested-element/>
+</foreach>
+----
+=====
+
 == Foreach Error Handling
 
-The exception strategy defined for your flow handles all the exceptions thrown within the Foreach scope and its subflow. (If you have not explicitly defined an exception strategy for your flow, Mule implicitly applies the xref:error-handling.adoc[default exception strategy] handles exceptions.) If a message in a collection throws an exception, Foreach stops processing that collection and invokes the exception strategy.
+The exception strategy defined for your flow handles all the exceptions thrown within the Foreach scope. (If you have not explicitly defined an exception strategy for your flow, Mule implicitly applies the xref:error-handling.adoc[default exception strategy] to handle exceptions.) If a message in a collection throws an exception, Foreach stops processing that collection and invokes the exception strategy.
 
 For example, Foreach throws an `IllegalArgumentException` whenever two conditions hold true:
 
 * it receives a message payload that is not a collection
-* you have not identified a message collection outside the message payload (defined by entering an expression in the *Collection* field in the Attributes section of the Foreach *General* tab)
+* you have not identified a message collection outside the message payload (defined by entering an expression in the *Collection* field in the Studio Visual Editor or including the `collection` attribute in XML configuration.)
 
 == Example
 
 The following example illustrates a flow that uses Foreach to add information to each message in a collection.
 
-The HTTP endpoint receives a request from a client, then queries a JDBC database, where a table indicates the model names and the model years of various cars. Foreach breaks the collection (the table) apart into a list of elements (rows), each of which contains information such as about individual elements (maps) `model:'ford sierra'`, model_year=1982}}. Foreach sends each element through the message processors in its subflow.
+The HTTP endpoint receives a request from a client, then queries a JDBC database, where a table indicates the model names and the model years of various cars. Foreach breaks the collection (the table) apart into a list of elements (rows), each of which contains information such as about individual elements (maps) `model:'ford sierra'`, model_year=1982}}. Foreach sends each element through the message processors in its scope.
 
 The flow adds a new entry to each element's map; if the model year is less than 2001, Mule adds `type='20th century car'`, then sends the element to the *JMS* endpoint; otherwise, Mule adds `type='21st century car'` and sends the element to the *File* endpoint. Foreach returns a collection at the end of the flow and sends it to the transformer.
 
 This particular example replaces the main flow’s default exception strategy with a custom *Catch Exception Strategy* that leverages the *Set Payload* and *HTTP Response Builder* building blocks.
 
-image::foreach-example.png[]
+image::studio-foreach-flowexample.png[Studio_ForEach_FlowExample]
 
-*Full Example Code*
+== Complete Example Code
+
 
 [source,xml,linenums]
 ----

@@ -1,0 +1,44 @@
+= Flow Architecture Advanced Use Case
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, server, components, connectors, elements, palette, flow
+
+By judiciously combining the architectural options and product features available in Mule, you can, with a minimum of development effort, design and create powerful, robust applications that precisely fit your needs.
+
+The application pictured below leverages multiple flows, two types of queues, clustering, and load balancing to create a Mule application that facilitates all of the following:
+
+* high throughput
+* high availability
+* high reliability (transactionality)
++
+image::adv-mule-app.png[adv_mule_app]
+
+== How It Works
+
+The application builds upon a request-response exchange pattern, in which Web clients submit messages (requests), then wait for responses from the application.
+
+In this particular topology, a Java Message Server (JMS) sits between the clients and the application, receiving messages as they are submitted and managing them using Active MQ, a messaging queue that performs the following:
+
+* keeps track of every submission
+* forwards messages to the application in the order they were submitted
+* makes sure that the application provides a response to every message within a specified timeout period
+* forwards each response the appropriate sender
+
+Since the JMS sits outside the application, it is relatively slow compared to the application, which runs on multiple threads within a cluster of Mule nodes. Also, it does not have direct visibility into the success or failure of the individual message processing events within our application. Nevertheless, the JMS provides a form of “high-level transactionality” by ensuring that a response is received for each message.
+
+Within the application, an HTTP endpoint set to the request-response exchange pattern serves as both the application’s message source (i.e. inbound endpoint) and its outbound endpoint, dispatching a response to each sender by way of the JMS.
+
+The message processors within the application are segregated into four flows. Each asynchronous flow runs on a separate thread and begins and ends with a VM endpoint. These VM endpoints share memory through a VM queue. If any of the asynchronous flows fails to execute successfully, the VM queue reports this, thus ensuring a type of flow-level transactionality known as *high reliability*.
+
+The application has been configured through the Mule Management Console to be deployed and run on a four-node cluster. If any of the nodes go down, one of the others picks up the processing load, thus ensuring *high availability*. As the following diagram illustrates, even if none of the nodes go down, the asynchronous flows can be processed on the next available node. This type of automatic *load balancing* promotes *high throughput*.
+
+image::load-balancing.png[load_balancing]
+
+== See Also
+
+* **NEXT STEP:** Learn the various ways you can https://docs.mulesoft.com/getting-started/index[deploy Mule applications].
+* Read about some alternative ways to control message processing within a flow using xref:routers.adoc[routing message processors].
+* Refer to the xref:flow-ref-component-reference.adoc[Flow Reference Component Reference] and xref:async-scope-reference.adoc[Async Scope].
+* Read more about xref:flow-processing-strategies.adoc[Flow Processing Strategies].
+* Read more about setting up xref:transactional.adoc[transactional units] in Mule applications.

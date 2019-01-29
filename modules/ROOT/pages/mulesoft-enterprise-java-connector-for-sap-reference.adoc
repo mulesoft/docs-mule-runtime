@@ -3,7 +3,7 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-*_Enterprise Edition_*
+*Enterprise*
 
 [NOTE]
 This connector requires a separate license. Please contact mailto:info@mulesoft.com[MuleSoft] if you want to evaluate or use this connector.
@@ -20,27 +20,39 @@ The Mule SAP Transport uses SAP Java Connector (JCo) libraries, thus enabling yo
 
 image::sap-transport-image-01.png[]
 
+[NOTE]
+====
+*Mule Compatibility*
+
+There are two versions of the MuleSoft Enterprise Java Connector for SAP:
+
+* *1.x*: Compatible with Mule 3.0 / 3.1 / 3.2
+* *2.x*: Compatible with Mule 3.3 / 3.4
+
+Stateful transactions, involving multiple outbound endpoints, only work starting in Mule 3.3 with the transactional scope.
+====
+
 == Installation
 
 The SAP transport needs JCo libraries to operate. The following section explains how to setup Mule ESB so that you can use the SAP transport in your Mule applications:
 
-This procedure assumes that you already have a Mule instance installed on your host machine.
+This procedure assumes that you already have a Mule instance installed on your host machine. If not, then follow the xref:installing.adoc[instructions] for downloading and installing Mule.
 
 [TIP]
 Throughout this document, we use `$MULE_HOME` to refer to the directory where Mule is installed.
 
 . Download the SAP JCo and IDoc libraries from the SAP site: http://service.sap.com/connectors (To do this, you need a SAP User ID).
-. Make the the SAP jars available to your Mule application and/or Mule ESB instance. JCo relies on a native library, which requires additional installation steps.
+. Make sure that the SAP jars available to your Mule application and/or Mule ESB instance. JCo relies on a native library, which requires additional installation steps.
 . If you plan to use SAP as an Inbound Endpoint (i.e., Mule will be called as a BAPI or will receive IDocs), you must perform additional configuration within the services file at the OS level.
 
 [NOTE]
 ====
-*About the SAP JCo and IDoc Library Versions* +
+*About the SAP JCo and IDoc Library Versions*
 
 The SAP Transport requires:
 
-* SAP JCo Library 3.0.7 (sapjco-3.0.7.jar)
-* SAP IDoc Libraries 3.0.6 (sapidoc-3.0.6.jar)
+* SAP JCo Library 3.0.x (Tested with sapjco-3.0.7.jar and sapjco-3.0.9.jar)
+* SAP IDoc Libraries 3.0.x (Tested with sapidoc-3.0.6.jar)
 
 The SAP JCo libraries are OS dependent, so make sure to download the SAP libraries that correspond to the OS and hardware architecture of the host server on which Mule will be running.
 ====
@@ -65,14 +77,29 @@ You need to place these in your application CLASSPATH.
 
 For the SAP Transport, MuleSoft recommends the following directories:
 
-* `$MULE_HOME/apps/YOUR_APP/lib`: To make libraries available for just your application
-* `$MULE_HOME/lib/user`: To share libraries among all applications running within the same Mule ESB instance
+* `$MULE_HOME/apps/YOUR_APP/lib`: To make libraries available for just your application.
+* `$MULE_HOME/lib/user`: To share libraries among all applications running within the same Mule ESB instance. As SAP JCo configuration is a singleton, if you go this way, then all your applications will share the same configuration, including the JCo destination repository.
 
-You also need to tell Mule ESB where the SAP JCo dynamic linked library resides. To accomplish this, you can do either of the following:
+Your application lib directory is automatically enabled to support dynamic libraries. If you are not including them there, then you also need to tell Mule ESB where the SAP JCo dynamic linked library resides. To accomplish this, you can do either of the following:
 
 * Configure the `LD_LIBRARY_PATH` environment variable
 * Configure the Mule ESB wrapper configuration file `$MULE_HOME/conf/wrapper.conf` by adding the line `wrapper.java.library.path.{N}=PATH/TO/SAP-JCO/LIB-DIR`
+
+*IMPORTANT*: Do not combine both strategies (For example putting JCo libraries in the mule instance shared lib directory (For example `$MULE_HOME/lib/user`) and the SAP connector library inside your application `$MULE_HOME/apps/YOUR_APP/lib`. This will cause classloader issues as JCo libraries hold configuration in static fields (singletons).
 ====
+
+==== Example: Shipping all dependencies inside your application
+
+Lets assume you have an application called *sap-test* deployed in $MULE_HOME/apps in a Windows x86 box. Then the directory tree in order to have all the connector dependencies is:
+
+* `$MULE_HOME/apps/sap-test/lib`
+** `mule-transport-sap-{version}.jar`
+** `sapjco-3.0.x.jar`
+** `sapidoc-3.0.x.jar`
+** `sapjco3.dll`
+
+[TIP]
+It is recommended to configure the SAP libraries at Mule instance level, as having two applications with different versions of the SAP transport and/or JCo libraries may cause classloader issues.
 
 === SAP Inbound Endpoint Requirements
 
@@ -83,7 +110,7 @@ If you are configuring a SAP Inbound Endpoint (JCo Server), then you will need t
 
 In the above file, you must add your gateway (which is configured through the `jcoGwService` attribute or the `jco.server.gwserv / jco.client.gwserv` property). There’s no need to add the whole mapping list.
 
-For example, to set the following, `jcoGwService=sapgw00`, you simply add the following string:
+For example, to set the following, `jcoGwService=sapgw00`, you simply add the following line:
 
 `sapgw00 3300/tcp`
 
@@ -93,15 +120,17 @@ Port 3300 is predefined by SAP, so if you need to validate other port numbers ba
 
 === XML namespace:
 
-`xmlns:sap=` +http://www.mulesoft.org/schema/mule/sap+
+`xmlns:sap`= +http://www.mulesoft.org/schema/mule/sap+
+
+
 
 === Connector Syntax:
 
 [source,xml,linenums]
 ----
-<sap:connector name="SapConnector" jcoClient="100" jcoUser="User" jcoPasswd="Password"
-               jcoLang="en" jcoAsHost="host" jcoSysnr="00" jcoTrace="true"
-               jcoPoolCapacity="3" jcoPeakLimit="10"/>
+<sap:connector name="SapConnector" jcoClient="100" jcoUser="User"
+     jcoPasswd="Password" jcoLang="en" jcoAsHost="host" jcoSysnr="00"
+     jcoTrace="true" jcoPoolCapacity="3" jcoPeakLimit="10"/>
 ----
 
 === Endpoint Syntax
@@ -129,21 +158,22 @@ The `sap:connector` element allows the configuration of JCo connection parameter
 
 === Configurable Attributes
 
-[%header,cols="34,33,33"]
+[%header,cols="4*"]
 |===
-|Attribute |Description |Default Value
-|name |The reference name of the connector used internally by Mule configuration. |
-|jcoClient |The SAP client. This is usually a number (For example: 100). |
-|jcoUser |The logon user name for password-based authentication |
-|jcoPasswd |The logon password used for password- based authentication |
-|jcoLang |The language to use for logon dialogs. If not defined, the default user language is used. |en
-|jcoAsHost |The SAP application server host (either the IP address or server name can be specified). |
-|jcoSysnr |The SAP system number |
-|jcoTrace |Enable/disable RFC trace |false
-|jcoTraceToLog |If _jcoTraceToLog_ is _true_ then JCo trace will be redirected to Mule ESB log files. If this attribute is set, it will override the java startup environment property (**-Djco.trace_path=<PATH>**). Because of JCo libraries limitations, this attribute has to be configured at class loader level, so if configured it will be applied to all SAP connections at class loader level. *jcoTrace* should be enabled for this parameter to work. |false
-|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5
-|jcoPeakLimit |The maximum number of active connections that can be created for a destination simultaneously |10
-|jcoClientExtendedProperties-ref |A reference to `java.util.Map` containing additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here] |
+|Attribute |Description |Default Value |Since Version
+|name |The reference name of the connector used internally by Mule configuration. |  |1.0
+|jcoClient |The SAP client. This is usually a number (For example: 100). |  |1.0
+|jcoUser |The logon user name for password-based authentication |  |1.0
+|jcoPasswd |The logon password used for password- based authentication |  |1.0
+|jcoLang |The language to use for logon dialogs. If not defined, the default user language is used. |en |1.0
+|jcoAsHost |The SAP application server host (either the IP address or server name can be specified). |  |1.0
+|jcoSysnr |The SAP system number |  |1.0
+|jcoTrace |Enable/disable RFC trace |false |1.0
+|jcoTraceToLog |If _jcoTraceToLog_ is _true_ then JCo trace will be redirected to Mule ESB log files. If this attribute is set, it will override the java startup environment property (**-Djco.trace_path=<PATH>**). Because of JCo libraries limitations, this attribute has to be configured at class loader level, so if configured it will be applied to all SAP connections at class loader level. *jcoTrace* should be enabled for this parameter to work. |false |1.0
+|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5 |1.0
+|jcoPeakLimit |The maximum number of active connections that can be created for a destination simultaneously |10 |1.0
+|jcoClientExtendedProperties-ref |A reference to `java.util.Map` containing additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here] |  |1.0
+|disableFunctionTemplateCache |A boolean representing whether function templates should be cached or not. Disabling the cache is only recommended for really special cases (for example during development) as disabling will affect performance. Each function (BAPI) call will require two hits to SAP server. |false |2.1.0
 |===
 
 ==== Configuration Example
@@ -166,18 +196,19 @@ The MuleSoft Enterprise Java Connector for SAP is http://service.sap.com/solutio
 
 To configure it, you create a child element `sap:sld-config` inside `sap:connector` so that Mule registers with the *System Landscape Directory* (SLD) every time the application starts. This child element supports the following attributes:
 
-[%header,cols="34,33,33"]
+[%header,cols="4*"]
 |===
-|Attribute |Description |Default Value
+|Attribute |Description |Default Value |Since Version
 |url a|
 The URL (including host and port) where your SLD is listening. Usually the URL will conform to a pattern like this:
 
 +http://sld-host.company.com:80/sdl/ds+
-|
-|user |A user who has privileges to update information in the SLD |
-|password |The password for the user who has privileges to update the SLD settings |
-|computerName |The name of the machine on which your application. |The host name (without the domain), as obtained from the OS.
-|localSystemName |The descriptive name for your application. |
+
+ |  |1.0
+|user |A user who has privileges to update information in the SLD |  |1.0
+|password |The password for the user who has privileges to update the SLD settings |  |1.0
+|computerName |The name of the machine on which your application. |The host name (without the domain), as obtained from the OS. |1.0
+|localSystemName |The descriptive name for your application. |  |1.0
 |===
 
 ==== Example
@@ -204,7 +235,7 @@ The MuleSoft Enterprise Java Connector for SAP supports both <<Inbound Endpoint>
 
 * <<Inbound Endpoint>>: Receives IDocs and BAPI calls over RFC.
 ** <<Receiving IDocs>>
-** <<Receiving BAPI Calls>>
+** <<Receiving BAPI calls>>
 * <<Outbound Endpoint>>: Sends IDocs and executes BAPIs over RFC.
 
 === Endpoint Address
@@ -221,7 +252,7 @@ These attributes can be:
 Whenever attributes that are not specified, default values are used.
 
 [NOTE]
-You can use xref:mule-expression-language-mel.adoc[Mule Expressions] inside the address attribute, just as you do for other Mule ESB transports.
+You can use xref:mule-expression-language-mel.adoc[Mule expressions] inside the address attribute, just as you do for other Mule ESB transports.
 
 ==== Example of an Inbound Endpoint Address
 
@@ -242,7 +273,7 @@ You can use xref:mule-expression-language-mel.adoc[Mule Expressions] inside the 
 [WARNING]
 *Important* +
  +
-You must to “escape” the ampersand sign (*'&'*) in the address attribute, replacing it with *`& amp;`*.
+You must “escape” the ampersand sign (**'&'**) in the address attribute, replacing it with *'& amp; '*.
 
 === Prioritizing Connection Properties
 
@@ -253,7 +284,7 @@ Properties for SAP JCo connections (inbound and outbound) can be configured in n
 . Properties inside the Map configured in the *jcoClientExtendedProperties-ref* and/or *jcoServerExtendedProperties-ref* attributes at at `<sap:inbound-endpoint/>` and `<sap:outbound-endpoint/>` level
 . Attributes configured at `<sap:connector/>` level (For example jcoClient, jcoUser, jcoPasswd, jcoSysnr, ...)
 . Properties inside the Map configured in the *jcoClientExtendedProperties-ref* at `<sap:connector/>` level
-. Default values
+. Default values +
 
 === XML Definition
 
@@ -263,199 +294,40 @@ In short, these are the XML documents you will be receiving from and sending to 
 
 The SAP transport includes <<Transformers>> that will convert the XML documents exchanged between the endpoints and SAP into corresponding SAP objects that the endpoints can handle.
 
-==== JCo Function
+The complete documentation for the different XML documents can be found xref:xml-definitions.adoc[here]:
 
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8"?>
-<jco name="BAPI_PO_CREATE1" version="1.0">
-  <import>
-    <structure name="POHEADER">
-      <field name="COMP_CODE">2100</field>
-      <field name="DOC_TYPE">NB</field>
-      <field name="VENDOR">0000002101</field>
-      <field name="PURCH_ORG">2100</field>
-      <field name="PUR_GROUP">002</field>
-    </structure>
-    <structure name="POHEADERX">
-      <field name="DOC_TYPE">X</field>
-      <field name="VENDOR">X</field>
-      <field name="PURCH_ORG">X</field>
-      <field name="PUR_GROUP">X</field>
-      <field name="COMP_CODE">X</field>
-    </structure>
-  </import>
-  <tables>
-    <table name="POITEM">
-      <row id="0">
-        <field name="NET_PRICE">20</field>
-        <field name="PLANT">2100</field>
-        <field name="MATERIAL">SBSTO01</field>
-        <field name="PO_ITEM">00010</field>
-        <field name="QUANTITY">10.000</field>
-      </row>
-    </table>
-    <table name="POITEMX">
-      <row id="0">
-        <field name="PO_ITEMX">X</field>
-        <field name="MATERIAL">X</field>
-        <field name="QUANTITY">X</field>
-        <field name="PLANT">X</field>
-        <field name="PO_ITEM">00010</field>
-        <field name="NET_PRICE">X</field>
-      </row>
-    </table>
-    <table name="POSCHEDULE">
-      <row id="0">
-        <field name="QUANTITY">10.000</field>
-        <field name="DELIVERY_DATE">27.06.2011</field>
-        <field name="SCHED_LINE">0001</field>
-        <field name="PO_ITEM">00010</field>
-      </row>
-    </table>
-    <table name="POSCHEDULEX">
-      <row id="0">
-        <field name="PO_ITEM">00010</field>
-        <field name="QUANTITY">X</field>
-        <field name="DELIVERY_DATE">X</field>
-        <field name="SCHED_LINEX">X</field>
-        <field name="PO_ITEMX">X</field>
-        <field name="SCHED_LINE">0001</field>
-      </row>
-    </table>
-  </tables>
-</jco>
-----
-
-==== JCo Function Response
-
-[source,xml,linenums]
-----
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<jco name="Z_MULE_EXAMPLE">
-  <import>
-    ...
-  </import>
-  <export>
-    <structure name="RETURN">
-      <field name="TYPE"></field>
-      <field name="ID"></field>
-      <field name="NUMBER"></field>
-      <field name="MESSAGE"></field>
-      <field name="LOG_NO"></field>
-      <field name="LOG_MSG_NO"></field>
-      <field name="MESSAGE_V1"></field>
-      <field name="MESSAGE_V2"></field>
-      <field name="MESSAGE_V3"></field>
-      <field name="MESSAGE_V4""></field>
-      <field name="PARAMETER"></field>
-      <field name="ROW"></field>
-      <field name="FIELD"></field>
-      <field name="SYSTEM"></field>
-    </structure>
-  </export>
-  <exceptions>
-    <exception>MULE_EXCEPTION_01</exception>
-    <exception>MULE_EXCEPTION_02</exception>
-    <exception>MULE_EXCEPTION_03</exception>
-  </exceptions>
-</jco>
-----
-
-===== Return Types
-
-* *A*: Abort
-* *S*: Success
-* *E*: Error
-* *W*: Warning
-* *I*: Information
-
-[TIP]
-*Important* +
- +
-If `evaluateFunctionResponse` is set to *true*, then the SAP outbound endpoint will throw an exception when the return type is *A*, *E*, or exceptions are present.
-
-==== IDoc Document / Document List
-
-IDocs are XML documents defined by SAP. You can download their definition from your SAP server using the SAP UI.
-
-[source,xml,linenums]
-----
-<?xml version="1.0"?>
-<ORDERS05>
-    <IDOC BEGIN="1">
-        <EDI_DC40 SEGMENT="1">
-            <TABNAM>EDI_DC40</TABNAM>
-            <MANDT>100</MANDT>
-            <DOCNUM>0000000000237015</DOCNUM>
-            <DOCREL>700</DOCREL>
-            <STATUS>30</STATUS>
-            <DIRECT>1</DIRECT>
-            <OUTMOD>2</OUTMOD>
-            <IDOCTYP>ORDERS05</IDOCTYP>
-            <MESTYP>ORDERS</MESTYP>
-            <STDMES>ORDERS</STDMES>
-            <SNDPOR>SAPB60</SNDPOR>
-            <SNDPRT>LS</SNDPRT>
-            <SNDPRN>B60CLNT100</SNDPRN>
-            <RCVPOR>MULE_REV</RCVPOR>
-            <RCVPRT>LS</RCVPRT>
-            <RCVPRN>MULESYS</RCVPRN>
-            <CREDAT>20110714</CREDAT>
-            <CRETIM>001936</CRETIM>
-            <SERIAL>20101221112747</SERIAL>
-        </EDI_DC40>
-        <E1EDK01 SEGMENT="1">
-            <ACTION>004</ACTION>
-            <CURCY>USD</CURCY>
-            <WKURS>1.06383</WKURS>
-            <ZTERM>0001</ZTERM>
-            <BELNR>0000000531</BELNR>
-            <VSART>01</VSART>
-            <VSART_BEZ>standard</VSART_BEZ>
-            <RECIPNT_NO>C02199</RECIPNT_NO>
-            <KZAZU>X</KZAZU>
-            <WKURS_M>0.94000</WKURS_M>
-        </E1EDK01>
-
-        ...
-
-        <E1EDS01 SEGMENT="1">
-            <SUMID>002</SUMID>
-            <SUMME>1470.485</SUMME>
-            <SUNIT>USD</SUNIT>
-        </E1EDS01>
-    </IDOC>
-</ORDERS05>
-----
+* xref:xml-definitions.adoc[JCo Function]
+** xref:xml-definitions.adoc[Version 1]
+** xref:xml-definitions.adoc[Version 2]
+* xref:xml-definitions.adoc[IDoc]
 
 == Inbound Endpoint
 
 The SAP inbound endpoint will act as RFC server or IDoc server. The JCo server needs to register against the SAP instance, and for this reason it requires both *client* and *server* configuration attributes.
 
-[%header,cols="34,33,33"]
+[%header,cols="4*"]
 |===
-|Attribute |Description |Default Value
-|name |The reference name of the endpoint used internally by Mule configuration. |
-|exchange-pattern |The available options are request-response and one-way. |
-|address |The standard way to provide endpoint properties. For more information check: <<Endpoint Address>>. |
-|type |The type of SAP object this endpoint will process (i.e., *function* or *idoc*) |function
-|rfcType |The type of RFC the endpoint used to receive a function or IDoc. The available options are *srfc* (which is *sync* with *no TID handler*), *trfc* and *qrfc* (both of which are *async*, with a *TID handler*). |srfc
-|functionName |If the type is *function* then this is the name of the BAPI function that will be handled. If no value is provided, then a generic handler is configured to receive all calls. |
-|jcoClient |The SAP client. This is usually a number (For example: 100) |
-|jcoUser |The logon user for password-based authentication. |
-|jcoPasswd |The logon password associated with the logon user for password based authentication. |
-|jcoLang |The logon language., If not defined, the default user language is used. |en
-|jcoAsHost |The SAP application server host. (Use either the IP address or server name). |
-|jcoSysnr |The SAP system number. |
-|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5
-|jcoPeakLimit |The maximum number of simultaneously active connections that can be created for a destination. |10
-|jcoClientExtendedProperties-ref |A reference to `java.util.Map`, which contains additional JCo connection parameters for the client connection. |
-|jcoGwHost |The gateway host on which the server should be registered. |
-|jcoGwService |The gateway service, i.e. the port on which registration is performed. |
-|jcoProgramId |The program ID with which the registration is performed. |
-|jcoConnectionCount |The number of connections that should be registered at the gateway. |2
-|jcoServerExtendedProperties-ref |A Reference to `java.util.Map`, which contains additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here]. |
+|Attribute |Description |Default Value |Since Version
+|name |The reference name of the endpoint used internally by Mule configuration. |  |1.0
+|exchange-pattern |The available options are request-response and one-way. |  |1.0
+|address |The standard way to provide endpoint properties. For more information check: <<Endpoint Address>>. |  |1.0
+|type |The type of SAP object this endpoint will process (i.e., *function*, *idoc*) |function |1.0
+|rfcType |The type of RFC the endpoint used to receive a function or IDoc. The available options are *srfc* (which is *sync* with *no TID handler*), *trfc* and *qrfc* (both of which are *async*, with a *TID handler*). |srfc |1.0
+|functionName |If the type is *function* then this is the name of the BAPI function that will be handled. If no value is provided, then a generic handler is configured to receive all calls. |  |1.0
+|jcoClient |The SAP client. This is usually a number (For example: 100) |  |1.0
+|jcoUser |The logon user for password-based authentication. |  |1.0
+|jcoPasswd |The logon password associated with the logon user for password based authentication. |  |1.0
+|jcoLang |The logon language., If not defined, the default user language is used. |en |1.0
+|jcoAsHost |The SAP application server host. (Use either the IP address or server name). |  |1.0
+|jcoSysnr |The SAP system number. |  |1.0
+|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5 |1.0
+|jcoPeakLimit |The maximum number of simultaneously active connections that can be created for a destination. |10 |1.0
+|jcoClientExtendedProperties-ref |A reference to `java.util.Map`, which contains additional JCo connection parameters for the client connection. |  |1.0
+|jcoGwHost |The gateway host on which the server should be registered. |  |1.0
+|jcoGwService |The gateway service, i.e. the port on which registration is performed. |  |1.0
+|jcoProgramId |The program ID with which the registration is performed. |  |1.0
+|jcoConnectionCount |The number of connections that should be registered at the gateway. |2 |1.0
+|jcoClientExtendedProperties-ref |A Reference to `java.util.Map`, which contains additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here]. |  |1.0
 |===
 
 === Example
@@ -509,7 +381,7 @@ To configure a IDoc Server, you need to complete the following steps:
 </mule>
 ----
 
-=== Receiving BAPI Calls
+=== Receiving BAPI calls
 
 To configure a BAPI RFC Server you must complete the following steps:
 
@@ -518,6 +390,15 @@ To configure a BAPI RFC Server you must complete the following steps:
 . If `rfcType` is *trfc* or *qrfc*, then you may also need to <<Configuring the TID Handler>>
 . Specify the following required attributes: jcoGwHost, jcoGwService, jcoProgramId
 . Specify the required connection attributes, as necessary, for the endpoint or the connector. This might include, for example, jcoClient, jcoUser, jcoPasswd, jcoAsHost, jcoSysnr.
+
+==== Returning to SAP
+
+After the flow executes and if the SAP inbound endpoint is request-response, then Mule will return values to the calling SAP instance. Return values can be represented with the XML representation of the xref:xml-definitions.adoc[JCo Function]. +
+ There are three possible scenarios:
+
+* *Normal Execution*: Just populate values in the *export*, *changing* or *tables* sections.
+* *Exception*: Populate an exception in the *exceptions* section. This will throw an AbapException that will be treated by SAP as an application error.
+* *Flow Exception*: Any exception thrown by the flow will be treated in SAP as a system failure (SYSTEM_FAILURE)
 
 ==== A Sample BAPI RFC Server Configuration
 
@@ -543,7 +424,7 @@ The TID (Transaction ID) handler , an important component for *tRFC* and *qRFC*,
 The SAP Transport allows you to configure different TID stores:
 
 * *In Memory TID Store*: This default TID store facilitates the sharing of TIDs within the same Mule ESB instance. If the `rfcType` is *tRFC* or *qRFC*, and no TID store is configured, then this default store is used.
-* *Mule Object Store TID Store*: This wrapper uses existing Mule ESB object stores to store and share TIDs. If you need multiple Mule ESB server instances, you should configure a JDBC Object Store so that you can share TIDs among the instances.
+* *Mule Object Store TID Store*: This wrapper uses existing Mule ESB object stores to store and share TIDs. If you need multiple Mule ESB server instances, you should configure a JDBC Object Store or a Cluster enabled Object Store so that you can share TIDs among the instances.
 
 [NOTE]
 *Important* +
@@ -566,9 +447,9 @@ To configure an In-memory TID Store successfully, you must understand the follow
       xmlns:spring="http://www.springframework.org/schema/beans"
       xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
     xsi:schemaLocation="
-        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
-        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/3.2/mule-sap.xsd
-        http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/3.2/mule-xml.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+        http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
 
     <!-- Configuration for both SAP & the TID Store -->
@@ -617,9 +498,9 @@ This example illustrates how to configure a MySQL-based JDBC object store.
       xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
       xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
     xsi:schemaLocation="
-        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
-        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/3.2/mule-sap.xsd
-        http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/3.2/mule-jdbc.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+        http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/current/mule-jdbc.xsd
         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
 
     <!-- Configuration for both SAP & TID Store -->
@@ -671,7 +552,7 @@ This example illustrates how to configure a MySQL-based JDBC object store.
 Make sure to note the following points:
 
 . Specific confguration attributes are store in two properties files: `sap.properties` and `jdbc.properties`.
-. To configure more than one PropertyPlaceholder, the first one must have the property *ignoreUnresolvablePlaceholders* set to *true*. (i.e., spring:property `name="ignoreUnresolvablePlaceholders" value="true" />`)
+. To configure more than one PropertyPlaceholder, the first one must have the property *ignoreUnresolvablePlaceholders* set to *true*. (i.e., `<spring:property name="ignoreUnresolvablePlaceholders" value="true" />`)
 ====
 
 ==== A Sample Database Creation Script for the JDBC Object Store
@@ -697,29 +578,36 @@ CREATE TABLE saptids
 
 The SAP outbound endpoint will execute functions (BAPIs) or send IDocs.
 
-[%header,cols="34,33,33"]
+[%header,cols="4*"]
 |===
-|Attribute |Description |Default Value
-|name |The reference name of the endpoint used internally by mule configuration. |
-|exchange-pattern |The available options are `request-response` and `one-way`. |
-|address |The standard way to specify endpoint properties. For more information check: <<Endpoint Address>>. |
-|type |The type of SAP object this endpoint will be processing (*function* or *idoc*) |function
-|rfcType |Type of RFC the endpoint will use to execute a function or send and IDoc. Allowed values are *srfc*, *trfc* and *qrfc* |srfc
-|queueName |If the RFC type is *qrfc*, then this is the name of the queue. |
-|functionName |When the type is *function*, this BAPI function is executed. |
-|evaluateFunctionResponse |When the type is *function*, a *true* flag indicates that the SAP transport should evaluate the function response and throw and exception when an error occurs in SAP. When this flag is set to *false*, the SAP transport does not throw an exception when an error occurs, and the user is responsible of parsing the function response. |false
-|definitionFile |The path to the template definition file of either the function to be executed or the IDoc to be sent. |
-|idocVersion |When the type is *idoc*, this version is used when sending the IDoc. Values for the IDoc version correspond to *IDOC_VERSION_xxxx* constants in com.sap.conn.idoc.IDocFactory |0 (_IDOC_VERSION_DEFAULT_).
-|jcoClient |The SAP client. This is usually a number (For example: 100). |
-|jcoUser |The logon user for password-based authentication. |
-|jcoPasswd |The password associated with the logon user for password-based authentication |
-|jcoLang |The language used by the logon dialogs. When not defined, the default user language is used. |en
-|jcoAsHost |The SAP application server host (IP or server name). |
-|jcoSysnr |The SAP system number. |
-|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5
-|jcoPeakLimit |The maximum number of active connections that can be created for a destination simultaneously |10
-|jcoClientExtendedProperties-ref |A reference to `java.util.Map` containing additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here]. |
+|Attribute |Description |Default Value |Since Version
+|name |The reference name of the endpoint used internally by mule configuration. |  |1.0
+|exchange-pattern |The available options are `request-response` and `one-way`. |  |1.0
+|address |The standard way to specify endpoint properties. For more information check: <<Endpoint Address>>. |  |1.0
+|type |The type of SAP object this endpoint will be processing (*function* or *idoc* and since 2.1.0 **function-metadata**) |function |1.0
+|rfcType |Type of RFC the endpoint will use to execute a function or send and IDoc. Allowed values are *srfc*, *trfc* and *qrfc* |srfc |1.0
+|queueName |If the RFC type is *qrfc*, then this is the name of the queue. |  |1.0
+|functionName |When the type is *function*, this BAPI function is executed. If the type is *function-metadata* then you need to provide the name of the BAPI that you want to retrieve its metadata. This attribute accepts *Mule Expressions*. |  |1.0
+|evaluateFunctionResponse |When the type is *function*, a *true* flag indicates that the SAP transport should evaluate the function response and throw and exception when an error occurs in SAP. When this flag is set to *false*, the SAP transport does not throw an exception when an error occurs, and the user is responsible of parsing the function response. |false |1.0
+|definitionFile |The path to the template definition file of either the function to be executed or the IDoc to be sent. |  |1.0
+|idocVersion |When the type is *idoc*, this version is used when sending the IDoc. Values for the IDoc version correspond to *IDOC_VERSION_xxxx* constants in com.sap.conn.idoc.IDocFactory |0 (_IDOC_VERSION_DEFAULT_). |1.0
+|jcoClient |The SAP client. This is usually a number (For example: 100). |  |1.0
+|jcoUser |The logon user for password-based authentication. Since version *2.1.0* this attribute accepts *Mule Expressions*. |  |1.0
+|jcoPasswd |The password associated with the logon user for password-based authentication. Since version *2.1.0* this attribute accepts *Mule Expressions*. |  |1.0
+|jcoLang |The language used by the logon dialogs. When not defined, the default user language is used. |en |1.0
+|jcoAsHost |The SAP application server host (IP or server name). |  |1.0
+|jcoSysnr |The SAP system number. |  |1.0
+|jcoPoolCapacity |The maximum number of idle connections kept open by the destination. No connection pooling takes place when the value is 0. |5 |1.0
+|jcoPeakLimit |The maximum number of active connections that can be created for a destination simultaneously |10 |1.0
+|jcoClientExtendedProperties-ref |A reference to `java.util.Map` containing additional JCo connection parameters. Additional information and a complete list of parameters can be found xref:sap-jco-extended-properties.adoc[here]. |  |1.0
+|bapiTransaction |When set to _true_ , either *BAPI_TRANSACTION_COMMIT* or *BAPI_TRANSACTION_ROLLBACK* is called depending if there were exceptions or not. This attribute can be used depending the existence of a transaction. If there is no transaction configured, then BAPI_TRANSACTION_COMMIT is called after executing the function. If there is a transaction, then BAPI_TRANSACTION_COMMIT is called at the end of it. |false |2.1.0
+|xmlVersion |This attribute supports the value *1* or *2* and defines the version of the XML output generated when type is *function-metadata* |1 |2.1.0
 |===
+
+=== Multi-user Support
+
+Since SAP Connector version *2.1.0* users can dynamically set connection user and password (This means that both jcoUser and jcoPasswd can be set using a *Mule Expression* that will be evaluated in runtime). Though this is really useful for use cases where it is important to execute a BAPI under a specific user, it is worth mentioning that there will be a pool of connections to SAP created for each user. +
+ Please size correctly the JCo connection pool and configured java memory based on the amount of users that may be used.
 
 === IDoc Versions
 
@@ -739,6 +627,13 @@ The SAP outbound endpoint will execute functions (BAPIs) or send IDocs.
 <sap:outbound-endpoint exchange-pattern="request-response" type="function" rfcType="qrfc"
     queueName="QRFC_QUEUE_NAME" functionName="BAPI_FUNCTION_NAME"
     definitionFile="path/to/definition/file.xml"/>
+----
+
+=== A Sample SAP Outbound Endpoint Configuration to retrieve the Metadata for a BAPI (since version 2.1.0)
+
+[source,xml,linenums]
+----
+<sap:outbound-endpoint exchange-pattern="request-response" type="function-metadata"  functionName="BAPI_FUNCTION_NAME"/>
 ----
 
 === Input Mule Messages
@@ -892,9 +787,9 @@ There are different ways to send an IDoc:
     xmlns:file="http://www.mulesoft.org/schema/mule/file"
     xsi:schemaLocation="
        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
-       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
-       http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/3.2/mule-sap.xsd">
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd">
 
     <spring:bean name="sapProperties" class="java.util.HashMap">
         <spring:constructor-arg>
@@ -932,155 +827,33 @@ The SAP outbound endpoint supports the child element transaction:
 <sap:transaction action="ALWAYS_BEGIN" bapiTransaction="true|false"/>
 ----
 
-[%header,cols="34,33,33"]
+[NOTE]
+*Important Compatibility Notes* +
+ +
+Transaction support in the SAP Connector version *1.x* is very limited and only transactions of one function call are allowed. +
+ +
+Starting with the SAP Connector version *2.1.0* the attribute _bapiTransaction_ is no longer present at transaction level (it was moved to the outbound endpoint).
+
+[%header,cols="4*"]
 |===
-|Attribute |Description |Default Value
-|action |The action attribute is part of the Mule ESB transaction standard and can have the following values: _NONE_, _ALWAYS_BEGIN_, _BEGIN_OR_JOIN_, _ALWAYS_JOIN_ and _JOIN_IF_POSSIBLE_ |
-|bapiTransaction |When set to _true_ , either *BAPI_TRANSACTION_COMMIT* or *BAPI_TRANSACTION_ROLLBACK* is called at the end of the transaction, depending on the result of that transaction. |false
+|Attribute |Description |Default Value |Since Version
+|action |The action attribute is part of the Mule ESB transaction standard and can have the following values: _NONE_, _ALWAYS_BEGIN_, _BEGIN_OR_JOIN_, _ALWAYS_JOIN_ and _JOIN_IF_POSSIBLE_ |  |1.0
+|bapiTransaction |When set to _true_ , either *BAPI_TRANSACTION_COMMIT* or *BAPI_TRANSACTION_ROLLBACK* is called at the end of the transaction, depending on the result of that transaction. Since version *2.1.0* this option has being moved to the _outbound-endpoint_ |false |1.0
 |===
 
-For more information, consult: xref:transactions-configuration-reference.adoc[Transactions Configuration Reference].
+For more information, consult: Transactions Configuration Reference.
 
-Combining the RFC type (rfcType) attribute defined in the outbound endpoint with the transaction facilitates different ways for the SAP transport to handle the transaction.
+Combining the RFC type (rfc Type) attribute defined in the outbound endpoint with the transaction facilitates different ways for the SAP transport to handle the transaction:
 
-=== sRFC stateful
-
-==== Configuration
-
-[source,xml,linenums]
-----
-<sap:outbound-endpoint
-    exchange-pattern="request-response"
-    type="function"
-    rfcType="srfc" ...>
-
-    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
-
-</sap:outbound-endpoint>
-----
-
-Stateful calls are used to call more than one BAPI in SAP using the same context. If the execution of calling these BAPIs take place in the same thread, then this is equivalent in JCo to:
-
-[source,text,linenums]
-----
-JCoContext.begin(destination);
-
-function1.execute(destination);
-function2.execute(destination);
-function3.execute(destination);
-
-JCoContext.end(destination);
-----
-
-=== sRFC stateful BAPI transaction
-
-==== Configuration
-
-[source,xml,linenums]
-----
-<sap:outbound-endpoint
-    exchange-pattern="request-response"
-    type="function"
-    rfcType="srfc" ...>
-
-    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="true"/>
-
-</sap:outbound-endpoint>
-----
-
-If the BAPIs that are called change values in SAP tables, then a call to a special BAPI is required: BAPI_TRANSACTION_COMMIT or BAPI_TRANSACTION_ROLLBACK. For this to work, the whole unit of work needs to be in the same Thread and the calls need to be stateful. +
- The JCo code to implement this is:
-
-[source,text,linenums]
-----
-commitFunction = createJCoFunction("BAPI_TRANSACTION_COMMIT");
-rollbackFunction = createJCoFunction("BAPI_TRANSACTION_ROLLBACK");
-try
-{
-    JCoContext.begin(destination);
-    function1.execute(destination);
-    function2.execute(destination);
-    commitFunction.execute(destination);
-}
-catch(Exception ex)
-{
-    rollbackFunction.execute(destination);
-}
-finally
-{
-    JCoContext.end(destination);
-}
-----
-
-=== tRFC stateful
-
-==== Configuration
-
-[source,xml,linenums]
-----
-<sap:outbound-endpoint
-    exchange-pattern="request-response"
-    type="function"
-    rfcType="trfc" ...>
-
-    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
-
-</sap:outbound-endpoint>
-----
-
-The JCo code to invoke BAPIs through tRFC looks like this:
-
-[source,text,linenums]
-----
-String tid = destination.creatTID();
-try
-{
-    JCoContext.begin(destination, tid);
-    function1.execute(destination, tid);
-    function2.execute(destination, tid);
-}
-finally
-{
-    JCoContext.end(destination);
-}
-----
-
-=== qRFC stateful
-
-==== Configuration
-
-[source,xml,linenums]
-----
-<sap:outbound-endpoint
-    exchange-pattern="request-response"
-    type="function"
-    rfcType="qrfc"
-    queueName="QUEUE_NAME" ...>
-
-    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
-
-</sap:outbound-endpoint>
-----
-
-To invoke BAPIs through qRFC, you need to provide a value for the attribute *queueName*. The JCo code to implement this is:
-
-[source,text,linenums]
-----
-String tid = destination.creatTID();
-try
-{
-    JCoContext.begin(destination, tid);
-    function1.execute(destination, tid, queueName1);
-    function2.execute(destination, tid, queueName2);
-}
-finally
-{
-    JCoContext.end(destination);
-}
-----
+* xref:outbound-endpoint-transactions.adoc[sRFC stateful]
+* xref:outbound-endpoint-transactions.adoc[sRFC stateful BAPI transaction]
+* xref:outbound-endpoint-transactions.adoc[tRFC stateful]
+* xref:outbound-endpoint-transactions.adoc[qRFC stateful]
 
 [WARNING]
 If a transaction is not specified, then all calls (execute function or send IDoc) are stateless.
+
+For examples, please take a look at xref:outbound-endpoint-transactions.adoc[Outbound Endpoint Transactions].
 
 == Transformers
 
@@ -1090,126 +863,6 @@ If a transaction is not specified, then all calls (execute function or send IDoc
 
 == Troubleshooting
 
-=== Checking log files
-
-Mule ESB stores log files (which are store on a per application basis) in the `$MULE_HOME\logs` directory:
-
-* `mule.log`: Default Mule ESB log file
-* `mule-app-YOUR_APP_NAME.log`: Per application log file
-
-=== Enabling JCo trace
-
-[TIP]
-====
-`JCo Trace` can be enabled from outside Mule ESB; it values to the following java startup environment properties:
-
-* `-Djco.trace_level=N` (where 0 <= N <= 10, with 10 = most detailed trace)
-* `-Djco.trace_path=<PATH>` (optional)
-
-For more information, consult the JCo documentation.
-====
-
-To enable traceat Connector level, complete the following steps”:
-
-. Set the attribute *jcoTrace* to *true* or provide the extended JCo property *jco.client.trace* or *jco.server.trace* with value *1*.
-. Provide a value for **-Djco.trace_level=N**at Mule ESB startup. Permissible levels are [0 .. 10]. The most commonly used levels are:
-* 0 - nothing
-* 1 - errors and warnings
-* 2 - execution path, errors, and warnings
-* 3 - full execution path, errors, and warnings
-* 4 - execution path, info messages, errors, and warnings
-* 6 - full execution path, info messages, errors, and warnings
-* 7 - debug messages, full execution path, info messages, errors, and warnings
-* 8 - verbose debug messages, full execution path, info messages, errors, and warnings
-. Optionally, you can provide a value for **-Djco.trace_path=<PATH>**. This is supposed to be the complete path to an existing directory where trace files will be stored, but there other special values can be applied:
-* stdout - JCo trace information is sent to standard output stream
-* stderr - JCo trace information is sent to standard error stream
-
-If *-Djco.trace_path* is not set, then trace files will be stored in the working directory. For Mule ESB standalone, this is usually the `$MULE_HOME/bin` folder.
-
-=== Common errors
-
-==== IDOC_ERROR_METADATA_UNAVAILABLE
-
-[source,text,linenums]
-----
-RfcException: [mc-vmware|a_rfc] message: (3) IDOC_ERROR_METADATA_UNAVAILABLE: The meta data for the IDoc type "??????????????????????????å å" with extension "  ORDSAPB6L B60CL          ???" is unavailable.
-    Return code: RFC_FAILURE(1)
-    error group: 104
-    key: RFC_ERROR_SYSTEM_FAILURE
-----
-
-The RFC destination should support _Unicode_. You can implement this in SAP with transaction _SM59_.
-
-==== SAP Transport cannot join transaction of type [org.mule.TransactionClass].
-
-The action of type [srfc|trfc|qrfc] will be stateless, because SAP Transport doesn't support Multi Transactions for the moment.
-
-==== Missing transaction handler.
-
-[source,text,linenums]
-----
-[10-11 08:02:26] ERROR SapJcoServerDefaultListener [JCoServerThread-1]: Exception occured on idoc_send connection 3-10.30.9.26|sapgw00|idoc_send: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
-RfcException: [mule.local|MULESOFT_IDOC_SEND_TEST]
-    message: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
-    Return code: RFC_FAILURE(1)
-    error group: 104
-    key: RFC_ERROR_SYSTEM_FAILURE
-Exception raised by myhost.com.ar|MULESOFT_IDOC_SEND_TEST
-    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.playbackTRfc(MiddlewareJavaRfc.java:2625)
-    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.handletRfcRequest(MiddlewareJavaRfc.java:2546)
-    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.listen(MiddlewareJavaRfc.java:2367)
-    at com.sap.conn.jco.rt.DefaultServerWorker.dispatch(DefaultServerWorker.java:284)
-    at com.sap.conn.jco.rt.DefaultServerWorker.loop(DefaultServerWorker.java:369)
-    at com.sap.conn.jco.rt.DefaultServerWorker.run(DefaultServerWorker.java:245)
-    at java.lang.Thread.run(Thread.java:680)
-----
-
-If you are getting the message: *No transaction handler is installed. Unable to process tRFC/qRFC requests* then you may need to set the *rfcType* has to be *trfc* or *qrfc* in the `<sap:inbound-endpoint />`
-
-==== Parameter 'parameter name' not supported
-
-SAP extended properties (configure in a Map bean or as endpoint address parameters) should have valid names. If you provide an invalid property name you will get an error message similar to:
-
-[source,text,linenums]
-----
-Root Exception stack trace:
-RfcException: [null]
-message: Parameter 'type' not supported: 'f'
-Return code: RFC_INVALID_PARAMETER(19)
-error group: 101
-key: RFC_ERROR_PROGRAM
-
-at com.sap.conn.rfc.api.RfcOptions.checkParameters(RfcOptions.java:182)
-at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcClient.connect(MiddlewareJavaRfc.java:1328)
-at com.sap.conn.jco.rt.ClientConnection.connect(ClientConnection.java:731)
-+ 3 more (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
-----
-
-In this example, JCo libraries are informing that the parameter with name _type_ is not valid. The complete list of valid property names can be found xref:sap-jco-extended-properties.adoc[here].
-
-==== (101) JCO_ERROR_CONFIGURATION: Server configuration for _your-server_ is already used for a running server
-
-[source,text,linenums]
-----
-ERROR 2012-07-05 10:11:30,525 [WrapperListener_start_runner] com.mulesoft.mule.transport.sap.SapMessageReceiver: Error connecting to server
-com.sap.conn.jco.JCoException: (101) JCO_ERROR_CONFIGURATION: Server configuration for sapavalara-1.0-SNAPSHOT-gettax is already used for a running server
-at com.sap.conn.jco.rt.StandaloneServerFactory.update(StandaloneServerFactory.java:358)
-at com.sap.conn.jco.rt.StandaloneServerFactory.getServerInstance(StandaloneServerFactory.java:176)
-at com.sap.conn.jco.server.JCoServerFactory.getServer(JCoServerFactory.java:74)
-at com.mulesoft.mule.transport.sap.jco3.SapJcoRfcServer.initialise(SapJcoRfcServer.java:46)
-at com.mulesoft.mule.transport.sap.jco3.SapJcoServerFactory.create(SapJcoServerFactory.java:60)
-at com.mulesoft.mule.transport.sap.SapMessageReceiver.doConnect(SapMessageReceiver.java:56)
-at org.mule.transport.AbstractTransportMessageHandler.connect(AbstractTransportMessageHandler.java:218)
-at org.mule.transport.AbstractConnector.registerListener(AbstractConnector.java:1254)
-----
-
-There cannot be two or more JCo servers with the same set of configuration parameters, no matter if they have different configuration names.
-
-The server group key (that determines the uniqueness of a JCo sever connection) is given by the following attributes:
-
-* jco.server.gwhost
-* jco.server.gwserv
-* jco.server.progid
-
-So basically you can start two servers in the same Mule instance (JCo keeps this information in a Singleton class) as far as they have different values for gwhost, gwserv and progId.
+* xref:troubleshooting-sap-connector.adoc[Checking log files]
+* xref:troubleshooting-sap-connector.adoc[Enabling JCo trace]
+* xref:troubleshooting-sap-connector.adoc[Common errors]

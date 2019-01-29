@@ -1,0 +1,85 @@
+= Until Successful Scope
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The **until-successful** scope processes messages through the processors within its scope until the operation succeeds. Until-successful's processing occurs asynchronously from the main flow. After passing a message into the until-successful scope, the main flow immediately regains control of the thread.
+
+Until-successful repeatedly retries to process a message which is attempting to complete an activity such as:
+
+* dispatching to outbound endpoints, for example, when calling a remote web service that may have availability issues
+* executing a component method, for example, when executing on a Spring bean that may depend on unreliable resources
+* executing a subflow
+
+[source,xml,linenums]
+----
+<until-successful objectStore-ref="objectStore" maxRetries="5" secondsBetweenRetries="60" doc:name="Until Successful">
+    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</until-successful>
+----
+
+== Success and Failure
+
+As this scope continues to processes messages until successful, it is important to understand the definition of successful in context of Mule message processing.
+
+[%autowidth.spread]
+|===
+|FAILURE |A message processor within the until-successful scope throws an exception.
+|SUCCESS |A message processor within the until-successful scope does not return a message (i.e. is a one-way endpoint)
+|_conditional_ |Where you have configured a failure expression (see below), Mule evaluates the return message against the expression to dynamically determine if the action has failed or succeeded.
+|FAILURE |A message processor within the until-successful scope contains an exception payload.
+|SUCCESS |A message processor within the until-successful scope _does not_ contain an exception payload.
+|===
+
+=== Configuring failureExpression
+
+The following illustrates how to configure the `failureExpression` on an until-successful scope:
+
+[source,xml,linenums]
+----
+<until-successful objectStore-ref="objectStore"
+                  failureExpression="#[header:INBOUND:http.status != 202]"
+                  maxRetries="6"
+                  secondsBetweenRetries="600">
+    <http:outbound-endpoint address="http://acme.com/api/flakey"
+                            exchange-pattern="request-response"
+                            method="POST" />
+</until-successful>
+----
+
+=== Configuring a Dead Letter Queue
+
+To manage messages which have exhausted the number of `maxRetries` within the until-successful scope, you can define a DLQ (dead letter queue) endpoint to which Mule can send such messages. Refer to the code sample below for an example configuration.
+
+[source,xml,linenums]
+----
+<until-successful objectStore-ref="objectStore"
+                  deadLetterQueue-ref="dlqChannel"
+                  maxRetries="3"
+                  secondsBetweenRetries="10">
+...
+</until-successful>
+----
+
+== Until-Successful and Object Store
+
+This message processor needs an https://www.mulesoft.org/docs/site/3.2.0-SNAPSHOT/apidocs/index.html?org/mule/api/store/ListableObjectStore.html[ListableObjectStore] instance in order to persist messages pending (re)processing. There are several implementations available in Mule, including the following:
+
+* DefaultInMemoryObjectStore: default in-memory store
+* DefaultPersistentObjectStore: default persistent store
+* FileObjectStore: file-based store
+* QueuePersistenceObjectStore: global queue store
+* SimpleMemoryObjectStore: in-memory store
+
+See xref:mule-object-stores.adoc[Mule Object Stores] for further information about object stores in Mule. The following code sample illustrates how to configure an in-memory store:
+
+[source,xml,linenums]
+----
+<spring:bean id="objectStore" class="org.mule.util.store.SimpleMemoryObjectStore" />
+----
+
+=== See Also
+
+* Learn more about xref:tuning-performance.adoc[Tuning Performance] in Mule.
+* Learn more about xref:scopes.adoc[Scopes] in Mule in general.
+* Learn more about xref:flows-and-subflows.adoc[Flows and Subflows]

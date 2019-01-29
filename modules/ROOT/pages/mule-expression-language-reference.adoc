@@ -1,0 +1,336 @@
+= Mule Expression Language Reference
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This reference page for the xref:mule-expression-language-mel.adoc[Mule Expression Language] (MEL) provides lists and brief explanations of MEL features such as operators, literals and functions, but it is not intended as an introduction or thorough explanation of MEL. For explanatory information, see xref:mule-expression-language-mel.adoc[Mule Expression Language], xref:mule-expression-language-basic-syntax.adoc[Mule Expression Language Basic Syntax], and the xref:mule-expression-language-examples.adoc[MEL examples].
+
+== Assumptions
+
+This document assumes you are familiar with xref:mule-expression-language-mel.adoc[Mule Expression Language (MEL)], and that you are using Mule 3.4.0 or later. If you are using an older version of Mule, use the Java equivalent for each of the MEL functions described in the sections below.
+
+== Context Objects, Variables and Fields
+
+The term *Context Object* forms the first part of the simplest form of a MEL expression; the second part is the **Field **(see image below, left). The term *Variable* is used to represent a Flow Variable or Session Variable on your Mule message. Itself a top-level identifier, a variable does _not_ require that you define a context object in an expression (see image below, right).
+
+                               image:contextob-field.png[contextob_field]            image:flowvars2.png[flowVars2]
+
+=== Context Objects
+
+Context objects provide logical groupings for the fields of the Mule message and its environment. More than just another expression language, the context objects make MEL Mule-centric.  MEL has four context objects:
+
+* *server*: this object provides access to the fields for the hardware, operating system, user, and network interface.
+* *mule*: this object provides access to the fields for your Mule instance.
+* *app*: this object provides access to the fields of your Mule application.
+* *message*: this object provides access to the fields of the Mule message.
+
+In MEL, you combine a context object with a field to form an expression. The simplest expressions take the form `contextobject.field`. For example,  `#[message.inboundProperties]` is a simple expression. The table below describes the context objects and the fields to which they have access.
+
+[%autowidth.spread]
+|===
+.2+|*Context Object* .2+|*Field* 2+|*Access* .2+|*Field Description*
+|*read-only* |*read-write*
+|`server` |`dateTime` |x| |date or time
+| |`env` |x | |environment
+| |`fileSeparator` |x | |character that separates components of a file path ( "/" on UNIX and "\" on Windows)
+| |`host` |x | |fully-qualified domain name of the server
+| |`ip` |x | |IP address of the server
+| |`locale` |x | |default locale (of type java.util.Locale) of the JRE (can access server.locale.language and server.locale.country)
+| |`javaVersion` |x | |JRE version
+| |`javaVendor` |x | |JRE vendor name
+| |`nanoSeconds` |x | |measure of nanoseconds
+| |`osName` |x | |operating system name
+| |`osArch` |x | |operating system architecture
+| |`osVersion` |x | |operating system version
+| |`systemProperties` |x | |map of Java system properties
+| |`timeZone` |x | |default TimeZone (java.util.TimeZone) of the JRE
+| |`tmpDir` |x | |temporary directory for use by the JRE
+| |`userName` |x | |user name
+| |`userHome` |x | |user home directory
+| |`userDir` |x | |user working directory
+|`mule` |`clusterId` |x  ||cluster ID
+| |`home` |x | |file system path to the home directory of the mule server installation
+| |`nodeId` |x | |cluster node ID
+| |`version` |x | |Mule version
+|`app` |`encoding` |x ||application default encoding
+| |`name` |x | |application name
+| |`standalone` |x | |evaluates to true if Mule is running standalone
+| |`workdir` |x | |application work directory
+| |`registry` | |x |map representing the Mule registry
+|`message` |`id` |x | |unique identifier of Mule message
+| |`rootId` |x | |root ID of Mule message
+| |`correlationId` |x | |
+| |`correlationSequence` |x |
+| ||`correlationGroupSize` |x | |
+| |`replyTo` | |x |
+| |`dataType` |x | |data type of payload
+| |`payload` | |x |Mule message's payload
+| |`inboundProperties` |x | |map representing the message's immutable inbound properties
+| |`inboundAttachments` |x | |map representing the message's inbound attachments
+| |`outboundProperties` | |x |map representing the message's mutable outbound properties
+| |`outboundAttachments` | |x |map representing the message's outbound attachments
+|===
+
+=== Variables
+
+Use a *Variable* in a MEL expression to access information contained within a Flow Variable or Session Variable on your Mule message. Itself a top-level identifier in MEL, a variable does _not_ require that you define a context object in an expression. MEL evaluates against two types of variables:
+
+* **`flowVars`** retain their values as control passes from one message processor to another within a single flow. Thus, you can set them in one message processor, then access them in another message processor using a MEL expression.
+* **`sessionVars`** that retain their values as control passes from one flow to another within an application. Thus, you can set them in one flow, then access them in another using a MEL expression.
+
+The example code below uses an expression to access the value of the session variable `bar` and uses it to set the value of the flow variable `foo`.
+
+[source,text,linenums]
+----
+#[flowVars['foo'] = sessionVars['bar']]
+----
+
+[TIP]
+====
+As a shortcut, you can eliminate the `flowVars` in your expression simply use the variable name in a MEL expression. The example above could be written as follows:
+
+[source,text,linenums]
+----
+#[foo = bar]
+----
+
+Mule assumes that it is a `flowVars` and, when MEL evaluates the expression, looks for a variable by that name. If Mule cannot find a `flowVars` by that name, it looks for a `sessionVars `by that name before failing.
+
+If you wish to disable this auto-resolution of variables by name, include the following configuration xml configuration file:
+
+[source,xml,linenums]
+----
+<configuration>
+        <expression-language autoResolveVariables="false">
+</configuration>
+----
+====
+
+Note that variables in MEL are scoped following rules similar to those of Java, so if you declare a variable within a given scope (for example within an IF statement) this variable won't be recognized if you try to access it from outside this scope.
+
+== Xpath and Regex
+
+A MEL expression in Mule always resolves to a single value. You can use *xpath* and *regex* functions to extract information which doesn’t already exist as a single value.
+
+=== Xpath
+
+http://www.w3.org/TR/xpath/[Xpath] is a language for addressing parts of an XML document. The MEL *xpath* function allows you to evaluate XPath expressions.
+
+[%header%autowidth.spread]
+|===
+|Structure |Description |Example
+|`xpath(xPathExpression)` |Applies the XPath expression to the message payload (an XML document) and returns the specified content. The example returns the first order from the message payload. |`xpath('/orders/order[0]')`
+|`xpath(xPathExpression, xmlElement)` |Applies the XPath expression to the XML element specified by the MEL expression appearing as the second argument, and returns the specified content. The example returns the first order from the order element in the current message’s inbound attachment map. |`xpath('/orders/order[0]', message.inboundAttachments['order'])`
+|===
+
+=== Regex
+
+Regular expressions provide a means of specifying patterns to look for in a stream of text, and actions to take upon the patterns when found. The regex function enables you to use regular expressions from within MEL. Regular expressions in MEL use the syntax recognized by the `java.util.regex` package.
+
+[%header,cols="34,33,33"]
+|===
+|Structure |Description |Example
+|`regex(regularExpression)`-- f -- a|
+Applies the regular expression to the message payload. MEL processes as follows: +
+
+. Creates a `java.util.regex.Matcher` using a compiled version of the regular expression and a string representing the payload.
+. If there are no matches, return null. +
+Else if there is one match, return the match.  +
+Else if there are multiple matches, return matches in an array.
+
+The example returns all lines of the payload that begin with To:,From:, or Cc:
+
+|`regex('^(ToFromCc):')`
+|`regex(regularExpression, melExpression)` |Applies the regular expression to the value of the MEL expression, rather than the payload. Any string-valued MEL expression can appear as the second argument. (Using the same process as described above.) |
+|`regex(regularExpression, melExpression, matchFlags)` |Applies the regular expression to the value of the MEL expression, but uses the `matchFlags` bit mask as described in the Java documentation for `java.util.regex.Pattern`. |
+|===
+
+== Operators
+
+MEL operators follow standard Java syntax, but operands are evaluated by value, not by reference. For example, `' A ' == ' A '` evaluates to true in MEL, whereas the same expression evaluates to false in Java.
+
+=== Arithmetic Operators
+
+[%header,cols="4*"]
+|===
+|*Symbol* |*Definition* |*Example* |Return Value
+|*+* |Plus. For numbers, the value is the sum of the values of the operands. For strings, the value is the string formed by concatenating the values of the operands. |`#[2 + 4]  6`  `#[' fu ' + 'bar']` |The string `"fubar"`
+|*-* |Minus. The value is the value of the first operand minus the value of the second. |`#[2 - 4]` + |`-2`
+|*/* |Over. The value is the value of the first operand divided by the value of the second. |`#[2 / 4]` |`0.5`
+|*** |Times. The value is the product of the values of the operands. |`#[2 * 4]` + |`8`
+|*%* |Modulo. The value is the remainder after dividing the value of the first operand by the value of the second. |`#[9 % 4]` + |`1`
+|===
+
+=== Comparison Operators
+
+[%header,cols="4*"]
+|===
+|*Symbol* |*Definition* |*Example* |Return Value
+|*==* |Equal. True if and only if the values of the operands are equal. |`#[`'A' == 'A'] +
+ + |`true`
+|*!=* |Not equal. True if the values of the operands are unequal. |`#[`' A' != ' B'] + |`true`
+|*>* |Greater than. True if the value on the left is greater than the value on the right. |`#[7 > 5]` + |`true`
+|*<* |Less than. True if the value on the left is less than the value on the right |`#[5 < 5]` + |`false`
+|*>=* |Greater than or equal. True if the value on the left is greater than or equal to the value on the right. |`#[5 >= 7]`+ |`false`
+|*<=* |Less than or equal. True if the value on the left is less than or equal to the value on the right. |`#[5 <= 5]` + |`true`
+|*contains* |Contains. True if the string on the right is a substring of the string on the left. |`#[`' fubar ' contains ' bar '] + |`true`
+|*is, +
+ instance of* |Is an instance of. True if the object on the left is an instance of the class on the right. |`#[`' fubar ' is String] + |`true`
+|*strsim* |Degree of similarity. The value of the expression is a number between 0 and 1 representing the degree of similarity between the two string arguments. |`#[`' foo ' strsim ' foo '] +
+ 1.0 +
+`#[`‘ foobar ’ strsim ‘ foo ’`]` + |`0.5`
+|*soundslike* |Sounds like. True if the two string arguments sound alike according to a Soundex comparison. |`#[`' Robert ' soundslike ' Rupert '] + |true
+|===
+
+=== Logical Operators
+
+[%header,cols="4*"]
+|===
+|*Symbol* |*Definition* |*Example* |Value
+|*&&* |Logical AND. True if both operands are true. (Do not use *and*.) |`#[`(a == b) && (c != d)] |`true` if a =b and c ≠ d
+|*II* |Logical OR. True if at least one operand is true. |`#[true anything ]` +
+ + |always `true`
+|*or* |Chained OR. Scans left to right and returns the value of the first non-empty item |`#[false or '' or ' ' or 'dog']` |the String "`dog`"
+|===
+
+== Literals
+
+Literals in MEL can be strings, numbers, Boolean values, types, and nulls. The <<Maps, Lists, and Arrays>> section shows how you can provide data structures as literals as well.
+
+=== Numeric Literals
+
+Numeric literals are integers and floating point numbers, with the same ranges of values as the underlying Java system.
+
+Integers are assumed to be decimal unless they begin with 0. An integer consisting of 0 followed by digits ranging from 0 to 7 is interpreted as octal. An integer starting with 0x followed by digits ranging from 0 to 9 or letters ranging from a to f is interpreted as hexadecimal. An integer ending in an uppercase I is interpreted as a BigInteger. Literals that include alphabetic characters are case sensitive.
+
+MEL recognizes floating point numbers by the presence of a decimal point. Floating point numbers can optionally have the following suffixes:
+
+* `d` to represent double
+* `f` to represent float
+* `B` to represent BigDecimal.
+
+Examples:
+
+* `255`
+* `0377`
+* `0xff`
+* `3.14159`
+* `3.14159f`
+* `3.14159265358979d`
+
+=== String Literals
+
+String literals are sequences of characters enclosed in single quotes. Within String literals you can use the following escape sequences to represent non-printable characters, Unicode characters, and the escape character.
+
+[%header,cols="2*"]
+|===
+|*Escape Sequence* |*Represents*
+|`\ \` |\
+|`\n` |Newline character
+|`\r` |Return character
+|`\xxx` |ASCII character represented by the octal number xxx
+|`\uyyyy` |Unicode character represented by the hexadecimal number yyyy
+|===
+
+[WARNING]
+=====
+When writing in Studio's XML editor, you cannot use double quotes to express String literals, because MEL expressions already appear enclosed in double quotes in configuration files. Instead, you can either:
+
+* use single quotes                     (`'expression'`)
+* escape quotes with &quot;      (`&quot;expression&quot;`)
+* escape quotes with \u0027      (`\u0027expression\u0027`)
+
+If you're writing on Studio's visual editor, double quotes will be transformed into escaped quotes` (&quot;`) in the XML view.
+=====
+
+=== Boolean Literals
+
+Boolean literals are the values `true` and `false`. These are case sensitive.
+
+=== Null Literals
+
+A null literal takes the form `null` or `nil`. These are case sensitive.
+
+=== Type Literals
+
+You can refer to any Java class by its fully qualified name or if it is one of the classes in the automatically-imported Java classes, by its unqualified name. References use the same dot notation as in Java, except that you must use `$` rather than a dot to refer to a nested class.
+
+MEL automatically imports the Java classes listed below. You can use these imported classes without using full-qualifier names. For example, because BigInteger is imported, you can write `#[BigInteger.valueOf(payload.dueAmount)]` instead of `#[java.math.BigInteger.valueOf(payload.dueAmount)]`.
+
+* `java.lang.` *
+* `java.io.` *
+* `java.net.` *
+* `java.util` *
+* `java.math.BigDecimal`
+* `java.math.BigInteger`
+* `javax.activation.DataHandler`
+* `javax.activation.MimeType`
+* `java.util.regex.Pattern`
+* `org.mule.api.transformer.DataType`
+* `org.mule.transformer.types.DataTypeFactory`
+
+== Maps, Lists, and Arrays
+
+Mule Expression Language uses a convenient syntax for maps and other data structures. Rather than constructing a map, list or array with a new statement, and then using its put method to populate it, you can simply them inline within an expression (see examples below). Use this literal form wherever you would otherwise use a map by name, including as a method argument.
+
+[%autowidth.spread]
+|===
+|*map* |`[key1 : value1, key2 : value2, . . .]`
+|*list* |`[item1, item2, . . .]`
+|*array* |`{item1, item2, . . .}`
+|===
+
+Arrays in Java must specify the type of their contents, but in MEL they are untyped. MEL supplies the correct type when you use them – either by determining it at compile time or coercing the array to the correct type at run time.
+
+=== Accessing Map Data
+
+Similar to  java.util.Map, MEL provides a a method for accessing data within a map.
+
+For example, the `inboundProperties` on a Mule message exist as a map. You can access this map in a MEL expression using `message.inboundProperties`. To retrieve on of the items in the map – the one with the key name `foo` – use:
+
+[source,text,linenums]
+----
+#[message.inboundProperties['foo']]
+----
+
+To set an outbound property on a message, use:
+
+[source,text,linenums]
+----
+#[message.outboundProperties['lastname']='foo']
+----
+
+To remove a key, you must explicitly use the map's remove method:
+
+[source,text,linenums]
+----
+#[message.outboundProperties.remove('key')]
+----
+
+To set the value of the outbound property `dog` to `fido`, use:
+
+[source,text,linenums]
+----
+#[message.outboundProperties['dog'] = 'fido']
+----
+
+== Control Flow
+
+MEL provides a full range of Java control flow statements. The most useful for typical MEL expressions are conditional operands (often called ternary statements). A conditional operand takes the following form:
+
+[source,text,linenums]
+----
+condition ? true value : false value
+----
+
+ For example, the following expression sets the value of variable `lastname` to the string "`Smith`" if the value of `name` is "`Smith`" . It sets the value of the variable to the string "`Unknown`" if the value of `name` is not "`Smith`".
+
+[source,text,linenums]
+----
+#[lastname = (name == 'Smith' ? 'Smith' : 'Unknown')]
+----
+
+== See Also
+
+* For reference on extracting and manipulating date and time in MEL, see xref:mule-expression-language-date-and-time-functions.adoc[MEL Date and Time Functions].
+* For full example applications which use MEL, access xref:mule-expression-language-examples.adoc[Mule Expression Language Examples].

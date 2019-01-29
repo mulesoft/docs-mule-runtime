@@ -1,0 +1,102 @@
+= Configuring Queues
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+A queue is a structure that Mule uses to store objects during asynchronous message processing. When a message comes into a receiver at the start of an asynchronous message process, the receiver stores the message in a queue until it can be processed by a thread in a thread pool. Once it puts the message in a queue, the receiver can then immediately return and accept a new incoming message. The receiver does not have to wait for the message to be further processed before it can accept a new incoming message, so in essence, queues enable asynchronous processing in Mule.
+
+Note that users of the Enterprise Edition of Mule ESB can use the management console to monitor queues and gain historical insight into the numbers of messages they have contained. For details, see xref:3.4@mule-management-console::index.adoc[Using the Mule Management Console].
+
+== How Mule Uses Queues
+
+Mule uses queues for queued/asynchronous flows and VM transports.
+
+=== How Queues are Used in VM Transports
+
+By default, Mule uses queues in the asynchronous processing of messages that use the VM transport. The VM transport can be used for flows, where all the message processing is done in the JVM in which the Mule instance is running.
+
+When requests come into a receiver for a flow that uses the VM transport, they are stored on a queue until threads from a thread pool can pick them up and process them. The receiver thread is then released back into the receiver thread pool so it can carry another incoming message. Each message waiting in the queue can be assigned a different thread from the pool of threads.
+
+=== Non-Persistent and Persistent Queues
+
+Queues can be either non-persistent or persistent. A non-persistent queue is maintained in memory. When Mule uses a non-persistent queue for a flow, and the flow is halted because either a `stop()` command comes in or Mule has begun shutting down for whatever reason, the flow processes all messages in the queue before executing the stop order.
+
+By contrast, when Mule uses a persistent queue for a flow and a `stop()` command comes in, Mule immediately stops accepting new messages. It then completes processing of all messages currently being processed before it shuts down. Mule does not begin the processing of any messages still waiting in the queue, because copies of these messages are in non-volatile storage (for example, a disk file) – the messages can be processed after Mule restarts and the flow is once again available.
+
+[WARNING]
+If a non-persistent queue is in use for a flow, and the flow is paused when stop() is called, all messages pending processing in the queue are lost.
+
+You can ensure that all message are saved when Mule exits by doing the following:
+
+* Implement persistent SEDA queues.
+* Specify transports that support persistence for all of Mule’s internal message channels.
+
+To further insure that no messages are lost, you can design your Mule deployment so that all transactions employ synchronous endpoints. By definition, synchronous endpoints do not use queues. Note that synchronous implementations, in general, cannot match the performance of queued solutions.
+
+== Configuring Queues
+
+You configure a queue for a VM transport through a queue profile. The queue profile specifies how the queue behaves. Typically, you do not need to configure the queue profile for performance, since the default configuration is usually sufficient, that is, the queue is not the bottleneck. (Performance is usually limited by the component or one of the endpoints). For other reasons, you still might want to specify a maximum queue size, or enable persistence on the queue (which is disabled by default).
+
+You configure the queue profile using the <queue-profile> element. For a VM transport, you specify the <queue-profile> element on the connector.
+
+Here are the attributes of the <queue-profile> element:
+
+[%header%autowidth.spread]
+|===
+|Name |Type |Required |Default |Description
+|`maxOutstandingMessages` |integer |no |  |Defines the maximum number of messages that can be queued.
+|`persistent` |boolean |no |false |Specifies whether Mule messages are persisted to a store. Primarily, this is used for persisting queued messages to disk so that the internal state of the server is mirrored on disk in case the server fails and needs to be restarted.
+|===
+
+Based on the persistent attribute value you specify, Mule chooses a persistence strategy to use for the queue. By default, Mule use two persistence strategies:
+
+* `MemoryPersistenceStrategy`, which is a volatile, in-memory persistence strategy.
+* `FilePersistenceStrategy`, which uses a file store to persist messages to a (non-volatile) disk, and therefore maintains messages even if Mule is restarted.
+
+The following table lists which persistence strategy is used when you set the `persistent` attribute in the queue-profile:
+
+[%header%autowidth.spread]
+|===
+|When you set *`persistent`* to . . . |This is the result:
+|`true` |`FilePersistenceStrategy`
+|`false` |`MemoryPersistenceStrategy`
+|===
+
+Currently, you cannot configure any other persistence strategies as part of the typed Mule XML configuration. However, if you need a different persistence strategy, such as to persist to a database rather than a disk, you can override the defaults in `mule-default-config.xml`. You achieve this by redefining the `_muleQueueManager` bean in your own configuration file. Such custom persistence strategies must implement `QueuePersistenceStrategy`.
+
+Here are some examples:
+
+Configure a connector on a flow that uses the VM transport. Limit the maximum number of messages that can be queued to 100 and make the queue persistent:
+
+[source,xml,linenums]
+----
+<vm:connector name="persistentVmConnector" queueTimeout="1000">
+   <queue-profile maxOutstandingMessages="100" persistent="true"/>
+</vm:connector>
+
+<flow>
+   <vm:inbound-endpoint ... />
+   <component class="org.mule.ComponentClass"/>
+   <vm:inbound-endpoint path="in" connector-ref="persistentVmConnector" />
+</flow>
+----
+
+== Processing Strategies for Flows
+
+Processing strategies determine how Mule implements message processing for a flow. One of these strategies, the queued-asynchronous processing strategy, implements SEDA queues to decouple a flow's receiver from the other steps in a flow. This means that implicitly you configure a queue for a flow when you specify the queued-asynchronous processing strategy for the flow. For further details, see xref:flow-processing-strategies.adoc[About the Queued-Asynchronous Flow Processing Strategy].
+
+== Object Stores for SEDA Queues
+
+Storage for SEDA queues does not use persistence strategies. Instead, SEDA queues now use an object store for persisting messages. The `persistent` attribute in the `<queue-profile>` element has been replaced by a child element of `<queue-profile>`. The child element identifies the object store for the SEDA queue.
+
+By default, Mule uses an in-memory object store for SEDA queues (for a cluster, Mule creates the default in-memory store in the shared memory grid). Mule provides a number of object store choices. These are as follows:
+
+* queue-store: References the global queue store.
+* default in-memory-queue-store: The default in-memory store.
+* default persistent-queue-store: A file-based store. For a cluster, it is the default in-memory store.
+* simple in-memory queue-store. Always an in-memory store.
+* file queue store. Always a file-based store.
+
+In most cases, the default object store should meet your needs. However, you can specify which object store to use. For example, you might want to enable persistence for the queue by specifying the default persistent-queue-store, and in this way override the default in-memory queue store.
+
+For more details, see xref:mule-object-stores.adoc[Mule Object Stores].

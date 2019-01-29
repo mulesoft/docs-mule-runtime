@@ -1,0 +1,209 @@
+= Legacy Modernization Example
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: legacy, datamapper
+
+*_Enterprise Edition, CloudHub_*
+
+This application illustrates how to automate communication between a legacy system and a Web service which accepts HTTP requests. Mule "front-ends" the legacy system – which only accepts input via a file – so as to prepare data from an HTTP Web service to a format that the legacy system accepts. To demonstrate these capabilities, this example adopts the use case of a legacy fulfillment system which must adapt to accept orders via HTTP request. You can think of this example as an application that acts as a Web service proxy for a legacy, file-based system.
+
+== Legacy Modernization
+
+image:legacy-modern-icon.png[legacy_modern_icon]An older, legacy system may be limited in the form of data that it accepts. For example, an older system may only accept input as a file or via FTP.  To update such a system so that it accepts more modern input formats, such as Web service calls, Mule can sit in front of a legacy system, converting HTTP requests, for example, to strings. This conversion activity effectively "modernizes" the legacy system so that it accepts HTTP requests.
+
+== Assumptions
+
+This document assumes that you are familiar with Mule ESB and the https://docs.mulesoft.com/anypoint-studio/v/5/index[Mule Studio interface]. To increase your familiarity with Studio, consider completing one or more https://docs.mulesoft.com/anypoint-studio/v/5/basic-studio-tutorial[Mule Studio Tutorials].  Further, this example assumes you have a basic understanding of xref:mule-application-architecture.adoc[Mule flows], SOAP Web services and using https://docs.mulesoft.com/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper] in Mule Studio. +
+
+
+This document describes the details of the example within the context of Mule Studio, Mule ESB’s graphical user interface (GUI), and includes configuration details for both the visual and XML editors.
+
+== Example Use Case
+
+This example demonstrates legacy system modernization within the context of a simple use case.
+
+An organization uses an old fulfillment system which only accepts orders in flat file format. However, the company wants to begin accepting orders via a SOAP Web service and automatically submitting the orders to the legacy system for fulfillment. In order to process orders, the company uses Mule to convert HTTP requests into a file format that the legacy system accepts.
+
+== Set Up
+
+Complete the following procedure to create, then run this example in your own instance of Mule Studio. You can create template applications straight out of the box in Mule Studio and tweak the configurations of this use case-based template to create your own customized applications in Mule.
+
+Skip ahead to the <<How it Works>> if you prefer to simply examine this example via screenshots and code snippets.
+
+. *Create, then run* the Legacy Modernization example application in Mule Studio.
+. To simulate a request submission to the Mule application, use the *soapUI interface* available for free download at http://www.soapui.org/[www.soapui.org]. This tool enables you to submit a request to simulate the submission of a new order in this example's use case.  If you haven't already done so, download and launch soapUI (see image below). +
+
++
+image::soapui-launch.png[soapUI_launch]
++
+
+. In soapUI, select *File* > *Import Project*. Browse to the MuleStudio folder on your local drive to locate the sample soapUI project file: *MuleStudio* > *workspace* > *Legacy Modernization* > *src* > *test* > *resources* > **LegacyModernizationExample-soapui-project.xml**. Click *Open*.
+. In the new LegacyModernizationExample project in soapUI, expand the folders to reveal *Request 1*. Double-click *Request 1* to open the request-response window.
+. Click the submit request icon (green "play" button at upper left) to submit the request to the Mule application (see below, left). soapUI displays the response from the Mule application in the response pane (see below, right). +
+
++
+image::soapui-both.png[soapUI_both]
++
+
+ . Review the contents of the SOAP response, to examine the details of your processed request. Note, in particular, the `orderReceivedStatus` with the value "`true`".
+. In the *Package Explorer* in Studio, navigate to `src/test/resources/Output`, then hit *F5* to refresh the contents of the Output folder. The order you submitted via soapUI appears as a new ShippingOrder flat file; note the date and time stamp of the new order (see below). Double-click the flat file to open it in Studio and examine the contents. +
+
++
+image::shipping-output.png[shipping_output]
+
+== How it Works
+
+Using a single flow, this application exposes a SOAP Web service which accepts new order requests from customers. A Java component processes the order, returning a response to the caller to advise that the order has been accepted. Asynchronously (relative to the HTTP request-response activity), Mule uses a DataMapper transformer to map data from the shipping order POJO into a CSV file, which it sends to the legacy system for fulfillment. In this example, since there is no actual legacy system to perform order fulfillment, the File endpoint at the end of the flow simply outputs the CSV file to the Output folder in the src/test/resources folder within the application.
+
+There are a couple important configurations to take note of in this example application.
+
+* **The application exposes a SOAP Web service.**  Configured as a JAX-WS service, the SOAP component in the flow makes the Web service available using the Apache CXF Web services framework.
++
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::soapcomponent.png[SOAPcomponent]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<cxf:jaxws-service port="80" serviceClass="org.ordermgmt.IFulfillment"
+            enableMuleSoapHeaders="false" doc:name="FulfillmentWebService"
+            doc:description="Make a web service available via CXF" />
+----
+=====
+
+* *The DataMapper transforms and maps data from POJO to CSV in one step.* Where the input and output fields have identical names, DataMapper intelligently, and automatically, maps input to output, as with the `ShippingId`. Otherwise, you can quickly map input to output manually by clicking and dragging input fields to output fields in the Data Mapping Console (see below). Each mapping earns an arrow which helps you to visualize the activity that occurs within the DataMapper transformer. Click *Preview* to examine the CSV output that the DataMapper will produce when the application processes orders.  +
+
++
+image::dm-mapping.png[DM_mapping]
++
+
+[TIP]
+====
+In this example, DataMapper uses *Rules* to map a nested list of items. For each item on the order list, DataMapper must map the billing and shipping address information to the output CSV file. To do so, the application's designer created each rule individually, then clicked-and-dragged each rule to map them all to CSV output file values.
+
+For more information on mapping nested elements, refer to xref:mapping-elements-inside-lists.adoc[Mapping Elements Inside Lists].
+====
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::mule-example-legacy-system-modernization.png[]
+
+[discrete.view]
+=== Studio XML Editor
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns="http://www.mulesoft.org/schema/mule/core"
+
+    xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+
+    xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+
+    xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+
+    xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:salesforce="http://www.mulesoft.org/schema/mule/sfdc"
+
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="EE-3.4.0"
+
+    xsi:schemaLocation="
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/5.0/mule-sfdc.xsd
+
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd ">
+
+    <sfdc:config name="sfconfig" username="username" password="password"
+
+        securityToken="TOKEN" doc:name="Salesforce"
+
+        doc:description="Global configuration for Salesforce operations">
+
+    </sfdc:config>
+
+    <data-mapper:config name="FulfillmentOrder2LegacyCSV_map" transformationGraphPath="fulfillmentorder2legacycsv_map.grf" doc:name="DataMapper"/>
+
+    <flow name="Fulfillment_LegacySystemModernization" doc:name="Fulfillment_LegacySystemModernization"
+
+        doc:description="This is a simple Mule Studio project that illustrates a Legacy System Modernization use case.">
+
+        <http:inbound-endpoint exchange-pattern="request-response"
+
+            host="localhost" port="1080" path="OrderFulfillment" doc:name="Receive Order"
+
+            doc:description="Process HTTP reqests or responses." />
+
+        <cxf:jaxws-service port="80" serviceClass="org.ordermgmt.IFulfillment"
+
+            enableMuleSoapHeaders="false" doc:name="FulfillmentWebService"
+
+            doc:description="Make a web service available via CXF" />
+
+        <component class="org.ordermgmt.FulfillmentImpl" doc:name="Process Order"
+
+            doc:description="Invoke a Java component" />
+
+        <async doc:name="Async - Legacy Fulfillment Service">
+
+            <data-mapper:transform config-ref="FulfillmentOrder2LegacyCSV_map" doc:name="DataMapper"/>
+
+            <byte-array-to-string-transformer
+
+                doc:name="Transform-to-String" />
+
+            <file:outbound-endpoint path="src/test/resources/Output"
+
+                outputPattern="ShippingOrder-#[function:datestamp].txt" doc:name="LegacyFulfillment" responseTimeout="10000"/>
+
+        </async>
+
+    </flow>
+
+</mule>
+----
+=====
+
+== Documentation
+
+Studio includes a feature that enables you to easily export all the documentation you have recorded for your project.  Whenever you want to easily share your project with others outside the Studio environment, you can export the project's documentation to print, email or share online.  Studio's auto-generated documentation includes:
+
+* a visual diagram of the flows in your application
+* the XML configuration which corresponds to each flow in your application
+* the text you entered in the Documentation tab of any building block in your flow
+
+
+== See Also
+
+* Learn more about the xref:soap-component-reference.adoc[SOAP Component] in Studio.
+* Learn more about the https://docs.mulesoft.com/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper transformer] in Studio. xref:mule-datasense.adoc[DataSense] to intelligently connect an application to Salesforce.
+* Learn how to integrate Mule to an Oracle Database and IBM WebShere in our https://blogs.mulesoft.com/dev/mule-dev/mule-esb-with-the-oracle-database-and-ibm-websphere-mq-%E2%80%93-use-case-1-of-3/[MuleSoft Blog].

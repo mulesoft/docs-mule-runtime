@@ -3,62 +3,195 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-An Async scope is a branch processing flow that executes simultaneously with the parent message flow. This type of processing block can prove useful for executing time-consuming operations (such as printing a file or connecting to a mail server) — as long as those operations do not require a response to the main flow. In other words, the main flow can resume execution as soon as it has called the asynchronous scope; it does not have to pause until the last message processor embedded in the asynchronous flow has completed its task.
+== Overview
 
-To facilitate this simultaneous branch processing, the Async scope sends one copy of the message it has received to the first embedded message processor in its own processing block; at the same time it sends another copy of the message to the next message processor in the main flow (See: *below*).
+An *async scope* is a branch processing block that executes simultaneously with the parent message flow. This type of processing block can prove useful for executing time-consuming operations (such as printing a file or connecting to a mail server) - as long as those operations do not require sending a response back to the parent flow. In other words, the main flow can continue execution while it initiates and processes the asynchronous scope; it does not have to pause until the last message processor embedded in the asynchronous flow has completed its task.
 
-image::asynch-schematic.png[Asynch+Schematic]
+To facilitate this simulataneous branch processing, the async sends one copy of the message it has received to the first embedded message processor in its own processing block; at the same time it sends another copy of the message to the next message processor in the main flow (see below).
 
-Unlike *sub flows* which execute synchronously with respect to the parent flow, Async scopes are not called by *Flow Reference* components.
+image::async-scope-schematic.png[Async+scope+schematic]
 
-Also in contrast to sub flows, which inherit the processing strategies and exception handling properties of their parent flow, an Async flow does not inherit either the processing strategy or the exception handling properties of its parent flow.
+Since they operate on a copy of the message on a different thread, async scopes cannot, by definition, support request-response exchange patterns. Instead, they must implement one of several supported one-way processing strategies, as detailed in the configuration section, below.
 
-Since they immediately pass a copy of whatever message they receive to the next message processor in the parent flow, then process another copy of that message on a child thread, Async scopes cannot, by definition, support request-response exchange patterns. Instead, they must implement one of several supported one-way processing strategies, as detailed in the configuration section, below.
+If no processing strategy is configured for the async scope, Mule applies the default processing strategy: queued asynchronous.
 
-== Async Scope Configuration
+== Async Scopes vs. Asychronous Child Flows
 
-After you drag the Async scope to the Message Flow canvas and position it within the sequence of message processors that make up the parent flow, you must embed it with its own sequence of message processors. Next, you must configure each embedded message processor by double-clicking on the icon representing each message processor to open its Properties pane, then completing the configuration fields. Your final step is to configure the Async scope itself.
+An async scope is similar to an asynchronous child flow in that:
 
-By default, the following icon appears in the upper left corner of the Async scope’s title bar: image:asynch-title.png[Asynch+Title] . Double-click anywhere on the title bar to open the Properties pane.
+* It processes the message asynchronously with the main flow, so the message is simultaneously processed in the async scope without pausing the processing in the main flow thread
+* Does not pass data from the scope back into the main flow thread
+* It can have its own processing strategy
 
-=== About the Display Name and Documentation
+However, _unlike_ an asynchronous child flow, an async scope:
 
-Although both the *Display Name* and *Documentation* fields are optional, they can prove very useful during the development and deployment processes, if you populate them with meaningful information.
+* Exists in-line with the main flow thread
+* Is not called by a flow reference component
+* Is not re-usable
+* Cannot have its own exception handling strategy - it inherits this from in which it resides
 
-For example, the Display Name is `Async` by default. You can change it to something relevant to your application context, such as “Log Incoming Messages to DB”. This string will appear under the Async flow icon on the Message Flow canvas as well as in the administrative and performance analysis displays on the Mule Management Console.
+== Async Scopes vs. Subflows
 
-Similarly, the text you enter into the Documentation field can prove valuable to future developers and system administrators because it appears in a yellow help balloon that pops up when you hover your mouse over the Async flow icon on the Message Flow canvas.
+An async scope is similar to a subflow in that it inherits the exception strategy of the main flow.
 
-=== About Async Processing Strategy
+However, _unlike_ a subflow, an async scope:
 
-Although it is optional, you can configure the *Processing Strategy* field, which resides on the *Generic* panel of the *General* tab of the *Scope Properties* pane (See: *below*).
+* Processes messages asynchronously
+* Does not pass data back to the main flow
+* Exist in-line with the main flow thread
+* Is not called by a flow reference component
+* Is not re-usable
 
-image::asynch-properties.png[Asynch+Properties]
+[WARNING]
+====
+Even though the Async scope receives a copy of the Mule message, the payload is not copied. The same payload object(s) will be referenced by both Mule messages: the one that continues down the original flow and the one processed by the Async scope.
 
-==== Selecting a Processing Strategy
+In other words, if the payload of your message is mutable object (for example a bean with different fields in it) and a message processor in your async scope changes the value of one of the fields, the message processor outside of the Async scope will see the changed values.
+====
 
-Complete the following steps:
+== Configurations
 
-. To open the *Choose Global Type* panel, click *Add*, which is to the right of the *Processing Strategy* field (See: *below*).
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. Drag the async scope to the canvas and position it within the sequence of message processor that make up your flow at the point where you want to initiate an asynchronous processing block.
 +
-image::asynch-process-add.png[Asynch+Process+Add]
+image::studio-async-step1.png[Studio_Async_step1]
 
-. Click *Processing Strategies* to highlight the icon and display the *drop down arrow* immediately to the right (See: *Below*).
+. Within the scope area, add and configure the sequence of message processors that you want to execute asynchronously with the main flow. See example below.
 +
-image::asynch-arrow.png[Asynch+Arrow]
+image::studio-async-step2.png[Studio_Async_Step2]
 
-. Click the arrow so that the arrow tilts downward, and the list of available one-way processing strategies appears (See: *below*).
+. Optionally, configure the async scope itself with a *Display Name*. If you wish to specify a *Processing Strategy*, see the instructions in the xref:async-scope-reference.adoc[next section].
 +
-image::asynch-list.png[Asynch+List]
+image::studio-async-step4.png[Studio_Async_Step4]
 
-The following table lists and describes the available asynchronous processing strategies:
+[discrete.view]
+=== XML Editor or Standalone
 
-[%header,cols="20,75"]
+. Add an `async` element to your flow at the point where you want to initiate an asynchrounous processing block. Refer to the code sample below.
+
+. Configure the scope according to the tables below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*async* |Use to create a block of message processors that execute asynchronously while the rest of the flow continues to execute in parallel.
+|===
++
+[%header%autowidth.spread]
+|===
+|Attibute |Description
+|*doc:name* a|Customize to display a unique name for the async scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+|===
+
+. Configure one or more child elements within the async scope to define the processing that should occur within the asynchronous processing block. Refer to code sample below. If you wish to specify a *Processing Strategy*, see this instructions in the xref:async-scope-reference.adoc[next section].
++
+[%header%autowidth.spread]
+|===
+|Child Element |Description
+|*processingStrategy* |Optional. Specify the name of a processing strategy that you have defined as a global element.
+|===
+
+[source,xml,linenums]
+----
+<flow name="Async_Scope_ExampleFlow1" doc:name="Async_Scope_FlowFlow1" >
+   <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <async doc:name="Async">
+            <component doc:name="Takes a long time"/>
+            <jms:outbound-endpoint doc:name="Store result"/>
+      </async>
+   <expression-transformer doc:name="Create Response"/>
+</flow>
+----
+=====
+
+== Configuring a Processing Strategy
+
+Although it is optional, you can configure the *Processing Strategy* of the async scope to the following one of the available processing strategies.
+
+[%header%autowidth.spread]
 |===
 |Strategy |Description
-|Asynchronous Processing Strategy |After the inbound endpoint finishes processing the message, the rest of the flow runs in another thread.
-|Custom Processing Strategy |A user-written processor strategy.
-|Queued Asynchronous Processing Strategy |After the inbound endpoint finishes processing the message, it writes that message to a SEDA queue. The rest of the flow runs in a thread form the SEDA queue's thread pool.
-|Queued Thread Per Processor Processing Strategy |After the inbound endpoint finishes processing the message, it writes that message to a SEDA queue. From that point onward, every remaining processor in the flow runs sequentially in a different thread.
-|Thread Per Processor Processor Strategy |After the inbound endpoint finishes processing the message, every remaining processor in the flow runs sequentially in a different thread.
+|Asynchronous Processing Strategy |After the inbound endpoint finished processing the message, the rest of the flow runs in another thread.
+|Custom Processing Strategy |A user-written processor strategy
+|Queued Asynchronous Processing Strategy |After the inbound endpoint finishes processing the message, it write the message to a SEDA queue. The rest of the flow runs in a thread from the SEDA queue's thread pool.
+|Queued Thread Per Processor Processing Strategy |After the inbound endpoint finishes processing the message, it writes that messages to a SEDA queue. From that point onward, every remaining processor in the flow runs sequentially in a different thread.
+|Thread Per Processor Processor Strategy |After the inbound endpoint finishes processing the message, every remaining processor in the flow runs sequentially in a different thread
 |===
+
+For more information about these processing strategies and how to configure them, see xref:flow-processing-strategies.adoc[Flow Processing Strategies].
+
+[.ex]
+=====
+[discrete.view]
+=== STUDIO Visual Editor
+
+. Click the image:add.png[] to the right of the *Processing Strategy* field.
++
+image::studio-async-scopeproperties-add.png[Studio_Async_ScopeProperties_Add]
+
+. In the *Choose Global Type* window, select from the list of available processing strategies, then click *OK*.
++
+image::studio-async-chooseglobaltype.png[Studio_Async_ChooseGlobalType]
+
+. Configure the processing strategy as needed. For more information, see xref:flow-processing-strategies.adoc[Flow Processing Strategies].
+
+[discrete.view]
+=== Studio or Standalone XML
+
+. Define your processing strategy as a global element, with any necessary configuration or optional fine-tuning. (For more information, see [Flow Processing Strategies].) Refer to code sample below.
+
+. Add a `processingStrategy` attribute to your `async` element to specify the processing strategy by name, as in the code sample.
++
+[source,xml,linenums]
+----
+<queued-asynchronous-processing-strategy name="Allow42Threads" maxThreads="42" doc:name="Queued Asynchronous Processing Strategy"/>
+
+<flow name="Async_Scope_ExampleFlow1" doc:name="Async_Scope_FlowFlow1" >
+   <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <async doc:name="Async" processingStrategy="Allow42Threads">
+            <component doc:name="Takes a long time"/>
+            <jms:outbound-endpoint doc:name="Store result"/>
+      </async>
+   <expression-transformer doc:name="Create Response"/>
+</flow>
+----
+=====
+
+== Complete Example Code
+
+*Namespace:*
+
+[source,xml,linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+----
+
+*Body*:
+
+[source,xml,linenums]
+----
+<queued-asynchronous-processing-strategy name="Allow42Threads" maxThreads="42" doc:name="Queued Asynchronous Processing Strategy"/>
+
+<flow name="Async_Scope_ExampleFlow1" doc:name="Async_Scope_FlowFlow1" >
+   <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <async doc:name="Async" processingStrategy="Allow42Threads">
+            <component doc:name="Takes a long time"/>
+            <jms:outbound-endpoint doc:name="Store result"/>
+      </async>
+   <expression-transformer doc:name="Create Response"/>
+</flow>
+----
+
+== See Also
+
+* For more information about processing strategies and how to configure them, see xref:flow-processing-strategies.adoc[Flow Processing Strategies]

@@ -3,7 +3,7 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-[ <<Quick Reference>> ] [ <<All>> ] [ <<Async>> ] [ <<Choice>> ] [ <<Collection Aggregator>> ] [ <<Collection Splitter>> ] [ <<Combine Collections>> ] [ <<Custom Aggregator>> ] [ <<Custom Processor>> ] [ <<First Successful>> ] [ <<Idempotent Message Filter>> ] [ <<Idempotent Secure Hash Message Filter>> ] [ <<Message Chunk Aggregator>> ] [ <<Message Chunk Splitter>> ] [ <<Message Filter>> ] [ <<Processor Chain>> ] [ <<Recipient List>> ] [ <<Request Reply>> ] [ <<Resequencer>> ] [ <<Round Robin>> ] [ <<Splitter>> ] [ <<Until Successful>> ] [ <<WireTap>> ]
+[ <<Quick Reference>> ] [ <<All>> ] [ <<Async>> ] [ <<Choice>> ] [ <<Collection Aggregator>> ] [ <<Collection Splitter>> ] [ <<Custom Aggregator>> ] [ <<Custom Processor>> ] [ <<First Successful>> ] [ <<Idempotent Message Filter>> ] [ <<Idempotent Secure Hash Message Filter>> ] [ <<Message Chunk Aggregator>> ] [ <<Message Chunk Splitter>> ] [ <<Message Filter>> ] [ <<Processor Chain>> ] [ <<Recipient List>> ] [ <<Request Reply>> ] [ <<Resequencer>> ] [ <<Round Robin>> ] [ <<Splitter>> ] [ <<WireTap>> ]
 
 Message Processors are used within flows to control how messages are sent and received within that flow. This is further described in xref:using-flows-for-service-orchestration.adoc[Using Flows for Service Orchestration].
 
@@ -19,7 +19,6 @@ Click a link in the Quick Reference table below for details on a specific messag
 |<<Choice>> |Send a message to the first matching message processor
 |<<Collection Aggregator>> |Aggregate messages into a message collection
 |<<Collection Splitter>> |Split a message that is a collection
-|<<Combine Collections>> |Converts a payload consisting of a collection of collections into a single list.
 |<<Custom Aggregator>> |A custom-written class that aggregates messages
 |<<Custom Processor>> |A custom-written message processor
 |<<First Successful>> |Iterate through message processors until one succeeds (added in 3.0.1)
@@ -33,7 +32,7 @@ Click a link in the Quick Reference table below for details on a specific messag
 |<<Request Reply>> |Receive a message for asynchronous processing and accept the asynchronous response on a different channel
 |<<Resequencer>> |Reorder a list of messages
 |<<Round Robin>> |Round-robin among a list of message processors (added in 3.0.1)
-|<<Until Successful>> |Repeatedly attempt to process a message until successful
+|xref:until-successful-scope.adoc[Until Successful] |Repeatedly attempt to process a message until successful
 |<<Splitter>> |Split a message using an expression
 |<<WireTap>> |Send a message to an extra message processor as well as to the next message processor in the chain
 |===
@@ -53,7 +52,7 @@ Configuration for this router is as follows:
 </all>
 ----
 
-If any of the targets specified is an endpoint that has a filter configured on it, only messages accepted by that filter are sent to that endpoint.
+If any of the targets specified is an connector that has a filter configured on it, only messages accepted by that filter are sent to that connector.
 
 All messages (if any) returned by the targets are aggregated together and form the response from this processor.
 
@@ -71,7 +70,7 @@ The Async message processor runs a chain of message processors in another thread
 </async>
 ----
 
-This transforms the current message and sends it to the specified endpoint, using a threadpool that contains up to 16 concurrent threads.
+This transforms the current message and sends it to the specified connector, using a threadpool that contains up to 16 concurrent threads.
 
 == Choice
 
@@ -120,17 +119,6 @@ Configuration for the Collection Splitter is as follows:
 <collection-splitter enableCorrelation="IF_NOT_SET"/>
 ----
 
-== Combine Collections
-
-Converts a payload consisting of a collection of collections into a single list. For example, if the payload contains a collection holding A and B as well as another collection containing C and D, the output collection will contain A, B, C, and D.
-
-This router (flow control) also converts *MuleMessageCollections*. In such a case, the collection payloads from more than one *MuleMessage* get merged into a single collection for a new *MuleMessage*.
-
-[source,xml,linenums]
-----
-<combine-collection-transformer/>
-----
-
 == Custom Aggregator
 
 A Custom Aggregator is an instance of a user-written class that aggregates messages. This class must implement the interface https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/api/processor/MessageProcessor.html[MessageProcessor]. Often, it will be useful for it to subclass https://www.mulesoft.org/docs/site/current3/apidocs/org/mule/routing/AbstractAggregator.html[AbstractAggregator], which provides the skeleton of a thread-safe aggregator implementation, requiring only specific correlation logic. As with most custom objects in Mule, it can be configured either with a fully specified class name or as a reference to a Spring bean. It can also be configured with the same `timeout` and `failOnTimeout` attributes described under <<Collection Aggregator>>.
@@ -166,7 +154,7 @@ The First Successful message processor iterates through its list of child messag
 
 Success is defined as:
 
-* If the child message processor thows an exception, this is a failure.
+* If the child message processor throws an exception, this is a failure.
 * Otherwise:
 ** If the child message processor returns a message that contains an exception payload, this is a failure.
 ** If the child message processor returns a message that does not contain an exception payload, this is a success.
@@ -384,98 +372,14 @@ The Splitter is configured as shown below:
 
 [source,xml,linenums]
 ----
-<splitter evaluator="xpath" expression="//acme:Trade"/>
+<splitter expression="#[xpath('//acme:Trade')]" doc:name="Splitter"/>
 ----
 
 This uses the specified XPath expression to find a list of nodes in the current message and sends each of them as a separate message.
 
-== Until Successful
-
-The Until Successful message processor processes a message with its child message processor until the processing succeeds. This processing occurs asynchronously, therefore execution is returned to the parent flow immediately.
-
-The Until Successful message processor is able to retry:
-
-* Dispatching to outbound endpoints, for example, when you’re reaching out to a remote web service that may have availability issues.
-* Execution of a component method, for example, to retry an action on a Spring Bean that may depend on unreliable resources.
-* A sub-flow execution, to keep reexecuting several actions until they all succeed.
-* Any other message processor execution, to allow more complex scenarios.
-
-[source,xml,linenums]
-----
-<until-successful objectStore-ref="objectStore"
-                  maxRetries="5"
-                  secondsBetweenRetries="60">
-    <outbound-endpoint ref="retriableEndpoint" />
-</until-successful>
-----
-
-This message processor needs an https://www.mulesoft.org/docs/site/3.2.0-SNAPSHOT/apidocs/index.html?org/mule/api/store/ListableObjectStore.html[ListableObjectStore] instance in order to persist messages pending (re)processing. There are several implementations available in Mule, including the following:
-
-* DefaultInMemoryObjectStore. The default in-memory store.
-* DefaultPersistentObjectStore. The default persistent store
-* FileObjectStore. A file-based store.
-* QueuePersistenceObjectStore. The global queue store.
-* SimpleMemoryObjectStore. An in-memory store
-
-See xref:mule-object-stores.adoc[Mule Object Stores] for further information about object stores in Mule.
-
-Here is how you would create an in-memory store:
-
-[source,xml,linenums]
-----
-<spring:bean id="objectStore" class="org.mule.util.store.SimpleMemoryObjectStore" />
-----
-
-Success or failure are defined as:
-
-* If the child message processor throws an exception, this is a failure.
-* If the child message processor does not return a message (e.g. is a one-way endpoint), this is a success.
-* If a 'failure expression' (see below) has been configured, the return message is evaluated against this expression to determine failure or not.
-* Otherwise:
-** If the child message processor returns a message that contains an exception payload, this is a failure.
-** If the child message processor returns a message that does not contain an exception payload, this is a success.
-
-Here is an example showing how to configure the failure expression:
-
-[source,xml,linenums]
-----
-<until-successful objectStore-ref="objectStore"
-                  failureExpression="#[header:INBOUND:http.status != 202]"
-                  maxRetries="6"
-                  secondsBetweenRetries="600">
-    <http:outbound-endpoint address="http://acme.com/api/flakey"
-                            exchange-pattern="request-response"
-                            method="POST" />
-</until-successful>
-----
-
-The Until Successful message processor is also able to synchronously acknowledge that it has accepted a message and will try to process it repeatedly. The following is an example where the message correlation ID is used as an acknowledgement message:
-
-[source,xml,linenums]
-----
-<until-successful objectStore-ref="objectStore"
-                  ackExpression="#[message:correlationId]"
-                  maxRetries="3"
-                  secondsBetweenRetries="10">
-    <flow-ref name="signup-flow" />
-</until-successful>
-----
-
-It is also possible to define a DLQ (dead letter queue) endpoint to which messages will be sent if they have failed processing too many times:
-
-[source,xml,linenums]
-----
-<until-successful objectStore-ref="objectStore"
-                  deadLetterQueue-ref="dlqChannel"
-                  maxRetries="3"
-                  secondsBetweenRetries="10">
-...
-</until-successful>
-----
-
 == WireTap
 
-The WireTap message processor allows you to route certain messages to a different message processor as well as to the next one in the chain. For instance, To copy all messages to a specific endpoint, you configure it as an outbound endpoint on the WireTap routing processor:
+The WireTap message processor allows you to route certain messages to a different message processor as well as to the next one in the chain. For instance, To copy all messages to a specific connector, you configure it as an outbound connector on the WireTap routing processor:
 
 [source,xml,linenums]
 ----
@@ -486,7 +390,7 @@ The WireTap message processor allows you to route certain messages to a differen
 
 === Using Filters with the WireTap
 
-The WireTap routing processor is useful both with and without filtering. If filtered, it can be used to record or take note of particular messages or to copy only messages that require additional processing. If filters aren't used, you can make a backup copy of all messages received. The behavior here is similar to that of an interceptor, but interceptors can alter the message flow by preventing the message from reaching the component. WireTap routers cannot alter message flow but just copy on demand. In this example, only messages that match the filter expression are copied to the vm endpoint.
+The WireTap routing processor is useful both with and without filtering. If filtered, it can be used to record or take note of particular messages or to copy only messages that require additional processing. If filters aren't used, you can make a backup copy of all messages received. The behavior here is similar to that of an interceptor, but interceptors can alter the message flow by preventing the message from reaching the component. WireTap routers cannot alter message flow but just copy on demand. In this example, only messages that match the filter expression are copied to the vm connector.
 
 [source,xml,linenums]
 ----

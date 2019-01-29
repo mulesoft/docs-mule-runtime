@@ -5,91 +5,209 @@ endif::[]
 
 == Encrypting a Message Payload
 
-Add a *Mule Message Encryption Processor* to a flow to change the content of a message so that it becomes unreadable by other entities. Mule can encrypt the entire payload of a message or specific parts of the payload, according to security requirements, using one of the following three Encryption Strategies:
+Add a *Mule Message Encryption Processor* to a flow to change the content of a message so that it becomes unreadable by unauthorized entities. Mule can encrypt the entire payload of a message or specific parts of the payload, according to security requirements, using one of the following three Encryption Strategies:
 
 [%header,cols="2*"]
 |===
 |Encryption Strategy |Characteristics
-|JCE Encrypter |• encrypts stream, byte[] or string
-|XML Encrypter |• encrypts string +
-• encrypts individual fields using xpath expressions
-|PGP Encrypter |• encrypts stream, byte[] or string +
-• applies tighter security (relative to JCE and XML) +
-• increases processing load (relative to JCE and XML)
+|JCE Encrypter |• Encrypts stream, byte[] or string
+|XML Encrypter |• Encrypts string +
+• Encrypts individual fields using xpath expressions
+|PGP Encrypter |• Encrypts stream, byte[] or string +
+• Applies tighter security (relative to JCE and XML) +
+• Increases processing load (relative to JCE and XML)
 |===
 
 === JCE Encrypter
 
-As Mule’s default encryption strategy, the Java Cryptology Extension (JCE) encrypter encodes a message payload, or part of a payload, according to the configurations of the following attributes:
+As Mule’s default encryption strategy, the Java Cryptology Extension (JCE) encrypter encodes a message payload, or part of a payload.
 
-* a plain key
-* a key password
-* a keystore
-* a keystore password
-* an algorithm (19 available, refer to <<Appendix>>)
-* an encryption mode
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
 
-To encrypt the payload of a message you must, at minimum, set the operation, encrypter, and the key, as well as create a basic Encryption global element. The key is the parameter to the encryption algorithm that determines the functional output of encryption or decryption. Without it, the encryption/decryption algorithm would not produce usable output.
-
-To ensure functionality, Mule automatically applies the following default values to the message encryption configuration:
-
-* Default input reference (the part of the payload which Mule encrypts): the whole message payload
-* Default algorithm: http://en.wikipedia.org/wiki/Advanced_Encryption_Standard[AES]
-* Default encryption mode: http://en.wikipedia.org/wiki/Block_cipher_modes_of_operation[CBC]
-
-However, you can configure any of the other attributes — all of which are optional — to define Mule’s encryption settings.
-
-Configure the Encryption building block in the visual editor by opening the Properties window, shown below.
-
-. Set the *Operation* field to `Encrypt`.
-. Select `JCE_ENCRYPTER` from the *Select encrypter* drop-down menu.
-. Select the *Define attributes* radio button.
-. Enter a key in the *Key* field.
-
-
+. Create an global *Encryption* element, specifying a name for the element if you wish; keep the default value for the *Default Encrypter*:` JCE_ENCRYPTER`.
 +
-image::jceencryption2.png[JCEencryption2]
+image::global-encryption.png[global_encryption]
 +
+. Set an *Encryption* message processor in the flow in which you wish to encrypt data in the message payload.
+. Configure the message processor according the table below.
++
+image::jce-encrypter.png[jce_encrypter]
++
+[%header%autowidth.spread]
+|===
+|Field |Req'd |Value
+|*Display Name* |  |A unique name for your message processor.
+|*Config Reference* |x |Use the drop down to select the global Encryption element you created.
+|*Operation* |x |Encrypt
+|*Input reference* |  |Enter a Mule expression to define the part(s) of the message Mule should encrypt. If no value is entered, Mule encrypts the entire message payload.
+|*Select encrypter* |x |JCE_ECRYPTER
+|*Reference or expression* |  |If selected, in the *Jce Encrypter Reference*, use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
+|*Define attributes* |  |If selected, enter values in the following four fields.
+|*Key* † |x |The key (i.e. password) to decrypt the encrypted data.
+|*Key Password* † |  |If the key is stored in a keystore, enter the passwoard to the keystore.
+|*Algorithm* |  |Select an algorithm to use to encrypt the data. Refer to <<Appendix>> below for list of available algorithms.
+|*Encryption Mode* |  |Select an encryption code for Mule to use to encrypt the data.
+|===
++
+† Mutually exclusive
 
-Or, configure the Encryption building block in the XML editor, as shown below:
+[discrete.view]
+=== XML Editor or Standalone
 
+. Create an global `encryption:config` element, set above all the flows in your config file.
+. Configure the attributes of the element according to the table below.
++
+[source,xml]
+----
+<encryption:config name="Encryption" defaultEncrypter="JCE_ENCRYPTER" doc:name="Encryption"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*name* |x |A unique name for your global element.
+|*defaultEncrypter* |  |JCE_ENCRYPTER
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|===
++
+. Add an `encryption:encrypt` element to the flow in which you wish to encrypt data in the message payload.
+. Configure the element's attributes and child elements according to the tables below.
++
 [source,xml,linenums]
 ----
-<encryption:config >
-   <encryption:jce-encrypter key="6Ijcb6LCb2*&h4<"/>
-</encryption:config>
+<encryption:encrypt config-ref="Encryption" doc:name="Encryption" using="JCE_ENCRYPTER" input-ref="#[message.payload]">
+        <encryption:jce-encrypter key="test" algorithm="Blowfish" encryptionMode="CFB"/>
+</encryption:encrypt>
 ----
-
-Next, create an Encryption global element by clicking the image:add.png[(plus)] icon next to the *Config Reference* field. In the Global Element Properties window:
-
-image::globalencryption1.png[GlobalEncryption1]
-
-. Enter a *Name* for the global element.
-. In the *Default Encrypter* field, select `JCE_ENCRYTPER`.
-. At this point, you can click *OK* to save this simple global Encrytper element, with no further configurations. If you do, Mule uses the configurations you defined in your local Encrypter message processor. However, if you wish to use a keystore, click the *Jce Encrypter* tab. +
-. Select one of two radio buttons to configure the attributes of the Global element:
-.. select the *Reference or expression* radio button to use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
-.. select *Define attributes* to manually assign values to the attributes. Note that you can define all the attributes – except for *Keystore Path* and *Keystore Password* – in the local Encryption message processor, if you prefer.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the name of the global Encryption element you created.
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*using* |x |JCE_ENCRYPTER
+|*input-ref* |  |Enter a Mule expression to define the part(s) of the message Mule should encrypt. If no value is entered, Mule encrypts the entire message payload.
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Attribute |Req'd
+|*encryption:jce-encrypter* |x
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element Attributes |Req'd |Value
+|*key†* |x |Specify the key (i.e. password) to decrypt the encrypted data.
+|*algorithm* |  |Specify the algorithm to use to encrypt the data. Refer to <<Appendix>>  below for list of available algorithms.
+|*encryption Mode* |  |Specify an encryption code for Mule to use to encrypt the data.
+|*keyPassword†* |  |If the key is stored in a keystore, specify the passwoard to the keystore.
+|===
++
+† Mutually exclusive
+=====
 
 === XML Encrypter
 
-The XML encrypter encodes XML string content in a message payload according to the configurations of the following attributes:
+The XML encrypter encodes XML string content in a message payload.
 
-* key
-* key password
-* xpath (use to specify a particular part of a payload to encrypt)
-* algorithm (four available: http://en.wikipedia.org/wiki/Advanced_Encryption_Standard[AES]-128, AES-192, AES-256, http://en.wikipedia.org/wiki/Triple_DES[Triple DES])
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
 
-To encrypt the payload of a message you must, at minimum,  set the operation, encrypter, and the key, as well as create a basic Encryption global element. Configure these in the visual editor (as described above for the JCE encrypter) or via XML code (shown below). By default, Mule automatically applies the AES-256 algorithm and encrypts the entire message payload.
+. Create an global *Encryption* element, specifying a name for the element if you wish; change the default value for the *Default Encrypter* to `XML_ENCRYPTER`. +
+
++
+image::global-xml.png[global_Xml]
++
+
+. Set an *Encryption* message processor in the flow in which you wish to encrypt data in the message payload.
+. Configure the message processor according the table below.  +
+
++
+image::xml-encrypter.png[xml_encrypter]
++
+[%header%autowidth.spread]
+|===
+|Field |Req'd |Value
+|*Display Name* |  |A unique name for your message processor.
+|*Config Reference* |x |Use the drop down to select the global Encryption element you created.
+|*Operation* |x |Encrypt
+|*Input reference* |  |Enter a Mule expression to define the part(s) of the message Mule should encrypt. If no value is entered, Mule encrypts the entire message payload.
+|*Select encrypter* |x |XML_ECRYPTER
+|*Reference or expression* |  |If selected, in the *Xml Encrypter Reference*, use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
+|*Define attributes* |  |If selected, enter values in the following four fields.
+|*Key †* |x |The key (i.e. password) to decrypt the encrypted data.
+|*Key Password †* |  |If the key is stored in a keystore, enter the passwoard to the keystore.
+|*Algorithm* |  |Select an algorithm to use to encrypt the data. Refer to <<Appendix>>  below for list of available algorithms.
+|*Encryption Mode* |  |Select an encryption code for Mule to use to encrypt the data.
+|===
++
+† Mutually exclusive
+
+[discrete.view]
+=== XML Editor or Standalone
+
+. Create an global `encryption:config` element, set above all the flows in your config file.
+. Configure the attributes of the element according to the table below.
++
 
 [source,xml,linenums]
 ----
-<encryption:config >
-   <encryption:xml-encrypter key="pNVDBAtJ8S8mXfHc"/>
-</encryption:config>
+<encryption:config name="Encryption" defaultEncrypter="XML_ENCRYPTER" doc:name="Encryption"/>
 ----
 
-However, you can configure any of the other three attributes — all of which are optional — to define Mule’s encryption settings.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*name* |x |A unique name for your global element.
+|*defaultEncrypter* |  |XML_ENCRYPTER
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|===
+
+. Add an `encryption:encrypt` element to the flow in which you wish to encrypt data in the message payload.
+. Configure the element's attributes and child element according to the tables below.
++
+
+[source,xml,linenums]
+----
+<encryption:encrypt config-ref="Encryption" doc:name="Encryption" using="XML_ENCRYPTER" input-ref="#[message.payload]">
+        <encryption:jce-encrypter key="test" algorithm="Blowfish" encryptionMode="CFB"/>
+</encryption:encrypt>
+----
+
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the name of the global Encryption element you created.
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*using* |x |XML_ENCRYPTER
+|*input-ref* |  |Enter a Mule expression to define the part(s) of the message Mule should encrypt. If no value is entered, Mule encrypts the entire message payload.
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element |Req'd
+|*encryption:xml-encrypter* |x
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element Attributes |Req'd |Value
+|*key†* |x |Specify the key (i.e. password) to decrypt the encrypted data.
+|*algorithm* |  |Specify the algorithm to use to encrypt the data. Refer to <<Appendix>>  below for list of available algorithms.
+|*encryption Mode* |  |Specify an encryption code for Mule to use to encrypt the data.
+|*keyPassword†* |  |If the key is stored in a keystore, specify the passwoard to the keystore.
+|===
++
+† Mutually exclusive
+=====
 
 === PGP Encrypter
 
@@ -101,22 +219,45 @@ For details on message encryption in Mule, refer to the *Encrypt a Message Paylo
 
 By default, when you apply an encrypter, Mule encrypts the entire message payload. However, you can use a Mule Expression to encrypt a specific part of a message rather than the whole payload. Configure the *Input Reference* to define the specific part(s) of the payload you wish to encrypt.
 
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
 image::engcryptionpayloadtostring3.png[EngcryptionPayloadtoString3]
 
-Additionally, you can add an Xpath expression attribute to the XML encrypter to define specific field(s) to encrypt — credit card number or SSN, for example (see below). +
- +
- image:xpath-xml.png[xpath_XML]
+[discrete.view]
+=== XML Editor or Standalone
 
-[source,text,linenums]
+[source,xml,linenums]
 ----
- <encryption:encrypt  doc:name="Encrypt CC" using="XML_ENCRYPTER" config-ref="plainXML" input-ref="#[payload.toString()]">
+<encryption:encrypt config-ref="Encryption_PGP" doc:name="Encryption" using="PGP_ENCRYPTER" input-ref="#[payload.toString()]">
+----
+=====
+
+Additionally, you can add an Xpath expression attribute to the XML encrypter to define specific field(s) to encrypt — credit card number or SSN, for example (see below).
+
+[.ex]
+=====
+[discrete.view]
+=== Studio Visual Editor
+
+image::xpath-xml.png[xpath_XML]
+
+[discrete.view]
+=== XML Editor or Standalone
+
+[source,xml,linenums]
+----
+<encryption:encrypt  doc:name="Encrypt CC" using="XML_ENCRYPTER" config-ref="plainXML" input-ref="#[payload.toString()]">
             <encryption:xml-encrypter xpath="/users/cc"/>
-        </encryption:encrypt>
+</encryption:encrypt>
 ----
+=====
 
 == Decrypting a Message Payload
 
-Add a *Mule Message Encryption Processor* to decrypt the content of a message so that it becomes readable by the message processors in your Mule application. Mule can decrypt the entire payload of a message or specific parts of the payload using one of the following three Encryption Strategies:
+Add a **Mule Message Encryption Processor** to decrypt the content of a message so that it becomes readable by the message processors in your Mule application. Mule can decrypt the entire payload of a message or specific parts of the payload using one of the following three Encryption Strategies:
 
 . JCE Decrypter
 . PGP Decrypter
@@ -136,7 +277,7 @@ By default, Mule decrypts the entire message payload when you apply a decrypter.
 
 Additionally, you can add an Xpath expression attribute to the XML decrypter to define specific field(s) to decrypt — credit card number or SSN, for example (refer to the encryption screenshot and code in *Encrypt Part of a Message Payload*).
 
-== Next Steps
+== See Also
 
 Examine the xref:anypoint-enterprise-security-example-application.adoc[Anypoint Enterprise Security Example Application] which illustrates how to encrypt and decrypt a message in a Mule flow.
 
@@ -144,8 +285,7 @@ Examine the xref:anypoint-enterprise-security-example-application.adoc[Anypoint 
 
 [%header,cols="34,33,33"]
 |===
-|Algorithms Available in JCE |Minimum +
-Key Size |Maximum +
+|Algorithms Available in JCE |Minimum Key Size |Maximum +
 Key Size
 |AES |16 |16
 |Blowfish |1 |Unlimited
@@ -167,7 +307,3 @@ Key Size
 |RC6 |1 |Unlimited
 |RSA |16 |Unlimited
 |===
-
-== See Also
-
-* Read more about encryption in Mule Studio in our https://blogs.mulesoft.com/dev/mule-dev/data-encryption-with-mule-enterprise-security/[MuleSoft Blog].
