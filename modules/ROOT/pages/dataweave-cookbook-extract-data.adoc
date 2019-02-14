@@ -4,271 +4,163 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, transform, transformer, metadata, dataweave, data weave, datawave, datamapper, dwl, dfl, dw, payload, attribute, variable, flow, error, message
 
-This DataWeave example extracts a component of a Mule event.
+DataWeave can select data from objects, arrays, and variables that store them,
+both
+xref:dataweave-variables-context.adoc[predefined Mule Runtime variables]
+and in xref:dataweave-variables.adoc[DataWeave variables]. You can use selectors
+in Mule modules, connectors, and components that accept DataWeave expressions.
 
-Extracted values are handled as a literal value (as opposed to a variable, for example) of one of the supported DataWeave value types.
+[NOTE]
+In Design Center, be sure to set the field in which you are using DataWeave
+selectors to accept functions (`fx`).
 
-[cols="1,1,1", options="header"]
+== Using Selectors on Content Stored in Mule Runtime Variables
+
+You can select xref:about-mule-event.adoc[Mule event] data by using
+Mule Runtime variables.
+
+Extracted values are handled as a literal values (as opposed to
+variables, for example) of one of the supported DataWeave value types.
+
+[cols="1,4", options="header"]
 |===
-| Data to extract | Anypoint Studio syntax | Design Center syntax
+| Data to extract | Syntax
 
 | *Payload*
-| `#[payload]`
-| `payload`
+| `#[payload]` or `payload`
 
 | *Attribute*
-| `#[attributes.<myAttributeName>]`
-| `attributes.<myAttributeName>`
+| `#[attributes.<myAttributeName>]` or
+  `attributes.<myAttributeName>`
 
-| *Variable*
+a| *Variable*
+   To avoid name collisions, you can prepend `variables`, as shown.
+a| `#[<myVariableName>]` or
+   `#[variables.<myVariableName>]`
 
-To avoid name collisions, you can prepend `variables`, as shown.
-| `\#[<myVariableName>]`
-or
-`#[variables.<myVariableName>]`
-| `<myVariableName>`
-or
-`variables.<myVariableName>`
+   Within *fx* fields: `<myVariableName>` or
+   `variables.<myVariableName>`
 
-| *Error object*
-
+a| *Error object*
++
 For information on errors in the flow, you can use `#[error.cause]`.
-| `#[error]`
-| `error`
+| `#[error]` or `error` within fx fields
 
 | *Flow*
-| `\#[flow]`
-
-For the flow name: `#[flow.name]`
+a| `\#[flow]`
++
+   For the flow name in the Logger: `#[flow.name]`
++
+Note that `flow.name` does not work in some Core components, such as Set Payload and Transform Message.
 | `flow`
 |===
 
 [NOTE]
-In Design Center, make sure the field you're writing on is set to accept functions (`Fx`).
+In Design Center, be sure to set the field in which you are using DataWeave selectors to accept functions (`fx`).
 
-== Use Selector Expressions Within a Component
+== Using Selectors on Arrays and Objects
 
-When referencing an array or object, you can use selector expressions to extract specific values from within a data structure.
+When referencing an array or object, you can use selector expressions to extract
+specific values from within a data structure.
 
+Note that Studio and Design Center require DataWeave expressions to reside
+between square brackets that are preceded by a hash (or pound) symbol,
+for example:
 
-[cols="1,1,1", options="header"]
+* `#[input_data.input_key]`
+
+All of the selectors work with the built-in Mule runtime variables, such as
+`payload` and `attributes`, and with DataWeave variables, such as
+`var myVar = { "id" : "1234", "name" : "somebody" }`, for example:
+
+* `myVar.name`
+
+[cols="1,5", options="header"]
 |===
-For the flow name: `flow.name`
-| *Single value* (from array or object)
-| `#[payload.users]`
-| `payload.users`
+| Data to extract | Examples
 
-| *Multiple values* (from an array or object)
-| `#[payload.users.*user]`
-| `payload.users.*user`
+| *Single value* (`.`)
+a|`.` selector acts on arrays and objects.
 
-| *Descendants* (of an array or object)
+* Selecting a `name` value from an object:
++
+```
+{ "id" : "1234", "name" : "me" }.name
+```
++
+Returns `"somebody"`.
++
+* Selecting a `name` value from an array:
++
+```
+[ { "id" : "1234", "name" : "me" } ].name
+```
++
+```
+[ { "id" : "1234" }, { "name" : "me" } ].name
+```
++
+Each example returns `[ "me" ]`.
++
+* Selecting the first `name` value:
++
+```
+{ user : "a", "user" : "b" }.user
+```
++
+Only returns the first `name` value, `"a"`.
 
-The example uses `..<key-name>` to extract all descendants of `users` down to the user name (`uname`).
-| `#[payload.users..uname]`
-| `payload.users..uname`
+| *Multiple values*  (`*`)
+a|
+`*` selector acts on arrays and objects.
 
-| *Index* (of an array)
+* Selecting all `user` values from an array:
++
+```
+[ { "user" : "a", "user" : "b" } ].*user
+```
++
+Returns `["a", "b"]`.
 
-The example uses `[<index>]` to extract the value at index `2`.
-| `#[payload.users[2]`
-| `payload.users[2]`
+* Selecting all `user` values from an object:
++
+```
+{ user : "a", "user" : "b" }.*user
+```
++
+Returns: `["a", "b"]`
+
+* Selecting all `user` values from the `users` key:
++
+```
+{ "users" : [ { "user" : "a" }, { "user" : "b" } ] }.users.*user`
+```
++
+Returns: `[ "a", "b" ]`
+
+| *Descendants* (`..`)
+a|
+`..` selector acts on arrays and objects.
+
+* Selecting descendants of `c` key:
++
+```
+{ "user" : [{ "a" : "b"}, {"c" : [ {"aa" : "bb"}, { "cc": "dd" } ] } ] , "user" : "d" }..c
+```
++
+Returns `[ [ { "aa": "bb" }, { "cc": "dd" } ] ]`.
+
+| *Index* (`[]`)
+a|
+`[]` selector acts on indices of an array.
+
+* Selecting an index from an array:
+** `[1,2,3,4][0]` returns `[1]`
++
+The index of the first element in an array is always `0`.
++
+** `[1,2,3,4][4]` returns `[3]`
 |===
-
-
-
-
-////
-[cols="e,m,^,>s",width="25%"]
-|============================
-|1 >s|2 |3 |4
-^|5 2.2+^.^|6 .3+<.>m|7
-^|8
-|9 2+>|10
-|============================
-////
-
-////
-TODO? NOT USED IN 4.O BETA   ...yet
-
-== Context Objects, Variables, and Fields
-
-The term *Context Object* forms the first part of the simplest form of an extracting expression; the second part is the *Field* (see image below, left). Use a *Variable* in an expression to access information contained within a Variable on your Mule message. Itself a top-level identifier, a variable does _not_ require that you define a context object in an expression (see second image below).
-
-image::contextob-field.png[contextob_field]
-
-The tables below list the Context Objects available for use in Mule, and the corresponding Fields you can use with them.
-
-[%header,cols="30a,70a"]
-|===
-|Context Object |Provides access to the fields for
-|<<Server Context Object, Server>> |Hardware, operating system, user, and network interface.
-|<<Mule Context Object, Mule>> |Your Mule instance.
-|<<App Context Object, App>> |Your Mule application.
-|<<Message Context Object, Message>> |Mule message.
-|===
-
-
-You can combine a context object with a field to form an expression. The simplest expressions take the form `contextobject.field`.
-
-This example is a simple expression: +
-`#[payload.userId]`
-
-
-=== Server Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`dateTime` ||x |Date or time
-|`env` |x ||Environment
-|`fileSeparator` |x |
-|Character that separates components of a file path ( "/" on UNIX and "\" on Windows)
-|`host` |x ||Fully-qualified domain name of a server
-|`ip` |x ||IP address of a server
-|`locale` |x |
-|Default locale (of type java.util.Locale) of the JRE (can access server.locale.language and server.locale.country)
-|`javaVersion` |x ||JRE version
-|`javaVendor` |x ||JRE vendor name
-|`nanoSeconds` |x ||Measure of nanoseconds
-|`osName` |x||Operating system name
-|`osArch` |x ||Operating system architecture
-|`osVersion` |x ||Operating system version
-|`systemProperties` |x ||Map of Java system properties
-|`timeZone` |x ||Default TimeZone (java.util.TimeZone) of the JRE
-|`tmpDir` |x ||Temporary directory for use by the JRE
-|`userName` |x ||User name
-|`userHome` |x ||User home directory
-|`userDir` |x ||User working directory
-|===
-
-=== Mule Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`clusterId` |x ||Cluster ID
-|`home` |x ||File system path to the home directory of the Mule server installation
-|`nodeId` |x ||Cluster node ID
-|`version` |x ||Mule version
-|===
-
-=== App Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`encoding` |x ||Application default encoding
-|`name` |x ||Application name
-|`registry` ||x |Map representing the Mule registry
-|`standalone` |x ||Evaluates to true if Mule is running standalone
-|`workdir` |x ||Application work directory
-|===
-
-[[messageobj]]
-==== Message Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`id` |x ||Unique identifier of Mule message
-|`rootId` |x ||Root ID of Mule message
-|`correlationId` |x || Correlation ID
-|`correlationSequence` |x ||Correlation sequence
-|`correlationGroupSize` |x ||Correlation group size
-|`replyTo` ||x |Reply to
-|`dataType` |x ||Data type of payload
-|`payload` ||x |Mule message payload
-|`attributes` |x ||
-|===
-////
-
-////
-== Server, Mule, Application, and Message Variables
-
-
-
-Create a directory named `target` in the system's temporary directory and set the payload to the variable storing the file object:
-
-[source,xml,linenums]
-----
-<scripting-component>
-    targetDir = new java.io.File(server.tmpDir, 'target');
-    targetDir.mkdir();
-    payload = targetDir
-</scripting-component>
-----
-
-Set the username and password for an HTTP request at runtime based on inbound message properties:
-
-[source,xml,linenums]
-----
-<http:request-config name="HTTP_Request_Configuration" host="api.acme.com/v1" port="8081" doc:name="HTTP">
-  <http:basic-authentication username="#[inboundProperties.username]" password="#[inboundProperties.password]"/>
-  </http:request-config>
-
-  <flow>
-    ...
-    <http:request config-ref="request-config" path="users" doc:name="HTTP Connector"/>
-    ...
-  </flow>
-----
-////
-
-
-////
-
-== Payload and Attachments
-
-Copy the current payload in a variable named `originalPayload` then restore it:
-
-[source,xml,linenums]
-----
-<set-variable variableName="originalPayload" value="#[payload]" />
-<set-payload value="#[originalPayload]" />
-----
-
-To retrieve the message payload in a particular format, using Mule's auto-transformation capability, use `payloadAs`:
-
-[source,xml]
-----
-<logger message="#[payloadAs(java.lang.String)]" />
-----
-
-To extract all *.txt and *.xml attachments, use a filtered projection:
-
-[source,xml,linenums]
-----
-<expression-transformer expression="#[($.value in properties.entrySet() if $.key ~= '(.*\\.txt|.*\\.xml)')]" />
-----
-////
-
-////
-
-=== Accessing the Cache ????
-
-You can access the xref:cache-scope.adoc[Mule cache] through the object store that serves as the cache repository. Depending on the nature of the object store, you can count, list, remove, or perform other operations on entries.
-
-The code below shows the XML representation of a cache scope that uses a custom object store class.
-
-[source,xml,linenums]
-----
-<ee:object-store-caching-strategy name="CachingStrategy">
-  <custom-object-storeclass="org.mule.util.store.SimpleMemoryObjectStore" />
-</ee:object-store-caching-strategy>
-----
-
-The object store above is an implementation of a `ListableObjectStore`, which allows you to obtain lists of the entries it contains. You can access the contents of the cache by invoking the `getStore` method on the `CachingStrategy` property of `app.registry`.
-
-The expression below obtains the size of the cache by invoking `allKeys()`, which returns an iterable list.
-
-----
-#[app.registry.CachingStrategy.getStore().allKeys().size()]"
-----
-
-If you need to manipulate the registry in a Java class, you can access it through `muleContext.getRegistry()`.
-
-////
 
 
 == Related Examples
