@@ -1,0 +1,222 @@
+= Migrating Splitter/Aggregator
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+// Contacts/SMEs: LRM
+
+Splitters are not longer available in Mule 4. To process a collection of elements sequentially, use the xref:for-each-scope-concept.adoc[For Each component].
+
+xref:connectors::aggregator/aggregators-module.adoc[Aggregators] remain in Mule 4 but as a separate module with very different behavior.
+
+== Splitters
+
+The main difference between Mule 3 splitters and the Mule 4 For Each component is that the `foreach` element is a scope, meaning that the components used to process the iterated elements must be defined within `foreach`.
+
+.Mule 3 Example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <collection-splitter/>
+    <component-1/>
+    <component-2/>
+    ...
+    <component-n>
+</flow>
+----
+
+.Mule 4 Example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <foreach>
+        <component-1/>
+        <component-2/>
+        ...
+        <component-n>
+    </foreach>
+</flow>
+----
+
+Also, the `foreach` element does not return a collection with the results of all the processed values. Instead, it returns the same collection received as input. So, the behavior of previous examples is not the same.
+
+It does not matter if a Mule 3 aggregator is present. To store the results of the processed values, you need to use a Mule 4 aggregator.
+
+=== Simple Migration
+
+The default format of the migration should be:
+
+.Mule 3 Example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <collection-splitter/>
+    <component-1/>
+    <component-2/>
+    ...
+    <component-n>
+    <collection-aggregator/>
+</flow>
+----
+
+.Mule 4 Example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <set-variable variableName="collection-splitter0-group-size" value="#[sizeOf(payload)]"/>
+    <foreach>
+        <component-1/>
+        <component-2/>
+        ...
+        <component-n>
+        <aggregators:group-based-aggregator name="collection-splitter0-aggregator"
+                                            groupSize="#[vars.collection-splitter0-group-size]"
+                                            evictionTime="0">
+            <aggregators:aggregation-complete>
+                <set-variable variableName="aggregation0" value="#[payload]"/>
+            </aggregators:aggregation-complete>
+        </aggregators:group-based-aggregator>
+    </foreach>
+    <set-payload value="#[vars.aggregation0]"/>
+</flow>
+----
+
+In the example:
+
+* A variable `collection-splitter0-group-size` should be created to store the size of the collection. This is needed because inside the `foreach` scope, the payload will correspond to the element from the collection being processed.
+* Every component between the `collection-splitter` and `collection-aggregator` is wrapped inside a `foreach` scope.
+* A `group-based-aggregator` is added at the end of the `foreach` scope to store all the results. The size of the aggregation expected will correspond to the value stored in the `collection-splitter0-group-size` variable. `set-variable` is added inside the `aggregation-complete` to store the result of the aggregation once it is complete.
+* Since the payload after the `foreach` element will be the same as the input received, `set-payload` should be used to set it as the stored value in the variable defined insider the `aggregation-complete` route.
+
+[[complex_migration]]
+=== Complex Migration
+
+In some cases, the Mule 3 configuration with splitters and aggregators might set more parameters, so the migration will be a bit more complicated to achieve the Mule 3 behavior in Mule 4.
+
+Mule 3 aggregators allowed for 2 attributes to be configured: `timeout` and `failOnTimeout`. If the `timeout` attribute is present (with a value greater than 0), the migration should be as follows in the examples.
+
+[IMPORTANT]
+Even when there is a way of adding extra logic when there is a timed-out aggregation and `failOnTimeout` is set to `true`, the behavior will not be the same as in Mule 3. Aggregators in Mule 4 do not raise any errors or dispatch any notifications where there is a timed-out aggregation.
+
+
+.Mule 3 Example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <collection-splitter/>
+    <component-1/>
+    <component-2/>
+    ...
+    <component-n>
+    <collection-aggregator timeout="1000" failOnTimeout="false"/>
+</flow>
+----
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<vm:config name="splitter-aggregator-vm-config">
+    <vm:queues>
+        <vm:queue queueName="collection-splitter0-vm-queue"/>
+    </vm:queues>
+</vm:config>
+...
+<flow name="flow">
+    ...
+    <set-variable variableName="collection-splitter0-group-size" value="#[sizeOf(payload)]"/>
+    <set-variable variableName="collection-splitter0-aggregator-complete-aggregation" value="#[false]"/>
+    <foreach>
+        <component-1/>
+        <component-2/>
+        ...
+        <component-n>
+        <aggregators:group-based-aggregator name="collection-splitter0-aggregator"
+                                            groupSize="#[vars.collection-splitter0-group-size]"
+                                            timeout="1000"
+                                            timeoutUni="MILLISECONDS"
+                                            evictionTime="0">
+            <aggregators:aggregation-complete>
+                <set-variable variableName="collection-splitter0-aggregator-complete-aggregation" value="#[true]"/>
+            </aggregators:aggregation-complete>
+        </aggregators:group-based-aggregator>
+    </foreach>
+    <vm:consume queueName="collection-splitter0-vm-queue" config-ref="splitter-aggregator-vm-config"/>
+    <choice>
+        <when expression="#[vars.collection-splitter0-aggregator-complete-aggregation == false]">
+            <!--place to add logic for when an aggregation timed out and the failOnTimeout flag was true-->
+        </when>
+    </choice>
+</flow>
+
+<flow name="collection-splitter0-aggregator-listener-flow">
+    <aggregators:aggregator-listener aggregatorName="collection-splitter0-aggregator" includeTimedOutGroups="true"/>
+    <vm:publish config-ref="splitter-aggregator-vm-config" queueName="collection-splitter0-vm-queue"/>
+</flow>
+----
+
+In the example:
+
+* A variable `collection-splitter0-group-size` should be created to store the size of the collection. This is needed because inside the `foreach` scope, the payload will correspond to the element from the collection being processed.
+* Another variable `collection-splitter0-aggregator-complete-aggregation` should be created if there is a need for storing an indication of whether or not the aggregation terminated due to a timeout or a complete processing.
+* Every component between the `collection-splitter` and `collection-aggregator` is wrapped inside a `foreach` scope.
+* A `group-based-aggregator` is added at the end of the `foreach` scope to store all the results.
+The expected size of the aggregation will correspond to the value stored in the `collection-splitter0-group-size` variable.
+The timeout for the aggregation should be set to the timeout that the Mule 3 aggregator contained. `set-variable` is added inside the `aggregation-complete` to set that the aggregation was complete. (That route is only executed with a complete aggregation).
++
+Another flow should be created and an `aggregator:aggregator-listener` should be added as source. All aggregations (complete or not) will trigger that listener. Then, they will be sent to the main flow via a `vm:publish` operation.
++
+* A `vm:consume` operation is added after the `foreach` element to wait for the aggregation. Once a value is read, the flow will continue with its execution.
+* Because the `collection-splitter0-aggregator-complete-aggregation` will only be set to true if the aggregation completes, additional logic can be added to check the value of that variable (with `choice` and `when`). This can simulate logic that was previously added in a Mule 3 error handler for when a timeout error was received.
+
+=== Additional Attributes
+
+All splitters allowed for the configuration of the `enableCorrelation` attribute.
+
+There is no way to migrate an `enableCorrelation="NEVER"` configuration. A correlation ID will always be set to the events processed from the collection by the `foreach` element.
+
+Expression splitters (`<splitter/>`) allowed for the configuration of two attributes: `evaluator` and `custom-evaluator`. Expression evaluators can't be configured anymore; only DataWeave can be used.
+
+=== Available Splitters Migration
+
+Mule 3 had the following splitters, some of which require some extra logic to be migrated or cannot be migrated at all.
+
+* `collection-splitter`: As defined in the main example.
+* `custom-splitter`: The use of custom classes is not allowed in Mule 4 anymore so this splitter can't be migrated.
+* `splitter` (expression splitter) : The expression used should be set as the `collection` attribute for the `foreach` element.
+** Mule 3: `<splitter expression="#[payload.someKey]"/>`
+** Mule 4: `<foreach collection="#[payload.someKey]">`
+* `map-splitter` : The DataWeave expression `#[dw::core::Objects::entrySet(payload)]` should be used as the `collection` attribute in the `foreach` element.
+** Mule 3: `<map-splitter/>`
+** Mule 4: `<foreach collection="#[dw::core::Objects::entrySet(payload)]">`
+* `message-chunk-splitter`: There is no similar behavior in Mule 4. It cannot be migrated.
+
+=== Aggregators
+
+Most parameters allowed by Mule 3 aggregators are not allowed in Mule 4:
+
+* `timeout`: Though the timeout parameter can be set in any new aggregator, there are some differences. First, `timeoutUnit` should also be set to specify the unit of time. Also, the behavior of aggregation timeouts is very different in a Mule 4 aggregator. This is explained in xref:connectors::aggregator/aggregators-module-reference.adoc[Aggregators Module Reference].
+* `failOnTimeout`: No longer available. However similar behavior can be achieved, as explained in the <<complex_migration>>.
+* `processed-groups-object-store-ref`: Processed groups are no longer stored in a separate object store. This paremeter is not allowed anymore.
+* `event-groups-object-store-ref`: You can set this object store using the `objectStore` attribute in Mule 4 aggregators.
+* `persistentStores`: Not allowed anymore. If a persistent object store is needed, the `objectStore` attribute should be the name of a persistent object store.
+* `storePrefix`: Not allowed anymore.
+
+
+=== Available Aggregators Migration
+
+* `collection-aggregator`: Should be migrated as defined in the main example.
+* `custom-aggregator`: Cannot be migrated. There is no way in Mule 4 to add custom implementations for an interface.
+* `message-chunk-aggregator`: There is no similar behavior in Mule 4. It cannot be migrated.
+
+== See Also
+
+xref:connectors::aggregator/aggregators-module.adoc[Aggregators Module]
+
+xref:for-each-scope-concept.adoc[For Each Scope]
+
+xref:for-each-scope-xml-reference.adoc[For Each Scope Reference]
