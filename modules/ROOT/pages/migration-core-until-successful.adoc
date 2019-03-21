@@ -1,0 +1,224 @@
+= Migrating the Until Successful
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The Until Successful component for Mule 4 handles some processes differently
+than the Mule 3 version. Some elements and attributes associated with these
+changes are no longer present in Mule 4. In Mule 4, you can either achieve the
+same functionality through different attributes or components, or you no longer
+need to configure the functionality in Mule 4.
+
+A manual migration of the Until Successful component involves these
+modifications:
+
+* Removal of any `<processor-chain/>` elements.
+* Replacement of the `secondsBetweenRetries` attribute with `millisBetweenRetries`.
+* Removal of the `failureExpression` and use of a Validation processor for Mule 4,
+instead.
+* Replacement of the `deadLetterQueue-ref` attribute with an Error Handler for Mule 4.
+* Removal of any `<threading-profile/>` elements.
+* Removal of the `ackExpression` attribute and use of a Set Payload component, instead.
+* Removal of any `synchronous` attributes.
+
+These changes are detailed in the next sections.
+
+== Processor Chains Not Used in Mule 4
+
+In Mule 3, executing more than one processor inside the Until Successful scope
+requires you to wrap the processors inside a processor chain
+(`<processor-chain/>`). In Mule 4, Until Successful supports multiple processors
+without the need for a processor chain.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <processor-chain>
+      <logger message="#[1]"/>
+      <logger message="#[2]"/>
+    </processor-chain>
+  </until-successful>
+</flow>
+----
+
+Notice that in the Mule 4 example, the `<processor-chain/>` element is not
+present.
+
+.Mule 4:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <logger message="#[1]"/>
+    <logger message="#[2]"/>
+  </until-successful>
+</flow>
+----
+
+== Retry Attributes Revised in Mule 4
+
+The Mule 3 `secondsBetweenRetries` attribute has been removed from Mule 4. You
+can use the `millisBetweenRetries` attribute in Mule 4.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful secondsBetweenRetries="10">
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+The Mule 4 example replaces `secondsBetweenRetries="10"` with
+`millisBetweenRetries="10000"`.
+
+.Mule 4:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful millisBetweenRetries="10000">
+    <logger message="#[1]"/>
+    <logger message="#[2]"/>
+  </until-successful>
+</flow>
+----
+
+== Failure Expressions Require Modifications
+
+The `failureExpression` attribute has been removed. You can replace it with
+a Validation processor that sets your verification expression.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful failureExpression="#[regex:(?i).*error]">
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+The `failureExpression` setting in the Mule 3 example is replaced by a
+`<validation:is-false/>` configuration in Mule 4.
+
+.Mule 4:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <logger message="#[1]"/>
+    <validation:is-false expression="#[regex:(?i).*error]"/>
+  </until-successful>
+</flow>
+----
+
+== Dead Letter Queue Reference through Mule 4 Error Handler
+
+The Mule 3 `deadLetterQueue-ref` attribute enables you to send undeliverable
+messages to an endpoint or processor once all retries result in failure. In
+Mule 4, you can instead use an error handler to catch all the `RETRY_EXHAUSTED`
+exceptions and send the message to that endpoint or processor.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<vm:endpoint name="dlqChannel" path="dlq" />
+
+<flow name="untilFlow">
+  <until-successful deadLetterQueue-ref="dlqChannel">
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+The Mule 4 example references the `dlqChannel` through the On Error Propagate
+`<on-error-propagate/>` element within an Error Handler `<error-handler/>`.
+
+Mule 4:
+[source,xml,linenums]
+----
+<vm:endpoint name="dlqChannel" path="dlq" />
+
+<flow name="untilFlow">
+  <until-successful>
+    <logger message="#[1]"/>
+  </until-successful>
+  <error-handler>
+    <on-error-propagate type="RETRY_EXHAUSTED">
+      <outbound-endpoint ref="dlqChannel"/>
+    </on-error-propagate>
+  </error-handler>
+</flow>
+----
+
+== Threading Profile Removed, Not Needed in Mule 4
+
+In Mule 3, you can tune execution threads using the `<threading-profile/>`
+child element. Mule 4 introduces several changes to the execution engine.
+Because of the associated non-blocking architecture in Mule 4, you no longer
+need to tune threads manually.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <threading-profile maxThreadsActive="45" maxThreadsIdle="5" threadTTL="52"  threadWaitTimeout="60"/>
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+The Mule 4 example removes the `<threading-profile/>` element.
+
+.Mule 4:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+== ackExpression Attribute Removed, Use Set Payload
+
+The Mule 3 `ackExpression` attribute configures synchronous production of a response payload. This attribute no longer exists in Mule 4. To achieve this behavior in your app, you can configure a Set Payload component after Until Successful.
+
+.Mule 3:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful ackExpression="#[message:correlationId]">
+    <logger message="#[1]"/>
+  </until-successful>
+</flow>
+----
+
+The Mule 4 example sets the `#[message:correlationId]` value through the
+Set Payload `<set-payload/>` component.
+
+.Mule 4:
+[source,xml,linenums]
+----
+<flow name="untilFlow">
+  <until-successful>
+    <logger message="#[1]"/>
+  </until-successful>
+  <set-payload value="#[message:correlationId]"/>
+</flow>
+----
+
+== Synchronous Attribute Removed, Not Needed
+
+The `synchronous` attribute has been removed because it is no longer needed. In
+Mule 4, several changes were introduced to the execution engine. With the non-blocking architecture, you no longer need it.
+
+== See Also
+
+* xref:intro-engine.adoc[Introduction to Mule 4: Execution Engine Threads and Concurrency].
+* xref:execution-engine.adoc[Execution Engine]
+* xref:until-successful-scope.adoc[Until Successful Scope]
