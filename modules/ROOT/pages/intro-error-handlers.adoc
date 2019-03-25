@@ -3,17 +3,15 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-// sme: Ana, author: sduke?
-
-In Mule 4, error handling is no longer limited to a Java exception handling process that requires you to check the source code or force an error in order to understand what happened. Though Java `Throwable` errors and exceptions are still available, Mule 4 introduces a formal Error concept that's easier to use. Now, each component declares the type of errors it can throw, so you can identify potential errors at design time.
+In Mule runtime engine (Mule) 4, error handling is no longer limited to a Java exception handling process that requires you to check the source code or force an error in order to understand what happened. Though Java `Throwable` errors and exceptions are still available, Mule 4 introduces an Error object that's easier to use. Now, each component declares the type of errors it can throw, so you can identify potential errors at design time.
 
 == Mule Errors
 Execution failures are represented with Mule errors that have the following components:
 
-* A description of the problem.
-* A type that is used to characterize the problem.
-* A cause, the underlying Java `Throwable` that resulted in the failure.
-* An optional error message, which is used to include a proper Mule Message regarding the problem.
+* A description of the problem
+* A type that is used to characterize the problem
+* A cause, the underlying Java `Throwable` that resulted in the failure
+* An optional error message, which is used to include a proper Mule Message regarding the problem
 
 For example, when an HTTP request fails with a 401 status code, a Mule error provides the following information:
 
@@ -25,11 +23,11 @@ Error Message:  { "message" : "Could not authorize the user." }
 -----
 
 == Error Types
-In the example above, the error type is HTTP:UNAUTHORIZED, not simply UNAUTHORIZED. Error types consist of both a namespace and an identifier, allowing you to distinguish the types according to their domain (for example, HTTP:NOT_FOUND and FILE:NOT_FOUND). While connectors define their own namespace, core runtime errors have an implicit one: MULE:EXPRESSION and EXPRESSION are interpreted as one.
+In the example above, the error type is HTTP:UNAUTHORIZED, not simply UNAUTHORIZED. Error types consist of both a namespace and an identifier, allowing you to distinguish the types according to their domain (for example, HTTP:NOT_FOUND and FILE:NOT_FOUND). While connectors define their own namespace, core Mule errors have an implicit one: MULE:EXPRESSION and EXPRESSION are interpreted as one.
 
 Another important characteristic of error types is that they might have a parent type. For example, HTTP:UNAUTHORIZED has MULE:CLIENT_SECURITY as the parent, which, in turn, has MULE:SECURITY as the parent. This establishes error types as specifications of more global ones: an HTTP unauthorized error is a kind of client security error, which is a type of a more broad security issue.
 
-These hierarchies mean routing can be more general, since, for example, a handler for MULE:SECURITY will catch HTTP unauthorized errors as well as OAuth errors. Below you can see what the core runtime hierarchy looks like:
+These hierarchies mean routing can be more general, since, for example, a handler for MULE:SECURITY catches HTTP unauthorized errors as well as OAuth errors. Below you can see what the core Mule hierarchy looks like:
 
 image::error-hierarchy.png[Error Hierarchy]
 
@@ -37,30 +35,30 @@ All errors are either general or CRITICAL, the latter being so severe that they 
 
 It’s important to note the UNKNOWN type, which is used when no clear reason for the failure is found. This error can only be handled through the ANY type to allow specifying the unclear errors in the future, without changing the existing app's behavior.
 
-When it comes to connectors, each connector defines its error type hierarchy considering the core runtime one, though CONNECTIVITY and RETRY_EXHAUSTED types are always present because they are common to all connectors.
+Each connector defines its own error type hierarchy, though CONNECTIVITY and RETRY_EXHAUSTED types are always present because they are common to all connectors.
 
 == Error Handlers
 
-Mule 4 has redesigned error handling by introducing the `error-handler` component, which can contain any number of internal handlers and can route an error to the first one matching it. Such handlers are `on-error-continue` and `on-error-propagate`, which both support matching through an error type (or group of error types) or through an expression (for advanced use cases). These are quite similar to the Mule 3 choice (`choice-exception-strategy`), catch (`catch-exception-strategy`), and rollback (`rollback-exception-strategy`) exceptions strategies However, they are much simpler and more consistent.
+Mule 4 has redesigned error handling by introducing the `error-handler` component, which can contain any number of internal handlers and can route an error to the first one matching it. Such handlers are `on-error-continue` and `on-error-propagate`, which both support matching through an error type (or group of error types) or through an expression (for advanced use cases). These are similar to the Mule 3 choice (`choice-exception-strategy`), catch (`catch-exception-strategy`), and rollback (`rollback-exception-strategy`) exceptions strategies However, they are simpler and more consistent.
 
-If an error is raised in Mule 4, an error handler will be executed and the error will be routed to the first matching handler. At this point, the error is available for inspection, so the handlers can execute and act accordingly, relative to the component where they are used (a Flow or Try scope):
+If an error is raised in Mule 4, an error handler is executed and the error is routed to the first matching handler. At this point, the error is available for inspection, so the handlers can execute and act accordingly, relative to the component where they are used (a Flow or Try scope):
 
-* An `on-error-continue` will execute and use the result of the execution, as the result of its owner (as if the owner had actually completed the execution successfully). Any transactions at this point would be committed as well.
-* An `on-error-propagate` will roll back any transactions, execute, and use that result to re-throw the existing error, meaning its owner will be considered as “failing.”
+* An `on-error-continue` executes and uses the result of the execution, as the result of its owner (as if the owner had actually completed the execution successfully). Any transactions at this point would be committed as well.
+* An `on-error-propagate` rolls back any transactions, execute, and use that result to re-throw the existing error, meaning its owner is considered as “failing.”
 
 Consider the following application where an HTTP listener triggers a Flow reference to another flow that performs an HTTP request. If everything goes right when a message is received (1 below), the reference is triggered (2), and the request performed (3), which results in a successful response (4).
 
 image::error-handling-example-1.png[Error Handling Example 1]
 
-If the HTTP request fails with a not found error (see 3 above) because of the error handler setup of `inner-flow`, then the error will be propagated (4), and the flow reference will fail (2). However, because `primary-flow` is handling that with an `on-error-continue`, this will execute (5), and a successful response will be returned (6).
+If the HTTP request fails with a not found error (see 3 above) because of the error handler setup of `inner-flow`, then the error is propagated (4), and the flow reference fails (2). However, because `primary-flow` handles failure with an `on-error-continue`, the request executes (5), and a successful response is returned (6).
 
 image::error-handling-example-2.png[Error Handling Example 1]
 
-If the request fails with an unauthorized error instead (3), then  `inner-flow` will handle it with an `on-error-continue` by retrieving static content from a file (4). Then the Flow reference will be successful as well (2), and a successful response will be returned (5).
+If the request fails with an unauthorized error instead (3), then  `inner-flow` handles it with an `on-error-continue` by retrieving static content from a file (4). Then the Flow reference is successful as well (2), and a successful response is returned (5).
 
 image::error-handling-example-3.png[Error Handling Example 3]
 
-But what if another error occurred in the HTTP request? Although there are only handlers for NOT_FOUND and UNAUTHORIZED errors in the flow, errors are still propagated by default. This means that if no handler matches the error that is raised, then it will be re-thrown. For example, if the request fails with a method not allowed error (3), then it will be propagated, causing the flow reference to fail (2), and that propagation will result in a failure response (4).
+But what if another error occurred in the HTTP request? Although there are only handlers for NOT_FOUND and UNAUTHORIZED errors in the flow, errors are still propagated by default. This means that if no handler matches the error that is raised, then it is re-thrown. For example, if the request fails with a method not allowed error (3), then it is propagated, causing the flow reference to fail (2), and that propagation will result in a failure response (4).
 
 image::error-handling-example-4.png[Error Handling Example 4]
 
@@ -77,10 +75,10 @@ For the most part, Mule 3 only allows error handling at the flow level, forcing 
 
 image::error-handling-try.png[Try Scope]
 
-The error handler behaves as we have explained earlier. In the example above, any database connection errors are propagated, causing the `try` to fail and the flow’s error handler to execute. In this case, any other errors will be handled, and the Try scope will be considered successful which, in turn, means that the next processor in the flow, an HTTP request, will continue executing.
+The error handler behaves as we have explained earlier. In the example above, any database connection errors are propagated, causing the `try` to fail and the flow’s error handler to execute. In this case, any other errors are handled, and the Try scope is considered successful which, in turn, means that the next processor in the flow, an HTTP request, will continue executing.
 
 == Error Mapping
-Mule 4 now also allows for mapping default errors to custom ones. The Try scope is useful, but if you have several equal components and want to distinguish the errors of each one, using a Try on them can clutter your app. Instead, you can add error mappings to each component, meaning that all or certain kind of errors streaming from the component will be mapped to another error of your choosing. If, for example, you are aggregating results from 2 APIs using an HTTP request component for each, you might want to distinguish between the errors of API 1 and API 2, since by default, their errors will be the same.
+Mule 4 now also allows for mapping default errors to custom ones. The Try scope is useful, but if you have several equal components and want to distinguish the errors of each one, using a Try on them can clutter your app. Instead, you can add error mappings to each component, meaning that all or certain kind of errors streaming from the component are mapped to another error of your choosing. If, for example, you are aggregating results from 2 APIs using an HTTP request component for each, you might want to distinguish between the errors of API 1 and API 2, since by default, their errors will be the same.
 
 By mapping errors from the first request to a custom API_1 error and errors in the second request to API_2, you can route those errors to different handlers. The next example maps HTTP:INTERNAL_SERVER_ERROR  so that different handling policies can be applied if the APIs go down (propagating the error in the first API and handling it in the second API).
 
