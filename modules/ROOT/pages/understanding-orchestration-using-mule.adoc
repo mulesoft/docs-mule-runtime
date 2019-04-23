@@ -1,0 +1,62 @@
+= Understanding Orchestration Using Mule
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, orchestration
+
+Orchestration is how Mule facilitates the process of moving data through a Mule implementation based on flows. Orchestration can be seen as combining service calls to create higher-level, more useful composite services, and implies implementing business-level processes combining business-specific services across applications and information systems.
+
+== Orchestration and Flows
+
+Orchestration involves decoupling point-to-point integration in favor of chains of messages sent to sources that can be reused or changed as systems or business needs change. It involves moving beyond patterns into a service-based framework, where you wrap multiple components with sources to decouple them from protocols and routing requirements, enabling multiple services to work as one when implementation requirements demand it. Some common use cases that flows easily orchestrates include simple integration, scheduled data processing, connecting cloud and on-premise applications, and event processing where multiple services must be composed and operate simultaneously.
+
+== How Flows Enables Implementation of Orchestration
+
+Flows enables new ways to orchestrate service mediation—for example, you can combine an arbitrary number of sources, routers, and components that work in concert to achieve implementation requirements. Flows enable you to orchestrate new forms of data movement based on flow-specific routers. Orchestration enables you to create and reuse subflows, chain together multiple components in one flow, and integrate sources or connectors anywhere in a flow.
+
+== When to Use Orchestration
+
+You use orchestration when you need to combine existing services to meet business requirements. For example, use orchestration when you're adding a new employee who needs to be entered in both the payroll system and the HR system. In another example of when to use orchestration, you might use it when you accept an order, make sure the order is in the inventory system, use the credit check system to ensure you trust the customer's credit, then put the order in the billing system, and finally, put the order in the shipping system.
+
+== An Example of Orchestration
+
+The following example of orchestration uses a flow to accept a book order in an XML file and transform the file’s contents into a standard format that contains one or more specific orders. Next, the orders are split out to be processed separately, and any non-book orders are filtered out. Now two services are called: one to check whether the book is in our inventory, and another to create a customer order. This is both e-mailed to the customer and stored in a database. If anything in this process fails, the message is placed in a JMS queue of failed orders, where it can be checked, any error fixed, and finally resubmitted.
+
+[source,xml,linenums]
+----
+<flow name="orderHandling">
+  <file:listener directory="/myDirectory">
+    <scheduling-strategy>
+      <fixed-frequency/>
+    </scheduling-strategy>
+    <file:matcher filenamePattern="*.xml"/>
+  </file:listener>
+  <ee:transform>
+    <ee:message>
+      <ee:set-payload resource="createBookOrdersTransformation.dwl"/>
+    </ee:message>
+  </ee:transform>
+  <foreach collection="#[payload.orders]">
+    <choice>
+      <when expression="#[payload.order.'type' == 'book']">
+        <http:request method="POST" path="/book/inventory"/>
+        <http:request method="POST" path="/book/order"/>
+        <email:send toAddresses="#[payload.customer.email]">
+          <email:body >
+            <email:content ><![CDATA[#['Your order has been placed.']]]></email:content>
+          </email:body>
+        </email:send>
+        <db:insert>
+          <db:sql >INSERT INTO ORDERS(CUSTOMER, AMOUNT) VALUES (:id, :amount)</db:sql>
+          <db:input-parameters><![CDATA[#[{ id : payload.customer.id, amount: payload.order.total }]]]></db:input-parameters>
+        </db:insert>
+      </when>
+    </choice>
+  </foreach>
+  <error-handler >
+    <on-error-continue>
+      <jms:publish destination="failedOrders"/>
+    </on-error-continue>
+  </error-handler>
+</flow>
+----
