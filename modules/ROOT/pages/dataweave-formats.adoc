@@ -1,4 +1,4 @@
-= Formats Supported by DataWeave
+= DataWeave Output Formats and Writer Properties
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
@@ -141,25 +141,28 @@ image::copybook-import.png[Importing a Copybook Definition]
 For example, assume that you have a copybook definition file (`mailing-record.cpy`) that looks like this:
 
 ----
-01  MAILING-RECORD.
-    05  COMPANY-NAME            PIC X(30).
-    05  CONTACTS.
-        10  PRESIDENT.
-            15  LAST-NAME       PIC X(15).
-            15  FIRST-NAME      PIC X(8).
-        10  VP-MARKETING.
-            15  LAST-NAME       PIC X(15).
-            15  FIRST-NAME      PIC X(8).
-        10  ALTERNATE-CONTACT.
-            15  TITLE           PIC X(10).
-            15  LAST-NAME       PIC X(15).
-            15  FIRST-NAME      PIC X(8).
-    05  ADDRESS                 PIC X(15).
-    05  CITY                    PIC X(15).
-    05  STATE                   PIC XX.
-    05  ZIP                     PIC 9(5).
+      01  MAILING-RECORD.
+          05  COMPANY-NAME            PIC X(30).
+          05  CONTACTS.
+              10  PRESIDENT.
+                  15  LAST-NAME       PIC X(15).
+                  15  FIRST-NAME      PIC X(8).
+              10  VP-MARKETING.
+                  15  LAST-NAME       PIC X(15).
+                  15  FIRST-NAME      PIC X(8).
+              10  ALTERNATE-CONTACT.
+                  15  TITLE           PIC X(10).
+                  15  LAST-NAME       PIC X(15).
+                  15  FIRST-NAME      PIC X(8).
+          05  ADDRESS                 PIC X(15).
+          05  CITY                    PIC X(15).
+          05  STATE                   PIC XX.
+          05  ZIP                     PIC 9(5).
 ----
+
 Note: Copybook definitions must always begin with a `01` entry. A separate record type is generated for each `01` definition in your copybook (there must be at least one `01` definition for the copybook to be usable, so add one using an arbitrary name at the start of the copybook if none is present). If there are multiple `01` definitions in the copybook file, you can select which definition to use in the transform from the dropdown list.
+
+Note: COBOL format requires definitions to only use columns 7-72 of each line. Data in columns 1-5 and past column 72 is ignored by the import process. Column 6 is a line continuation marker.
 
 When you import the schema, the Transform component converts the copybook file to a flat file schema that it stores in the `src/main/resources/schema` folder of your Mule project. In flat file format, the copybook definition above looks like this:
 
@@ -203,6 +206,7 @@ Not all copybook features are supported by the Cobol Copybook format in DataWeav
 ** 'P' - One or more decimal scaling positions
 * PICTURE clauses for alphanumeric values consisting only of 'X' character positions
 * Repetition counts for '9', 'P', and 'X' characters in PICTURE clauses (as in `9(5)` for a 5-digit numeric value)
+* OCCURS DEPENDING ON with controlVal property in schema. Note that if the control value is nested inside a containing structure, you need to manually modify the generated schema to specify the full path for the value in the form "container.value".
 
 Unsupported features include:
 
@@ -234,7 +238,7 @@ When defining an input of type Copybook, there are a few optional parameters you
 |===
 |Parameter |Type |Default|Description
 |`schemaPath` | string | | Location in your local disk of the schema file used to parse your input
-|`segmentIdent` |string |  | In case the schema file defines multiple different structures, this field selects which to use
+|`segmentIdent` |string |  | In case the schema file defines multiple segments, this field selects which to use
 |`missingValues` | string | nulls | How missing values are represented in the input data:
 
 * `none`: treat all data as actual values
@@ -247,6 +251,10 @@ When defining an input of type Copybook, there are a few optional parameters you
 * `strict`: line break expected at exact end of each record
 * `lenient`: line break used but records may be shorter or longer than schema specifies
 * `noTerminator`: means records follow one another with no separation
+
+|`enforceRequireds` | boolean | false | Whether error should be thrown when a required value is missing (past the end of the record)
+|`zonedDecimalStrict` | boolean | false | Whether "strict" zoned decimal format should be used with non-EBCDIC encodings, as opposed to the same display characters as for EBCDIC
+|`truncateDependingOn` | boolean | false | Whether DEPENDING ON COBOL copybook values should be truncated to the length actually used, rather than always taking the maximum space
 |===
 
 Note that schemas with type `Binary` or `Packed` don't allow for the detection of line breaks, so setting `recordParsing` to `lenient` only allow for long records to be handled, not short ones. These schemas only work with certain single-byte character encodings (so not with UTF-8 or any multibyte format).
@@ -283,6 +291,9 @@ When defining an output of type Copybook, there are a few optional parameters yo
 
 |`recordTerminator` | string | Standard Java line termination for the system | Termination for every line/record. In Mule runtime versions 4.0.4 and older, this is only used as a separator when there are multiple records. Possible values: `lf, cr, crlf, none`. Values translate directly to character codes (`none` leaves no termination on each record).
 |`trimValues` |boolean |`false` |Trim string values longer than field length by truncating trailing characters
+|`enforceRequireds` | boolean | false | Whether error should be thrown when a required value is missing (past the end of the record)
+|`zonedDecimalStrict` | boolean | false | Whether "strict" zoned decimal format should be used with non-EBCDIC encodings, as opposed to the same display characters as for EBCDIC
+|`truncateDependingOn` | boolean | false | Whether DEPENDING ON COBOL copybook values should be truncated to the length actually used, rather than always taking the maximum space
 |===
 
 .Example: output Directive
@@ -403,7 +414,7 @@ All of these parameters are optional. A CSV output directive might for example l
 .Example: output Directive
 [source,dataweave,linenums]
 ----
-output text/csv separator=";", header=false, quoteValues=true
+output application/csv separator=";", header=false, quoteValues=true
 ----
 
 === Defining a Metadata Type (for CSV)
