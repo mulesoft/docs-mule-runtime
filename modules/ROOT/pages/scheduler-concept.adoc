@@ -3,14 +3,14 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-The Scheduler component allows you to trigger a flow when a time-based condition is met. You can configure it to be triggered at a regular interval or give it a more flexible cron expression. For example, a Scheduler might trigger an event to start a flow every 5 seconds.
+The Scheduler component enables you to trigger a flow when a time-based condition is met. You can configure it to be triggered at a regular interval or give it a more flexible cron expression. For example, a Scheduler might trigger an event to start a flow every 5 seconds.
 
 Schedulers follow the timezone used by the machine where the Mule runtime is running. If an application is running in CloudHub, the timezone that the Scheduler conforms to corresponds to the region in which the CloudHub worker is running.
 
 // TODO: MULE-14438
-Only one flow triggered by the scheduler can be active at any given time. 
-Additionally, if xref:execution-engine.adoc#backpressure[back-pressure] is triggered 
-because no resources are available at the time of the trigger, that trigger 
+Only one flow triggered by the scheduler can be active at any given time.
+Additionally, if xref:execution-engine.adoc#backpressure[back-pressure] is triggered
+because no resources are available at the time of the trigger, that trigger
 will be skipped.
 
 //Enhancement request for this: MULE-14930
@@ -33,7 +33,7 @@ To download and open an example project while you are in Anypoint Studio, click 
 
 You can use the following parameters to set a Scheduler to trigger a flow at a regular intervals.
 
-[%header,cols="34,33,33"]
+[%header,cols="1,2,1"]
 |===
 |Attribute |Description |Default
 |*Frequency*
@@ -54,36 +54,84 @@ MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS
 
 == Cron Expressions
 
-Cron is a widely used standard for describing time and date information. It can be used to signal a specific event that occurs just once, or a recurring event that might be yearly, monthly, weekly, daily, hourly, etc.
+Cron is a widely used standard for describing time and date information.
 
-The condition is evaluated every time the time changes (every second) and produces a trigger when true.
+The Scheduler keeps track of every second and creates a Mule event when the
+Quartz Cron expression matches your time-date setting. You can trigger the event
+just once or at regular intervals.
 
-The expression consists of 6 or 7 items, where they represent the following, in order:
+A date-time expression consists of six required settings and can include the
+optional year setting. You specify the settings in the following order:
 
-* Seconds
-* Minutes
-* Hours
-* Month
-* Day of month
-* Day of the week
-* Year (optional)
+. Seconds (0-59)
+. Minutes (0-59)
+. Hours (0-23)
+. Day of month (1-31)
+. Month (1-12 or JAN-DEC)
+. Day of the week (1-7 or SUN-SAT)
+. Year (empty or a 4-digit year between 1970-2099, for example, 2019)
 
-Here are a few sample Cron expressions:
+The Scheduler supports Quartz Cron expressions. Here are a few examples:
 
 [%header,cols="2*"]
 |===
 |Expression |Behavior
-|0 15 10 * * * |Run at 10:15am every day
-|0 15 10 * * ? 2005 |Run at 10:15am every day during the year 2005
-|0 * 14 * * ? |Run every minute starting at 2pm and ending at 2:59pm, every day
-|0 0/5 14 * * ? |Run every 5 minutes starting at 2pm and ending at 2:55pm, every day
-|1 1 1 1,7 * ? |Run the first day of January and the first day of June, every year (in the first second of the first minute of the first hour) +
+|`1/2 * * * * ?` |Run every 2 seconds of the day, every day.
+|`0 15 10 ? * *` |Run at 10:15 a.m., every day. `0 15 10 * * ? *` and
+`0 15 10 * * ?` produce the same effect.
+|`0 15 10 * * ? 2019` |Run at 10:15 a.m., every day during the year 2019.
+|`0 * 14 * * ?` |Run every minute starting at 2pm and ending at 2:59pm, every day.
+|`0 0/5 14 * * ?` |Run every 5 minutes starting at 2pm and ending at 2:55pm, every day
+|`1 1 1 1,7 * ?` |Run the first day of January and the first day of June, every
+year (in the first second of the first minute of the first hour)
 |===
 
-Note that there are a number of free online tools that can help you build cron expressions by filling in a form, without needing to learn the syntax.
+Note that the Scheduler component also supports Quartz Scheduler special characters:
 
-When debugging a flow with a Scheduler, the scheduling frequency is ignored. This prevents events from piling up while you are stepping through the flow. +
-You can click the green arrow icon at the bottom of the Scheduler component in your canvas to trigger a poll.
+* `*`: All values.
+* `?`: No specific value.
+* `-`: Range of values, for example, `1-3`.
+* `,`: Additional values, for example, `1,7`.
+* `/`: Incremental values, for example, `1,7`.
+* `L`: Last day of the week or month, or last specific day of the month
+  (such as `6L` for the last Saturday of the month).
+* `W`: Weekday, which is valid in the month and day-of-the-week fields.
+* `#`: Nth day of the month. For example, `#3` is the third day of the month.
+
+//source info: +http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html+
+
+This example logs the message "hello" every second:
+
+[source,XML,linenums]
+----
+<flow name="cronFlow" doc:id="ae257a5d-6b4f-4006-80c8-e7c76d2f67a0" >
+  <scheduler doc:name="Scheduler" doc:id="e7b68ccb-c6d8-4567-87af-aa7904a50359" >
+    <scheduling-strategy >
+      <cron expression="* * * * * ?" timeZone="America/Los_Angeles"/>
+    </scheduling-strategy>
+  </scheduler>
+  <logger level="INFO" doc:name="Logger" doc:id="e2626dbb-54a9-4791-8ffa-b7c9a23e88a1" message='"hello"'/>
+</flow>
+----
+
+Note that there are a number of free online tools that can help you build Cron
+expressions.
+
+=== Time Zones (timeZone)
+
+For Cron configurations, Java `timeZone` values are supported. You should avoid
+the Java abbreviations, such as `PST` and `AGT`, and instead use the full-name
+Java equivalents, such as `America/Los_Angeles` and
+`America/Argentina/Buenos_Aires`.
+
+//source info: +https://docs.oracle.com/javase/8/docs/api/java/time/ZoneId.html+
+
+== Debugging
+
+In the Studio *Debug Mode* view, the Mule app disables the triggering of events. You can
+instead execute the Scheduler component when debugging by clicking the green arrow icon
+that appears at the bottom of the component.
+
 
 == See Also
 

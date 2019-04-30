@@ -4,276 +4,1059 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, transform, transformer, metadata, dataweave, data weave, datawave, datamapper, dwl, dfl, dw, payload, attribute, variable, flow, error, message
 
-This DataWeave example extracts a component of a Mule event.
+DataWeave can select data from objects and arrays, variables that store that
+data, and the output of DataWeave functions when that output is an array or
+object. You can use selectors in Mule modules, connectors, and components
+that accept DataWeave expressions.
 
-Extracted values are handled as a literal value (as opposed to a variable, for example) of one of the supported DataWeave value types.
+A selector operates within a context, which can be a reference to
+the variable that stores the data, an object literal, an array literal,
+or the invocation of a DataWeave function. For examples, see <<single_value>>.
 
-[cols="1,1,1", options="header"]
+== Using Selectors on Arrays and Objects
+
+When referencing an array or object, you use selector expressions to extract
+specific values from within a data structure.
+
+Note that Studio and Design Center require DataWeave expressions to reside
+between square brackets that are preceded by a hash (or pound) symbol,
+for example:
+
+```
+#[input_data.input_key]
+```
+
+Valid keys must start with a letter that is optionally followed by any
+combination of numbers, letters, or underscores (`&#95;`).
+
+* For valid keys in your data, quotation marks around the key and selector
+are _optional_. All of these examples work:
+`{"name" : "somebody"}.name`, `{"name" : "somebody"}."name"`,
+`{name : "somebody"}.name`, `{name : "somebody"}."name"`.
+* For _invalid_ keys, you must surround the key and selector in single-quotes
+or double-quotes. For example, for an invalid key like `some-name`,
+`{ "some-name" : "somebody" }."some-name"` works, but
+`{ some-name : "somebody" }.some-name` produces the error `Invalid input '-'`.
+Both the key and the selector require the quotation marks.
+
+
+[cols="1,5", options="header"]
 |===
-| Data to extract | Anypoint Studio syntax | Design Center syntax
+| Data to extract | Examples
 
-| *Payload*
-| `#[payload]`
-| `payload`
+| *Single Value* (`.`)
+a|`.` selector acts on arrays and objects.
 
-| *Attribute*
-| `#[attributes.<myAttributeName>]`
-| `attributes.<myAttributeName>`
+* Selecting a `name` value from an object:
++
+```
+{ "id" : "1234", "name" : "me" }.name
+```
++
+Returns `"me"` if the `output` directive is `application/json`.
++
+* Selecting a `name` value from an array:
++
+```
+[ { "id" : "1234", "name" : "me" } ].name
+```
++
+```
+[ { "id" : "1234" }, { "name" : "me" } ].name
+```
++
+Each example returns `[ "me" ]` if the `output` directive is
+`application/json`.
++
+* Selecting the first `name` value:
++
+```
+{ user : "a", "user" : "b" }.user
+```
++
+Only returns the first `user` value, `"a"`  if the `output` directive is set
+to `application/json`.
 
-| *Variable*
+For more examples, see <<single_value>>.
 
-To avoid name collisions, you can prepend `variables`, as shown.
-| `\#[<myVariableName>]`
-or
-`#[variables.<myVariableName>]`
-| `<myVariableName>`
-or
-`variables.<myVariableName>`
+| *Multiple Values*  (`*`)
+a|
+`*` selector acts on arrays and objects.
 
-| *Error object*
+* Selecting all `user` values from an array:
++
+```
+[ { "user" : "a", "user" : "b" } ].*user
+```
++
+Returns `["a", "b"]` if the `output` directive is `application/json`.
 
-For information on errors in the flow, you can use `#[error.cause]`.
-| `#[error]`
-| `error`
+* Selecting all `user` values from an object:
++
+```
+{ user : "a", "user" : "b" }.*user
+```
++
+Returns: `["a", "b"]` if the `output` directive is `application/json`.
 
-| *Flow*
-| `\#[flow]`
+* Selecting all `user` values from the `users` key:
++
+```
+{ "users" : [ { "user" : "a" }, { "user" : "b" } ] }.users.*user`
+```
++
+Returns: `[ "a", "b" ]` if the `output` directive is `application/json`.
 
-For the flow name: `#[flow.name]`
-| `flow`
+For more examples, see <<multi_value>>.
+
+| *Key-Value Pair* (`&amp;`)
+a|
+`&amp;` selector acts on arrays and objects.
+
+* Selecting values from the `&amp;` key:
++
+```
+{ "users" : [ "user" : "ale", "something": "else", "user" : "joe" ] }.users.&user
+```
++
+Returns `[ { "user": "ale" }, { "user": "joe" } ]` if the `output` directive
+is `application/json`.
+
+For more examples, see <<key_value>>.
+
+| *Descendants* (`..`)
+a|
+`..` selector acts on arrays and objects.
+
+* Selecting values from the `c` key:
++
+```
+{ "user" : [{ "a" : "b"}, {"c" : [ {"aa" : "bb"}, { "cc": "dd" } ] } ] , "user" : "d" }..c
+```
++
+Returns `[ [ { "aa": "bb" }, { "cc": "dd" } ] ]`.
+
+For more examples, see <<descendants>>.
+
+| *Index* (`[]`)
+a|
+`[]` selector acts on indices of an array.
+
+* Selecting an index from an array:
+** `[1,2,3,4][0]` returns `[1]`
++
+The index of the first element in an array is always `0`.
++
+** `[1,2,3,4][4]` returns `[3]`
+
+For more examples, see <<range>>.
+
+| *Range* `[index1 to index2]`
+a| `[index1 to index2]` selector produces and array with values from selected
+indexes.
+
+* Selecting a range of indices:
+** `[0,1,2][0 to 1]` returns `[ 0, 1 ]`
+** `[0,1,2][-1 to 0]` returns an inverted list: `[ 2, 1, 0 ]`
+
+For more examples, see xref:dataweave-selectors#range-selector.adoc[Range Selectors]
+
+| *XML attribute* `.@keyName`
+a| `.@keyName` selector returns the value of the selected attribute.
+
+For an example, see <<xml_attribute>>.
+
+| *Namespace Selector* `keyName.#`
+a| `keyName.#` selector returns the namespace of the selected XML element.
+
+For an example, see <<namespace>>.
+
+| *Selector Modifiers* `?` and `!`
+a| `?` and `!` check for the specified key. `?` returns `true` or `false`.
+`!` returns an error if the key is not present.
+
+* `{ "a": "b" }.a?` returns `true`. `{ "a": "b" }.c?` returns `false`.
+* `{ "a": "b" }.a!` returns `"b"`. `{ "a": "b" }.c!` produces the error
+`There is no name 'c'`.  `{ "a": "b" }.c` (without `!`) returns `null`.
+
+For more examples, see <<selector_modifiers>>.
+
+| *Filter Selectors* `keyName[?(booleanExpression)]]`
+a| `keyName[?(booleanExpression)]` returns the selected items if the Boolean
+expression returns `true` and the specified `key` is present. It returns `null`
+if the expression is false or the key is not present.
+
+For examples, see <<filter_selectors>>.
 |===
 
-[NOTE]
-In Design Center, make sure the field you're writing on is set to accept functions (`Fx`).
 
-== Use Selector Expressions Within a Component
+[[single_value]]
+== Single-Value Selector
 
-When referencing an array or object, you can use selector expressions to extract specific values from within a data structure.
+`.keyName` selectors work over an object or array.
 
+* Given the object `{ "aString": "hello", "aNum": 2, "aBool" : false }`,
+a single-value selector can select the value of one of the object's
+key-value pairs, for example:
++
+`{ "aString": "hello", "aNum": 2, "aBool" : false }.aString`
++
+Returns a string: `"hello"`
++
+* Given the array
+`[ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" ]`,
+a single-value selector can select values from the array's key-value pairs,
+for example:
++
+`[ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" ].aString`
++
+Returns an array: `[ "hello", "world" ]`
++
+* Supported variable references are
+xref:dataweave-variables-context.adoc[Mule Runtime variables], such as `payload`
+and `attributes`, and xref:dataweave-variables.adoc[DataWeave variables] that
+store arrays or objects. A simple example is `payload.someKey` where the
+payload is the object `{"someKey" : 1234 }`, so the result is `1234`.
+* A selector can act on the invocation of a function, such as the DataWeave
+`read` function. For example, `read('{"A":"B"}','application/json')."A"`
+returns `"B"`.
 
-[cols="1,1,1", options="header"]
-|===
-For the flow name: `flow.name`
-| *Single value* (from array or object)
-| `#[payload.users]`
-| `payload.users`
+=== Single-Value Selector Over an Object
 
-| *Multiple values* (from an array or object)
-| `#[payload.users.*user]`
-| `payload.users.*user`
+`.keyName` returns the value of the _first_ matching key. It does not
+return values of any subsequent, duplicate keys. For example,
+`{ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" }.aString`
+returns `[ "hello" ]`, _not_ `[ "hello", "world" ]`.
 
-| *Descendants* (of an array or object)
+When DataWeave processes a selector, it sets a new context (or scope) for
+subsequent selectors, so you can navigate through the complex structures
+of arrays and objects using chains of selectors. The depth of the selection
+is limited only by the depth of the current context.
 
-The example uses `..<key-name>` to extract all descendants of `users` down to the user name (`uname`).
-| `#[payload.users..uname]`
-| `payload.users..uname`
+In this example, `payload.people.person.address` returns the value of the
+`address` element.
 
-| *Index* (of an array)
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{ address: payload.people.person.address }
+----
 
-The example uses `[<index>]` to extract the value at index `2`.
-| `#[payload.users[2]`
-| `payload.users[2]`
-|===
+.Input Payload
+[source,json,linenums]
+----
+{
+  "people": {
+    "size" : 1,
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
 
-
-
-
-////
-[cols="e,m,^,>s",width="25%"]
-|============================
-|1 >s|2 |3 |4
-^|5 2.2+^.^|6 .3+<.>m|7
-^|8
-|9 2+>|10
-|============================
-////
-
-////
-TODO? NOT USED IN 4.O BETA   ...yet
-
-== Context Objects, Variables, and Fields
-
-The term *Context Object* forms the first part of the simplest form of an extracting expression; the second part is the *Field* (see image below, left). Use a *Variable* in an expression to access information contained within a Variable on your Mule message. Itself a top-level identifier, a variable does _not_ require that you define a context object in an expression (see second image below).
-
-image::contextob-field.png[contextob_field]
-
-The tables below list the Context Objects available for use in Mule, and the corresponding Fields you can use with them.
-
-[%header,cols="30a,70a"]
-|===
-|Context Object |Provides access to the fields for
-|<<Server Context Object, Server>> |Hardware, operating system, user, and network interface.
-|<<Mule Context Object, Mule>> |Your Mule instance.
-|<<App Context Object, App>> |Your Mule application.
-|<<Message Context Object, Message>> |Mule message.
-|===
-
-
-You can combine a context object with a field to form an expression. The simplest expressions take the form `contextobject.field`.
-
-This example is a simple expression: +
-`#[payload.userId]`
-
-
-=== Server Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`dateTime` ||x |Date or time
-|`env` |x ||Environment
-|`fileSeparator` |x |
-|Character that separates components of a file path ( "/" on UNIX and "\" on Windows)
-|`host` |x ||Fully-qualified domain name of a server
-|`ip` |x ||IP address of a server
-|`locale` |x |
-|Default locale (of type java.util.Locale) of the JRE (can access server.locale.language and server.locale.country)
-|`javaVersion` |x ||JRE version
-|`javaVendor` |x ||JRE vendor name
-|`nanoSeconds` |x ||Measure of nanoseconds
-|`osName` |x||Operating system name
-|`osArch` |x ||Operating system architecture
-|`osVersion` |x ||Operating system version
-|`systemProperties` |x ||Map of Java system properties
-|`timeZone` |x ||Default TimeZone (java.util.TimeZone) of the JRE
-|`tmpDir` |x ||Temporary directory for use by the JRE
-|`userName` |x ||User name
-|`userHome` |x ||User home directory
-|`userDir` |x ||User working directory
-|===
-
-=== Mule Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`clusterId` |x ||Cluster ID
-|`home` |x ||File system path to the home directory of the Mule server installation
-|`nodeId` |x ||Cluster node ID
-|`version` |x ||Mule version
-|===
-
-=== App Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`encoding` |x ||Application default encoding
-|`name` |x ||Application name
-|`registry` ||x |Map representing the Mule registry
-|`standalone` |x ||Evaluates to true if Mule is running standalone
-|`workdir` |x ||Application work directory
-|===
-
-[[messageobj]]
-==== Message Context Object
-
-[%header,cols="15a,^15a,^15a,55a"]
-|===
-|Field |Read-only Access |Read-write Access |Field Description
-|`id` |x ||Unique identifier of Mule message
-|`rootId` |x ||Root ID of Mule message
-|`correlationId` |x || Correlation ID
-|`correlationSequence` |x ||Correlation sequence
-|`correlationGroupSize` |x ||Correlation group size
-|`replyTo` ||x |Reply to
-|`dataType` |x ||Data type of payload
-|`payload` ||x |Mule message payload
-|`attributes` |x ||
-|===
-////
-
-////
-== Server, Mule, Application, and Message Variables
-
-
-
-Create a directory named `target` in the system's temporary directory and set the payload to the variable storing the file object:
-
+.Output
 [source,xml,linenums]
 ----
-<scripting-component>
-    targetDir = new java.io.File(server.tmpDir, 'target');
-    targetDir.mkdir();
-    payload = targetDir
-</scripting-component>
+<?xml version="1.0" encoding="UTF-8"?>
+<address>
+  <street>
+    <name>Italia</name>
+    <number>2164</number>
+  </street>
+  <area>
+    <zone>San Isidro</zone>
+    <name>Martinez</name>
+  </area>
+</address>
 ----
 
-Set the username and password for an HTTP request at runtime based on inbound message properties:
+[[single_value_array]]
+=== Single-Value Selector Over an Array
 
+`.keyName` returns an array with the values of all matching keys in the
+input array.
+
+When acting on an array, the single-value selector returns an array even if
+there is only one matching value. For example, `["a":"b"]."a"` returns `["b"]`.
+
+In the following example, the value of the input payload, `people`, is an array
+that contains two objects. The selector navigates both objects and returns
+the values of both `street` keys.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.people.person.address.street
+----
+
+.Input Payload
+[source,dataweave,linenums]
+----
+{
+  "people": [
+    {
+      "person": {
+        "name": "Nial",
+        "address": {
+          "street": {
+            "name": "Italia",
+            "number": 2164
+          },
+          "area": {
+            "zone": "San Isidro",
+            "name": "Martinez"
+          }
+        }
+      }
+    },
+    {
+      "person": {
+        "name": "Coty",
+        "address": {
+          "street": {
+            "name": "Monroe",
+            "number": 323
+          },
+          "area": {
+            "zone": "BA",
+            "name": "Belgrano"
+          }
+        }
+      }
+    }
+  ]
+}
+----
+
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "name": "Italia",
+    "number": 2164
+  },
+  {
+    "name": "Monroe",
+    "number": 323
+  }
+]
+----
+
+[[multi_value]]
+== Multi-Value Selector
+
+`.*` traverses objects and arrays to select the values of all matching keys
+and returns matching results in an array.
+
+=== Multi-Value Selector Over an Object
+
+`.*` returns an array with all the values whose key matches the
+expression.
+
+For example,
+`{ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" }.*aString`
+returns `[ "hello", "world" ]`.
+
+The following example returns the values of all `user` elements from the
+input payload.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.users.*user
+----
+
+.Input Payload
 [source,xml,linenums]
 ----
-<http:request-config name="HTTP_Request_Configuration" host="api.acme.com/v1" port="8081" doc:name="HTTP">
-  <http:basic-authentication username="#[inboundProperties.username]" password="#[inboundProperties.password]"/>
-  </http:request-config>
-
-  <flow>
-    ...
-    <http:request config-ref="request-config" path="users" doc:name="HTTP Connector"/>
-    ...
-  </flow>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
 ----
-////
+
+.Output
+[source,json,linenums]
+----
+[ "Mariano", "Martin", "Leandro" ]
+----
+
+=== Multi-Value Selector Over an Array
+
+On arrays, `.*` works the same way as the single-value selector (`.`). For
+example, `payload.people.person.address.*street` and the example
+`payload.people.person.address.street` (from <<single_value_array>>) return the
+same results.
 
 
-////
+[[descendants]]
+== Descendants Selector
 
-== Payload and Attachments
+This selector is applied to the context using the form `..<field-name>` and
+retrieves the values of all matching key-value pairs in the sub-tree under
+the current context. Regardless of the hierarchical structure these fields
+are organized in, they are all placed at the same level in the output.
 
-Copy the current payload in a variable named `originalPayload` then restore it:
+In this example, all of the fields that match the key `name` are placed in a
+list called `names` regardless of their cardinality in the tree of the input
+data.
 
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{ names: payload.people..name }
+----
+
+.Input Payload
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "names": [
+    "Nial",
+    "Italia",
+    "Martinez"
+  ]
+}
+----
+
+[[key_value]]
+== Key-Value Pair Selector
+
+
+The `&` selector retrieves both the keys and the values of all matching keys pairs
+in the current context. These are returned as an object, containing these
+retrieved keys and values.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  users: payload.users.&user
+}
+----
+
+
+.Input Payload
 [source,xml,linenums]
 ----
-<set-variable variableName="originalPayload" value="#[payload]" />
-<set-payload value="#[originalPayload]" />
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+  <admin>Admin</admin>
+  <admin>org_owner</admin>
+</users>
 ----
 
-To retrieve the message payload in a particular format, using Mule's auto-transformation capability, use `payloadAs`:
-
-[source,xml]
-----
-<logger message="#[payloadAs(java.lang.String)]" />
-----
-
-To extract all *.txt and *.xml attachments, use a filtered projection:
-
+.Output
 [source,xml,linenums]
 ----
-<expression-transformer expression="#[($.value in properties.entrySet() if $.key ~= '(.*\\.txt|.*\\.xml)')]" />
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
 ----
-////
 
-////
+Note that unlike the multi-value selector, the output of this selector
+is an object, where the original keys for each value are also extracted.
 
-=== Accessing the Cache ????
+=== Select All the Descendant Key-Value Pairs
 
-You can access the xref:cache-scope.adoc[Mule cache] through the object store that serves as the cache repository. Depending on the nature of the object store, you can count, list, remove, or perform other operations on entries.
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{ names: payload.people..&name }
+----
 
-The code below shows the XML representation of a cache scope that uses a custom object store class.
+.Input Payload
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
 
+.Output
+[source,json,linenums]
+----
+{
+  "names": [
+    { "name": "Nial" },
+    { "name": "Italia" },
+    { "name": "Martinez" }
+  ]
+}
+----
+
+==== Convert an Array of Objects into an Object of Objects
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  names: (payload.people..&name) reduce (value, aggregator) -> aggregator ++ value
+  //Alternative methods
+  //names: payload.people..&name reduce ($$ ++ $)
+  //names: {(payload.people..&name)}
+}
+----
+
+.Input Payload
+[source,json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.Output
 [source,xml,linenums]
 ----
-<ee:object-store-caching-strategy name="CachingStrategy">
-  <custom-object-storeclass="org.mule.util.store.SimpleMemoryObjectStore" />
-</ee:object-store-caching-strategy>
+<?xml version="1.0" encoding="UTF-8"?>
+<names>
+  <name>Nial</name>
+  <name>Italia</name>
+  <name>Martinez</name>
+</names>
 ----
 
-The object store above is an implementation of a `ListableObjectStore`, which allows you to obtain lists of the entries it contains. You can access the contents of the cache by invoking the `getStore` method on the `CachingStrategy` property of `app.registry`.
+[[index]]
+== Index Selector
 
-The expression below obtains the size of the cache by invoking `allKeys()`, which returns an iterable list.
+The index selector returns the element at the specified position, it can be
+applied over an array, object, or string.
 
+=== Index Selector Over an Array
+
+This selector can be applied to String literals, Arrays and Objects. In the
+case of Objects, the value of the key-value pair found at the index is returned.
+In the case of Arrays, the value of the element is returned. The index is zero-based.
+
+. If the index is bigger or equal to 0, it starts counting from the beginning.
+. If the index is negative, it starts counting from the end where -1 is the last element.
+
+.DataWeave Script
+[source,dataweave,linenums]
 ----
-#[app.registry.CachingStrategy.getStore().allKeys().size()]"
+%dw 2.0
+output application/json
+---
+payload.people[1]
 ----
 
-If you need to manipulate the registry in a Java class, you can access it through `muleContext.getRegistry()`.
 
-////
+.Input Payload
+[source,json,linenums]
+----
+{
+  "people": [
+        {
+          "nameFirst": "Nial",
+          "nameLast": "Martinez"
+        },
+        {
+          "nameFirst": "Coty",
+          "nameLast": "Belgrano"
+        }
+    ]
+}
+----
 
+.Output
+[source,json,linenums]
+----
+{
+  "nameFirst": "Coty",
+  "nameLast": "Belgrano"
+}
+----
+
+=== Index Selector Over an Object
+
+The selector returns the value of the key-value pair at the specified position.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload[1]
+----
+
+.Input
+[source,json,linenums]
+----
+{
+  "nameFirst": "Mark",
+  "nameLast": "Nguyen"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+"Nguyen"
+----
+
+=== Index Selector Over a String
+
+When using the Index Selector with a string, the string is broken down into an
+array, where each character is an index.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+output application/json
+---
+{ name: "MuleSoft"[0] }
+----
+
+.Output
+[source,json,linenums]
+----
+{ "name": "M" }
+----
+
+The selector picks the character at a given position, treating the string as
+an array of characters.
+
+. If the index is bigger or equal to 0, it starts counting from the beginning.
+. If the index is negative, it starts counting from the end.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  name: "Emiliano"[0]
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "name": "E"
+}
+----
+
+[[range]]
+== Range selector
+
+The range selector (`to`) returns matching indices of an array or string. You
+can also use it to reverse the order of the indices in the range. The selector
+treats characters in the string as indices.
+
+=== Range Selector Over an Array
+
+Range selectors limit the output to only the elements specified by the range on
+that specific order. This selector allows you to slice an array or even invert
+it.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  slice: [0,1,2][0 to 1],
+  last: [0,1,2][-1 to 0]
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "slice": [
+    0,
+    1
+  ],
+  "last": [
+    2,
+    1,
+    0
+  ]
+}
+----
+
+=== Range Selector Over a String
+
+The Range selector limits the output to only the elements specified by the range
+on that specific order, treating the string as an array of characters. This
+selector allows you to slice a string or even invert it.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  slice: "DataWeave"[0 to 1],
+  last: "DataWeave"[-1 to 0]
+}
+----
+
+.Output
+
+[source,json,linenums]
+----
+{
+  "slice": "Da",
+  "last": "evaeWataD"
+}
+----
+
+[[xml_attribute]]
+== XML Attribute Selector
+
+`.@keyName` selects an attribute in an XML element.
+
+Using `.@` without the key name returns an object containing the attributes
+as key-value pairs.
+
+This DataWeave example reads an XML sample into a variable and uses `@` to
+select attributes from the XML.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myVar = read('<product id="1" type="electronic">
+  <brand>SomeBrand</brand>
+</product>', 'application/xml')
+output application/json
+---
+{
+  item: [
+  	{
+      "type" : myVar.product.@."type",
+      "name" : myVar.product.brand,
+      "attributes": myVar.product.@
+    }
+  ]
+}
+----
+
+.Output
+[source,dataweave,linenums]
+----
+{
+  "item": [
+    {
+      "type": "electronic",
+      "name": "SomeBrand",
+      "attributes": {
+        "id": "1",
+        "type": "electronic"
+      }
+    }
+  ]
+}
+----
+
+[[namespace]]
+== Namespace Selector
+
+`#` returns the XML namespace of a selected key.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.order.#
+----
+
+.Input Payload
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<ns0:order xmlns:ns0=http://orders.company.com>
+  <name>Mark</name>
+  <items>42</items>
+  <orderdate>2017-01-04</orderdate>
+</ns0:order>
+----
+
+.Output
+[source,json,linenums]
+----
+"http://orders.company.com"
+----
+
+[[selector_modifiers]]
+== Selector Modifiers
+
+You can check for the presence of a given key.
+
+* `!` evaluates the selection and fails with an exception message if the key
+is not present.
+* `?` returns `true` if the selected key is present, `false` if not. Note that
+`?` is also used in <<filter_selectors>>.
+
+
+[[assert_present]]
+=== Assert Present Validator
+
+`!` returns an error if any of the specified key is missing.
+
+* `{ "name": "Annie" }.lastName!` returns an error with the message,
+`There is no key named 'lastName'`.
+* Without the `!`, `{ "name": "Annie" }.lastName` returns `null`.
+* When the key is present, `{ "name": "Annie" }.name!` the result is `"Annie"`.
+
+
+[[key_present]]
+=== Key Present Validator
+
+Returns `true` if the specified key is present in the object or as an attribute
+of an XML element.
+
+This example returns `true` because the `name` key does exists.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+present: payload.name?
+----
+
+.Input Payload
+[source,json,linenums]
+----
+{ "name": "Annie" }
+----
+
+.Output:
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<present>true</present>
+----
+
+`?` also works with XML attributes:
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  item: {
+    typePresent : payload.product.@type?
+  }
+}
+----
+
+.Input Payload
+[source,xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "item": {
+    "typePresent": true
+  }
+}
+----
+
+[[filter_selectors]]
+== Filter Selectors
+
+`keyName[?($ == "someValue")]` returns only the values of matching keys
+ within an array or object. Note that `?` is also used in <<key_present>>.
+ If no key-value pairs match, the result is `null`.
+
+The following example inputs the array of `name` keys returned by `*.name`,
+then checks for `name` keys with the value `"Mariano"`. It filters out
+any values that do not match. Note that the `$` references the value of the
+selected key.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{ users: payload.users.*name[?($ == "Mariano")] }
+----
+
+[[input_filter_selectors]]
+.Input Payload
+[source,xml,linenums]
+----
+<users>
+  <name>Mariano</name>
+  <name>Luis</name>
+  <name>Mariano</name>
+</users>
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Mariano"
+  ]
+}
+----
+
+The following example assumes the same <<input_filter_selectors>> and returns
+all the key-value pairs of the input because the expression `( 1 == 1 )` is true.
+Note that a false expression, such as `( 1 == 2 )`, returns `null`.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{ users: payload.users.*name[?( 1 == 1)] }
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Luis",
+    "Mariano"
+  ]
+}
+----
+
+
+The following example assumes the same <<input_filter_selectors>>. It uses
+`mapObject` to iterates over the entire input object and returns matching
+key-value pairs, filtering out any pairs that do not match.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload mapObject { ($$) : $[?($=="Mariano")] }
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "users": {
+    "name": "Mariano",
+    "name": "Mariano"
+  }
+}
+----
 
 == Related Examples
-
-* xref:dataweave-cookbook-extract-data.adoc[Extract Data]
 
 * xref:dataweave-cookbook-perform-basic-transformation.adoc[Transform XML to JSON]
 
@@ -283,8 +1066,8 @@ If you need to manipulate the registry in a Java class, you can access it throug
 
 == See Also
 
-* xref:dataweave-types.adoc[DataWeave Types]
-
 * xref:dataweave-selectors.adoc[DataWeave Selectors]
+
+* xref:dataweave-types.adoc[DataWeave Types]
 
 * xref:dataweave-cookbook.adoc[DataWeave Cookbook]
