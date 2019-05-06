@@ -1,0 +1,84 @@
+= Configuring Mule Stacktraces
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint, studio, mule, on premises, on premise, amc, logs, stacktraces, verbose
+
+By default Mule does not show stacktraces and even filters out some internal class
+ references from stacktraces to  produce a more readable output when it does show them.
+This behavior can be controlled in one of two ways:
+
+* Command-line arguments
+
+* Setting properties in Mule Studio
+
+== Command-Line Arguments
+
+Two command-line properties let you control this behavior using `-M-DpropertyName`:
+
+* `mule.verbose.exceptions` - If set to *true*, Mule shows filtered stacktraces.
+ Intended for Mule developers only and while troubleshooting, end users
+ probably never need to enable this.
+
+* `mule.stacktrace.filter` - A comma-separated list of packages and/or classes to
+ remove from the stacktraces, which are matched via `string.startsWith()`.
+
+== Setting Properties in Anypoint Studio
+
+In Studio, you can set the same properties specified above to instruct Mule to
+provide either stacktraces or to configure a particular filter of
+packages or classes to remove. To adjust these settings, open the `Run Configurations...`
+ of your project and define the properties to specify the behavior you want. In the
+ example below, the `mule.verbose.exceptions` property is set to *true*.
+
+image::stack-traces-studio.png[Studio-config-stacktrace]
+
+== Obtaining the Stacktrace and Thread Dump
+
+Follow these steps to perform an autopsy for Mule in case it stops and you need
+more information to find the cause.
+
+Obtain the Mule process ID, which we will refer to simply as `MULE_PID`. To identify
+ the Mule process, use the Unix/Linux `ps` command, or instead execute the `jps`
+  command from the terminal. The jps tool ships with the JDK used to run Mule.
+  For example, a line containing "MuleContainerBootstrap" or "ApplicationDeployer"
+   or similar would identify the Mule process.
+
+=== Getting the Thread Dump
+
+Modern JDKs include the jstack tool, which you can utilize to get the thread dump:
+
+----
+jstack -l MULE_PID > filename.tdump
+----
+
+=== Getting Heap Dump on Out of Memory Error
+
+Perform this procedure if you want to get a heap dump should the Mule server throw
+ an Out Of Memory error: `java.lang.OutOfMemoryError: Java heap space`
+
+==== Procedure
+
+Oracle Java Virtual Machine provides a https://docs.oracle.com/javase/7/docs/webnotes/tsg/TSG-VM/html/clopts.html#gbzrr[JVM modifier]
+ to gather this information. Note that you must restart the Mule server after
+ applying this change, and reproduce the OOM error one more time.
+
+To apply this modifier to the JVM used by Mule, you can set a parameter in Mule's
+ `/conf/wrapper.conf`, which automatically triggers the creation of a heap dump:
+
+----
+wrapper.java.additional.<n>=-XX:+HeapDumpOnOutOfMemoryError
+wrapper.java.additional.<n+1>=-XX:HeapDumpPath=path/to/dumps
+----
+
+* change <n> to a number that follows the sequence in `wrapper.conf`
+
+[NOTE]
+=====================================================================
+By default, the Runtime includes the `HeapDumpOnOutOfMemoryError` property but
+does not define a path for heap dumps.
+=====================================================================
+
+If no path is defined for a heap dump, the file will be created in the directory
+ where the java process was launched. The heap dump file should then be generated
+  as `java_pid<pid>.hprof.<unique number>`.
