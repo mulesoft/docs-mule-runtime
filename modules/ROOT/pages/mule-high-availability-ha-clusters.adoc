@@ -7,6 +7,8 @@ endif::[]
 [IMPORTANT]
 Clustering is not available in CloudHub, see xref:runtime-manager::cloudhub-fabric.adoc[CloudHub Fabric] for details on how workers can be shared or doubled to scale your application and provide high availability.
 
+Mule Enterprise Edition supports scalable clustering to provide high availability (HA) for applications.
+
 A cluster is a set of Mule runtime engines that acts as a unit. In other words, a cluster is a virtual server composed of multiple nodes (Mule runtime engines). The nodes in a cluster communicate and share information through a distributed shared memory grid. This means that the data is replicated across memory in different machines.
 
 image::cluster.png[]
@@ -71,15 +73,44 @@ If multiple instances of the same application are deployed, they will fail becau
 * You must keep the following ports open to set up a Mule cluster: port `5701` and port `54327`.
 * If you configure your cluster to use multicast, you need to enable the multicast IP address: `224.2.2.3`. Multicast is used to discover new cluster members.
 
-== Clustering
+== High Availability
 
-With the initial configuration, MuleSoft recommends that you scale a cluster to no more than eight Mule runtime engines. All the Mule runtime engines in a cluster group together to form a single unit. With Anypoint Runtime Manager, you can deploy, monitor, or stop all the Mule runtime engines in a cluster as if they were a single Mule runtime engine.
+High Availability is a method of designing a computer system to prevent any downtime for the applications that run on it. Some systems use multiple servers so that if one server experiences downtime, the application can continue to run smoothly on the others, without interrupting service for the application’s end users.
 
-All the Mule runtime engines in a cluster share memory, as illustrated below:
+== Cluster Design and Management
+
+The Mule Management Console and Runtime Manager are two interfaces that enable you to set up a cluster of Mule instances, then deploy an application to run on the cluster. You can also monitor the status information for clusters and individual nodes. When clustered, you can easily manage several servers as one.
+
+[NOTE]
+For more detailed information about cluster management, see xref:runtime-manager::managing-servers.adoc[Managing Servers] in Runtime Manager.
+
+A Mule Cluster consists of two or more Mule runtime engines, or nodes, grouped together and treated as a single unit. With the initial configuration, MuleSoft recommends that you scale a cluster to no more than eight Mule runtime engines.
+
+With Anypoint Runtime Manager, you can deploy, monitor, or stop all the Mule runtime engines in a cluster as if they were a single Mule runtime engine.
+
+All the nodes in a cluster share memory as illustrated below:
 
 image::topology-4-cluster.png[topology_4-cluster]
 
 Mule uses an active-active model to cluster Mule runtime engines. The benefit of this model over an active-passive approach is that your application runs in all nodes, splitting message processing with the other nodes in your cluster, which expedites processing.
+
+=== Primary Node Difference
+
+In an active-active model, there is no primary node. However, one of the nodes acts as the primary polling node. This means that sources can be configured to only be used by the primary polling node so that no other node reads messages from that source.
+
+This feature works differently depending on the source type:
+
+* Scheduler source: only runs in the primary polling node.
+* Any other source: defined by the `primaryNodeOnly` attribute. Check each connector's documentation to know which is the default value for `primaryNodeOnly` in that connector.
++
+.Example configuration for JMS:
+[source,xml,linenums]
+----
+<flow name="jmsListener">
+    <jms:listener config-ref="config" destination="listen-queue" primaryNodeOnly="true"/>
+    <logger message="#[payload]"/>
+</flow>
+----
 
 == Queues
 
@@ -235,14 +266,19 @@ In cases of high load with endpoints that do not support load balancing, applyin
 
 You can also choose to define the minimum number of machines that a cluster requires to remain in an operational state. This configuration grants you a consistency improvement in the overall performance.
 
-////
-TODO: PLG, ok to HIDE or remove HA Cluster Demo UNTIL evaluating-mule-high-availability-clusters-demo is added to the 4.1 doc set, assuming that happens
-== HA Cluster Demo
+[[cluster_fips]]
+== Clustering in FIPS mode
 
-//TODO: UPDATE
-TODO: CHK/FIX LINKS /mule-user-guide/v/3.9/evaluating-mule-high-availability-clusters-demo?
-To evaluate Mule's HA clustering capabilities first-hand, continue on to the xref:3.9@mule-runtime::evaluating-mule-high-availability-clusters-demo.adoc[Mule HA Demo]. Designed to help new users evaluate the capabilities of Mule High Availability Clusters, the Mule HA Demo Bundle teaches you how to use the Mule Management Console to create a cluster of Mule runtime engines, and then deploy an application to run on the cluster. This demo simulates two processing scenarios that illustrate the cluster’s ability to automatically balance normal processing load, and its ability to reliably remain active in a failover situation.
-////
+To enable clustering in FIPS mode, Mule Runtime must run in FIPS mode. See xref:fips-140-2-compliance-support.adoc[FIPS Compliant support] for more information about this.
+
+If you are running in FIPS mode, then a key for the cluster must be defined. You can define the key by setting the `mule.cluster.network.encryption.key` property (`wrapper.conf` or system property). If you are using a clustered environment in FIPS mode and not setting the encryption key, the application will fail to deploy with a message `Cluster key must be defined in FIPS mode.`. It is not necessary to run in FIPS mode to define the encryption key and encrypt all communications. But if the runtime is running in FIPS mode, then the encryption key must be defined.
+
+With the encryption key defined, all communications between cluster nodes will be encrypted using an AES encryption algorithm, with the defined key.
+
+=== Warnings
+
+* The encryption key for all the clustered nodes must be the same for this feature to work.
+* Take into account that the use of a clustered environment in FIPS mode downgrades performance because all the communications between nodes will be encrypted (and decrypted).
 
 == Best Practices
 
@@ -261,26 +297,6 @@ TODO: PLG, OK to hide or remove the next bullet until we UPDATE /mule-user-guide
 * Use the VM connector to get optimal performance. Use the JMS connector for applications where data needs to be saved after the entire cluster exits.
 * Implement reliability patterns to create high reliability applications.
 
-////
-TODO: CHK/FIX LINKS
-TODO: PLG, OK TO REMOVE this bullet? Or how to update it for 4.1. endpoint-configuration-reference is no longer part of 4.1 docs
-* If your xref:endpoint-configuration-reference.adoc[custom message source] does not use a message receiver to define node polling. Then you must configure your message source to implement a `ClusterizableMessageSource` interface. `ClusterizableMessageSource` dictates that only one application node inside a cluster contains the active (that is, started) instance of the message source; this is the ACTIVE node. If the active node falters, the `ClusterizableMessageSource` selects a new active node, then starts the message source in that node.
-////
-
-[[cluster_fips]]
-== Clustering in FIPS mode
-
-To enable clustering in FIPS mode, Mule Runtime must run in FIPS mode. See xref:fips-140-2-compliance-support.adoc[FIPS Compliant support] for more information about this.
-
-If you are running in FIPS mode, then a key for the cluster must be defined. You can define the key by setting the `mule.cluster.network.encryption.key` property (`wrapper.conf` or system property). If you are using a clustered environment in FIPS mode and not setting the encryption key, the application will fail to deploy with a message `Cluster key must be defined in FIPS mode.`. It is not necessary to run in FIPS mode to define the encryption key and encrypt all communications. But if the runtime is running in FIPS mode, then the encryption key must be defined.
-
-With the encryption key defined, all communications between cluster nodes will be encrypted using an AES encryption algorithm, with the defined key.
-
-=== Warnings
-
-* The encryption key for all the clustered nodes must be the same for this feature to work. 
-* Take into account that the use of a clustered environment in FIPS mode downgrades performance because all the communications between nodes will be encrypted (and decrypted).
-
 == See Also
 
 * xref:installing-an-enterprise-license.adoc[Install an Enterprise License]
@@ -288,4 +304,4 @@ With the encryption key defined, all communications between cluster nodes will b
 * xref:runtime-manager::cloudhub-hadr.adoc[CloudHub High Availability and Disaster Recovery]
 * xref:creating-and-managing-a-cluster-manually.adoc[Create and Manage a Cluster Manually]
 * xref:transaction-management.adoc[Transaction Management]
-* xref:creating-and-managing-a-cluster-manually.adoc#quorum-management[Quorum Management].
+* xref:creating-and-managing-a-cluster-manually.adoc#quorum-management[Quorum Management]
