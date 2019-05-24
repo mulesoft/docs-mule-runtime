@@ -4,287 +4,200 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, transform, transformer, metadata, dataweave, data weave, datawave, datamapper, dwl, dfl, dw, payload, attribute, variable, flow, error, message
 
-DataWeave can select data from objects and arrays, variables that store that
-data, and the output of DataWeave functions when that output is an array or
-object. You can use selectors in Mule modules, connectors, and components
-that accept DataWeave expressions.
+DataWeave can select data from DataWeave objects and arrays, variables that store
+that data, and the output of DataWeave functions when that output is an array or
+object. More precisely, a DataWeave selector operates within a context, which can
+be a reference to the variable that stores the data, an object literal, an array
+literal, or the invocation of a DataWeave function. You can use selectors in Mule
+modules, connectors, and components that accept DataWeave expressions.
 
-A selector operates within a context, which can be a reference to
-the variable that stores the data, an object literal, an array literal,
-or the invocation of a DataWeave function. For examples, see <<single_value>>.
+== Use Selectors on DataWeave Arrays and Objects
 
-== Using Selectors on Arrays and Objects
+In DataWeave, selectors extract values from within DataWeave object
+(such as `{ myKey : "myValue" }`) or array (such as `[1,2,3,4]` or
+`[ { "myKey" : "myValue", "myKey" : "myValue2" } ]`).
 
-When referencing an array or object, you use selector expressions to extract
-specific values from within a data structure.
+The following DataWeave script uses the single-value selector (`.`) to retrieve
+values from the object and arrays defined by the variables `myObject` and
+`myArray`.
 
-Note that Studio and Design Center require DataWeave expressions to reside
-between square brackets that are preceded by a hash (or pound) symbol,
-for example:
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myObject = { "myKey" : "1234", "name" : "somebody" }
+var myArray = [ { "myKey" : "1234" }, { "name" : "somebody" } ]
+output application/json
+---
+{
+    selectingValueUsingKeyInObject : myObject.name,
+    selectingValueUsingKeyOfObjectInArray : myArray.name,
+}
+----
 
-```
-#[input_data.input_key]
-```
+.Output:
+[source,JSON,linenums]
+----
+{
+    "selectingValueUsingKeyInObject": "somebody",
+    "selectingValueUsingKeyOfObjectInArray": [ "somebody" ]
+ }
+----
 
-Valid keys must start with a letter that is optionally followed by any
-combination of numbers, letters, or underscores (`&#95;`).
+As the Output shows:
 
-* For valid keys in your data, quotation marks around the key and selector
-are _optional_. All of these examples work:
-`{"name" : "somebody"}.name`, `{"name" : "somebody"}."name"`,
-`{name : "somebody"}.name`, `{name : "somebody"}."name"`.
+* `myObject.name` returns the value `"somebody"`
+* `myArray.name` returns the array `[ "somebody" ]`
+
+== Selector Quick Reference
+
+Single Value (`.`)::
+Acts on arrays and objects to return the value of a matching key. The syntax
+is `.myKey`. To retrieve values of duplicate keys in a DataWeave _object_, use
+`*`, instead. For examples, see <<single_value>>.
+
+Multiple Values (`*`)::
+Acts on arrays and objects to retrieve the values of all matching keys
+at a single level in the hierarchy of a data structure. The syntax is
+`*myKey`. For values of all duplicate keys at lower levels in the hierarchy,
+use the descendants selector (`..`), instead. For examples, see <<multi_value>>.
+
+Key-Value Pair (`&amp;`)::
+Acts on arrays and objects. Instead of returning the value of the DataWeave
+object, this selector returns the entire DataWeave object, both key and value.
+The syntax is `.&amp;myKey`. For examples, see <<key_value>>.
+
+Descendants (`..`)::
+Acts on arrays and objects to retrieve all matching keys from arrays and
+object below the given key, regardless of their location in the hierarchy.
+The syntax is `..myKey` For more examples, see <<descendants>>.
+
+Index (`[]`)::
+Returns the value at the specified index of an array. An example
+is the `[0]` at the end of `["a","b","c"][0]`, which returns `"a"`. For
+examples, see <<index>>.
+
+Range `[index1 to index2]`::
+Returns an array with values of the selected indices. An example is
+the `[2 to 3]` at the end of `["a","b","c","d"][2 to 3]`, which returns
+`["c","d"]`. For examples, see <<range>>.
+
+XML attribute (`.@myKey`)::
+Returns the value of a selected key for an XML attribute. For an example, see
+<<xml_attribute>>.
+
+Namespace Selector (`myKey.#`)::
+Returns the `xmlns` namespace from the element that also contains the selected
+key. For an example, see <<namespace>>.
+
+Selector Modifiers (`?` and `!`)::
+`?` and `!` check for the specified key. `?` returns `true` or `false`.
+`!` returns an error if the key is not present. For examples, see
+ <<selector_modifiers>>.
+
+Filter Selectors (`myKey[?(booleanExpression)]`)::
+Returns the selected items if the Boolean expression returns `true` and the
+specified `key` is present. It returns `null` if the expression is false or the
+key is not present. For examples, see <<filter_selectors>>.
+
+[[selector_metadata]] Metadata Selector `.^someMetadata`::
+Returns the value of specified metadata for a Mule payload, variable, or
+attribute. The selector can return the value of class (`.^class`), content
+length (`.^contentLength`), (`.^encoding`), MIME type (`.^mimeType`),
+media type (`.^mediaType`), raw  (`.^raw`), and custom (`.^myCustomMetadata`)
+metadata. For details, see <<metadata_selector>>.
+
+== Valid Keys
+
+To be valid, a key name in a DataWeave object must start with a letter that is
+optionally followed by any combination of numbers, letters, or underscores
+(`&#95;`).
+
+* Quotation marks around a valid key and selector are _optional_, so all of
+these examples work:
+** `{"name" : "somebody"}.name`
+** `{"name" : "somebody"}."name"`
+** `{name : "somebody"}.name`
+** `{name : "somebody"}."name"`
+
 * For _invalid_ keys, you must surround the key and selector in single-quotes
 or double-quotes. For example, for an invalid key like `some-name`,
 `{ "some-name" : "somebody" }."some-name"` works, but
 `{ some-name : "somebody" }.some-name` produces the error `Invalid input '-'`.
 Both the key and the selector require the quotation marks.
 
-
-[cols="1,8", options="header"]
-|===
-| Data to extract | Examples
-
-| *Single Value* (`.`)
-a|`.` selector acts on arrays and objects.
-
-* Selecting a `name` value from an object:
-+
-```
-{ "id" : "1234", "name" : "me" }.name
-```
-+
-Returns `"me"` if the `output` directive is `application/json`.
-+
-* Selecting a `name` value from an array:
-+
-```
-[ { "id" : "1234", "name" : "me" } ].name
-```
-+
-```
-[ { "id" : "1234" }, { "name" : "me" } ].name
-```
-+
-Each example returns `[ "me" ]` if the `output` directive is
-`application/json`.
-+
-* Selecting the first `name` value:
-+
-```
-{ user : "a", "user" : "b" }.user
-```
-+
-Only returns the first `user` value, `"a"`  if the `output` directive is set
-to `application/json`.
-
-For more examples, see <<single_value>>.
-
-| *Multiple Values*  (`*`)
-a|
-`*` selector acts on arrays and objects.
-
-* Selecting all `user` values from an array:
-+
-```
-[ { "user" : "a", "user" : "b" } ].*user
-```
-+
-Returns `["a", "b"]` if the `output` directive is `application/json`.
-
-* Selecting all `user` values from an object:
-+
-```
-{ user : "a", "user" : "b" }.*user
-```
-+
-Returns: `["a", "b"]` if the `output` directive is `application/json`.
-
-* Selecting all `user` values from the `users` key:
-+
-```
-{ "users" : [ { "user" : "a" }, { "user" : "b" } ] }.users.*user`
-```
-+
-Returns: `[ "a", "b" ]` if the `output` directive is `application/json`.
-
-For more examples, see <<multi_value>>.
-
-| *Key-Value Pair* (`&amp;`)
-a|
-`&amp;` selector acts on arrays and objects.
-
-* Selecting values from the `&amp;` key:
-+
-```
-{ "users" : [ "user" : "ale", "something": "else", "user" : "joe" ] }.users.&user
-```
-+
-Returns `[ { "user": "ale" }, { "user": "joe" } ]` if the `output` directive
-is `application/json`.
-
-For more examples, see <<key_value>>.
-
-| *Descendants* (`..`)
-a|
-`..` selector acts on arrays and objects.
-
-* Selecting values from the `c` key:
-+
-```
-{ "user" : [{ "a" : "b"}, {"c" : [ {"aa" : "bb"}, { "cc": "dd" } ] } ] , "user" : "d" }..c
-```
-+
-Returns `[ [ { "aa": "bb" }, { "cc": "dd" } ] ]`.
-
-For more examples, see <<descendants>>.
-
-| *Index* (`[]`)
-a|
-`[]` selector acts on indices of an array.
-
-* Selecting an index from an array:
-** `[1,2,3,4][0]` returns `[1]`
-+
-The index of the first element in an array is always `0`.
-+
-** `[1,2,3,4][4]` returns `[3]`
-
-For more examples, see <<range>>.
-
-| *Range* `[index1 to index2]`
-a| `[index1 to index2]` selector produces and array with values from selected
-indexes.
-
-* Selecting a range of indices:
-** `[0,1,2][0 to 1]` returns `[ 0, 1 ]`
-** `[0,1,2][-1 to 0]` returns an inverted list: `[ 2, 1, 0 ]`
-
-For more examples, see xref:dataweave-selectors#range-selector.adoc[Range Selectors]
-
-| *XML attribute* `.@keyName`
-a| `.@keyName` selector returns the value of the selected attribute.
-
-For an example, see <<xml_attribute>>.
-
-| *Namespace Selector* `keyName.#`
-a| `keyName.#` selector returns the namespace of the selected XML element.
-
-For an example, see <<namespace>>.
-
-| *Selector Modifiers* `?` and `!`
-a| `?` and `!` check for the specified key. `?` returns `true` or `false`.
-`!` returns an error if the key is not present.
-
-* `{ "a": "b" }.a?` returns `true`. `{ "a": "b" }.c?` returns `false`.
-* `{ "a": "b" }.a!` returns `"b"`. `{ "a": "b" }.c!` produces the error
-`There is no name 'c'`.  `{ "a": "b" }.c` (without `!`) returns `null`.
-
-For more examples, see <<selector_modifiers>>.
-
-| *Filter Selectors* `keyName[?(booleanExpression)]`
-a| `keyName[?(booleanExpression)]` returns the selected items if the Boolean
-expression returns `true` and the specified `key` is present. It returns `null`
-if the expression is false or the key is not present.
-
-For examples, see <<filter_selectors>>.
-
-| *Metadata Selector* `.^someMetadata`
-a| [[selector_metadata]]
-Returns the value of specified metadata for a Mule payload, variable, or
-attribute. The selector can return the value of class (`.^class`), encoding
-(`.^encoding`), MIME type (`.^mimeType`), media type  (`.^mediaType`),
-raw  (`.^raw`), and custom (`.^myCustomMetadata`) metadata. See
-<<metadata_selector>>.
-
-* Content length metadata: `.^contentLength` returns the content length of the
-value, if the value is present. For an example, see <<caret_contentlength>>.
-* Class metadata: `.^class` returns the class of the Plain Old Java Object
-(POJO). For example, `{ "string" : payload.string.^class }` might return
-`{ "string": "java.lang.String" }` if the input payload defines a Java string,
-such as `simplePojo.string = "myString"`, in a simple POJO, and
-`{ "date" : payload.date.^class }` might return `{ "date": "java.util.Date" }`.
-For an example, see <<caret_class>>.
-* Encoding metadata: `.^encoding` returns the encoding of a value. For example,
-`{ "myEncoding" : payload.^encoding }` might return `{"myEncoding": "UTF-8"}`
-for an input POJO. For an example, see <<caret_encoding>>.
-* Media Type Selector: `.^mediaType` returns the MIME type of a value that
-includes parameters, for example, `application/json;charset=UTF-16`, and the
-expression in the value of `{ "myMediaType" : payload.^mediaType }` might return
-`"myMediaType": "*/*; charset=UTF-8"` for an input POJO. For an example, see
-<<caret_mediatype>>.
-* MIME Type metadata: `.^mimeType` returns the MIME type (without parameters)
-of a value, for example, `application/json`, and
-`{ "myMimeType" : payload.^mimeType }` might return `{ "myMediaType": "*/*" }`
-for an input POJO. For an example, see <<caret_mimetype>>.
-* Raw metadata: `.^raw` returns the underlying data (typically, a binary value)
-of a plain old Java object (POJO). This selector is sometimes used when
-calculating an MD5 for hashes when checking for man-in-the-middle attacks.
-For examples, see <<caret_raw>>.
-* Custom metadata: `.^myCustomMetadata` returns the value of custom metadata.
-For examples, see <<caret_custom_metadata>>.
-
-|===
-
-
 [[single_value]]
-== Single-Value Selector (.keyName)
+== Single-Value Selector (.myKey)
 
-`.keyName` selectors work over an object or array.
-
-* Given the object `{ "aString": "hello", "aNum": 2, "aBool" : false }`,
-a single-value selector can select the value of one of the object's
-key-value pairs, for example:
-+
-`{ "aString": "hello", "aNum": 2, "aBool" : false }.aString`
-+
-Returns a string: `"hello"`
-+
-* Given the array
-`[ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" ]`,
-a single-value selector can select values from the array's key-value pairs,
-for example:
-+
-`[ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" ].aString`
-+
-Returns an array: `[ "hello", "world" ]`
-+
-* Supported variable references are
-xref:dataweave-variables-context.adoc[Mule Runtime variables], such as `payload`
-and `attributes`, and xref:dataweave-variables.adoc[DataWeave variables] that
-store arrays or objects. A simple example is `payload.someKey` where the
-payload is the object `{"someKey" : 1234 }`, so the result is `1234`.
-* A selector can act on the invocation of a function, such as the DataWeave
-`read` function. For example, `read('{"A":"B"}','application/json')."A"`
-returns `"B"`.
-
-=== Single-Value Selector Over an Object
-
-`.keyName` returns the value of the _first_ matching key. It does not
-return values of any subsequent, duplicate keys. For example,
-`{ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" }.aString`
-returns `[ "hello" ]`, _not_ `[ "hello", "world" ]`.
+`.myKey` selectors work over an object or array.
 
 When DataWeave processes a selector, it sets a new context (or scope) for
 subsequent selectors, so you can navigate through the complex structures
 of arrays and objects using chains of selectors. The depth of the selection
 is limited only by the depth of the current context.
 
-In this example, `payload.people.person.address` returns the value of the
+Supported variable references are
+xref:dataweave-variables-context.adoc[Mule Runtime variables], such as `payload`
+and `attributes`, and xref:dataweave-variables.adoc[DataWeave variables] that
+store arrays or objects. A simple example is `payload.myKey` where the
+payload is the object `{"myKey" : 1234 }`, so the result is `1234`.
+
+A selector can act on the invocation of a function, such as the DataWeave
+`read` function. For example, `read('{"A":"B"}','application/json')."A"`
+returns `"B"`.
+
+=== Single-Value Selector Over an Object
+
+For an object, the single-value selector returns the value of the matching
+key. For example, in the following script, `myObject.user` returns `"a"`.
+
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myObject = { user : "a" }
+output application/json
+---
+{ myObjectExample : myObject.user }
+----
+
+.Output:
+[source,json,linenums]
+----
+{ "myObjectExampleOne": "a" }
+----
+
+When operating on a DataWeave _object_ (not an array), the `.` selector only
+returns the value of the _first_ matching key even if the object contains
+multiple matching keys, for example:
+
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myObject = { user : "a", "user" : "b" }
+output application/json
+---
+{ myObjectExample : myObject.user }
+----
+
+.Output:
+[source,json,linenums]
+----
+{ "myObjectExampleOne": "a" }
+----
+
+To return the values of mulitple matching keys in cases like this, see
+<<multi_value>>.
+
+In the next example, `payload.people.person.address` returns the value of the
 `address` element.
 
 .DataWeave Script:
 [source,dataweave,linenums]
 ----
 %dw 2.0
-output application/xml
----
-{ address: payload.people.person.address }
-----
-
-.Input Payload:
-[source,json,linenums]
-----
-{
+var myData = {
   "people": {
     "size" : 1,
     "person": {
@@ -302,6 +215,9 @@ output application/xml
     }
   }
 }
+output application/xml
+---
+{ address: myData.people.person.address }
 ----
 
 .Output:
@@ -321,15 +237,40 @@ output application/xml
 ----
 
 [[single_value_array]]
-=== Single-Value Selector Over an Array
+== Single-Value Selector Over an Array
 
-`.keyName` returns an array with the values of all matching keys in the
-input array.
+When acting on an array, the `.` selector returns an array even if there is
+only one matching value. For example, `["a":"b"]."a"` returns `["b"]`.
 
-When acting on an array, the single-value selector returns an array even if
-there is only one matching value. For example, `["a":"b"]."a"` returns `["b"]`.
+Note that the `.` selector acts differently on arrays than it acts on objects.
+Like `.*`, the `.` selector returns an array with the values of
+_all matching keys_ at the specified level of the input array.
 
-In the following example, the value of the input payload, `people`, is an array
+
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myArrayOfKeyValuePairs = [ "aString": "hello", "aNum": 2, "aString" : "world" ]
+var myArrayOfObjects = [ { "aString": "hello" }, { "aNum": 2 }, { "aString" : "world" } ]
+output application/json
+---
+{
+    myKeyValueExample : myArrayOfKeyValuePairs.aString,
+    myObjectExample :  myArrayOfObjects.aString
+}
+----
+
+.Output:
+[source,json,linenums]
+----
+{
+  "myKeyValueExample": [ "hello", "world" ],
+  "myObjectExample": [ "hello", "world" ]
+}
+----
+
+In the following example, the value of the input variable, `myData`, is an array
 that contains two objects. The selector navigates both objects and returns
 the values of both `street` keys.
 
@@ -337,15 +278,7 @@ the values of both `street` keys.
 [source,dataweave,linenums]
 ----
 %dw 2.0
-output application/json
----
-payload.people.person.address.street
-----
-
-.Input Payload
-[source,dataweave,linenums]
-----
-{
+var myData = {
   "people": [
     {
       "person": {
@@ -379,6 +312,9 @@ payload.people.person.address.street
     }
   ]
 }
+output application/json
+---
+myData.people.person.address.street
 ----
 
 .Output:
@@ -406,10 +342,6 @@ and returns matching results in an array.
 
 `.*` returns an array with all the values whose key matches the
 expression.
-
-For example,
-`{ "aString": "hello", "aNum": 2, "aBool" : false, "aString" : "world" }.*aString`
-returns `[ "hello", "world" ]`.
 
 The following example returns the values of all `user` elements from the
 input payload.
@@ -446,14 +378,39 @@ example, `payload.people.person.address.*street` and the example
 `payload.people.person.address.street` (from <<single_value_array>>) return the
 same results.
 
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myArrayOfKeyValuePairs = [ "aString": "hello", "aNum": 2, "aString" : "world" ]
+var myArrayOfObjects = [ { "aString": "hello" }, { "aNum": 2 }, { "aString" : "world" } ]
+output application/json
+---
+{
+    myKeyValueExample : myArrayOfKeyValuePairs.*aString,
+    myObjectExample :  myArrayOfObjects.*aString
+}
+----
+
+.Output:
+[source,json,linenums]
+----
+{
+  "myKeyValueExample": [ "hello", "world" ],
+  "myObjectExample": [ "hello", "world" ]
+}
+----
+
 
 [[descendants]]
-== Descendants Selector (`..keyName`)
+== Descendants Selector (`..myKey`)
 
-This selector is applied to the context using the form `..keyName` and
+The `..` selector acts on arrays and objects.
+
+This selector applies to the context using the form `..myKey`, and it
 retrieves the values of all matching key-value pairs in the sub-tree under
-the current context. Regardless of the hierarchical structure these fields
-are organized in, they are all placed at the same level in the output.
+the selected context. Regardless of the hierarchical structure of the fields,
+the output is returned at the same level.
 
 In this example, all of the fields that match the key `name` are placed in a
 list called `names` regardless of their cardinality in the tree of the input
@@ -504,12 +461,11 @@ output application/json
 ----
 
 [[key_value]]
-== Key-Value Pair Selector (`.&keyName`)
+== Key-Value Pair Selector (`.&myKey`)
 
-
-The `&` selector retrieves both the keys and the values of all matching keys pairs
-in the current context. These are returned as an object, containing these
-retrieved keys and values.
+The `&amp;` selector acts on arrays and objects. `&amp;` retrieves both the
+keys and the values of all matching keys pairs in the current context. These
+are returned as an object, containing these retrieved keys and values.
 
 .DataWeave Script:
 [source,dataweave,linenums]
@@ -760,17 +716,22 @@ output application/json
 .Output:
 [source,json,linenums]
 ----
-{
-  "name": "E"
-}
+{ "name": "E" }
 ----
 
 [[range]]
 == Range selector (`anIndex to anotherIndex`)
 
-The range selector (`to`) returns matching indices of an array or string. You
+The `to` selector returns values of matching indices in an array or string. You
 can also use it to reverse the order of the indices in the range. The selector
 treats characters in the string as indices.
+
+* Selecting an index from an array:
+** `[1,2,3,4][0]` returns `[1]`
++
+The index of the first element in an array is always `0`.
++
+** `[1,2,3,4][4]` returns `[3]`
 
 === Range Selector Over an Array
 
@@ -810,7 +771,7 @@ output application/json
 
 The Range selector limits the output to only the elements specified by the range
 on that specific order, treating the string as an array of characters. This
-selector allows you to slice a string or even invert it.
+selector enables you to slice a string or invert it.
 
 .DataWeave Script:
 [source,dataweave,linenums]
@@ -821,7 +782,7 @@ output application/json
 {
   slice: "DataWeave"[0 to 1],
   last: "DataWeave"[-1 to 0]
-}
+ }
 ----
 
 .Output:
@@ -835,9 +796,9 @@ output application/json
 ----
 
 [[xml_attribute]]
-== XML Attribute Selector (`.@keyName`)
+== XML Attribute Selector (`.@myKey`)
 
-`.@keyName` selects an attribute in an XML element.
+`.@myKey` selects an attribute in an XML element.
 
 Using `.@` without the key name returns an object containing the attributes
 as key-value pairs.
@@ -997,9 +958,9 @@ output application/json
 ----
 
 [[filter_selectors]]
-== Filter Selectors (`keyName[?($ == "aValue")]`)
+== Filter Selectors (`myKey[?($ == "aValue")]`)
 
-`keyName[?($ == "aValue")]` returns only the values of matching keys
+`myKey[?($ == "aValue")]` returns only the values of matching keys
  within an array or object. Note that `?` is also used in <<key_present>>.
  If no key-value pairs match, the result is `null`.
 
@@ -1092,15 +1053,41 @@ payload mapObject { ($$) : $[?($=="Mariano")] }
 [[metadata_selector]]
 == Metadata Selector (.^someMetadata)
 
-Examples in the subsections that follow use supported metadata selectors:
+Returns the value of specified metadata for a Mule payload, variable, or
+attribute. The selector can return the following metadata:
 
-* <<caret_contentlength>>
-* <<caret_class>>
-* <<caret_encoding>>
-* <<caret_mediatype>>
-* <<caret_mimetype>>
-* <<caret_raw>>
-* <<caret_custom_metadata>>
+* Content length metadata: `.^contentLength` returns the content length of the
+value, if the value is present. For an example, see <<caret_contentlength>>.
+
+* Class metadata: `.^class` returns the class of the Plain Old Java Object
+(POJO). For example, `{ "string" : payload.string.^class }` might return
+`{ "string": "java.lang.String" }` if the input payload defines a Java string,
+such as `simplePojo.string = "myString"`, in a simple POJO, and
+`{ "date" : payload.date.^class }` might return `{ "date": "java.util.Date" }`.
+For an example, see <<caret_class>>.
+
+* Encoding metadata: `.^encoding` returns the encoding of a value. For example,
+`{ "myEncoding" : payload.^encoding }` might return `{"myEncoding": "UTF-8"}`
+for an input POJO. For an example, see <<caret_encoding>>.
+
+* Media Type Selector: `.^mediaType` returns the MIME type of a value that
+includes parameters, for example, `application/json;charset=UTF-16`, and the
+expression in the value of `{ "myMediaType" : payload.^mediaType }` might return
+`"myMediaType": "*/*; charset=UTF-8"` for an input POJO. For an example, see
+<<caret_mediatype>>.
+
+* MIME Type metadata: `.^mimeType` returns the MIME type (without parameters)
+of a value, for example, `application/json`, and
+`{ "myMimeType" : payload.^mimeType }` might return `{ "myMediaType": "*/*" }`
+for an input POJO. For an example, see <<caret_mimetype>>.
+
+* Raw metadata: `.^raw` returns the underlying data (typically, a binary value)
+of a plain old Java object (POJO). This selector is sometimes used when
+calculating an MD5 for hashes when checking for man-in-the-middle attacks.
+For examples, see <<caret_raw>>.
+
+* Custom metadata: `.^myCustomMetadata` returns the value of custom metadata.
+For examples, see <<caret_custom_metadata>>.
 
 [[caret_contentlength]]
 === Content Length Metadata Selector (.^contentLength)
