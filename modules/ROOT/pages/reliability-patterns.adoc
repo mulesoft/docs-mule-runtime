@@ -84,27 +84,26 @@ Here is a code example that shows what a complete reliability pattern would look
 
 [source,xml,linenums]
 ----
-	<!-- This is the reliable acquisition flow in the reliability pattern.  -->
-	<flow name="reliable-data-acquisition">
-		<http:listener config-ref="HTTP_Listener_config" path="transactionalEndpoint"/>
-		<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/> <!--1-->
-	</flow>
+<!-- This is the reliable acquisition flow in the reliability pattern.  -->
+<flow name="reliable-data-acquisition">
+	<http:listener config-ref="HTTP_Listener_config" path="transactionalEndpoint"/>
+	<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/> <!--1-->
+</flow>
 
-	<!-- This is the application logic flow in the reliability pattern.
-		It is a wrapper around a sub-flow, "business-logic-processing".
+<!-- This is the application logic flow in the reliability pattern.
+	It is a wrapper around a sub-flow, "business-logic-processing". -->
+<flow name="main-flow">
+	<vm:listener doc:name="Listener" config-ref="VM_Config" queueName="toTransactionalVM"
+		transactionalAction="ALWAYS_BEGIN"/> <!--2-->
+	<flow-ref name="business-logic-processing"/>
+</flow>
+
+<!-- This is where the real work of the application will happen. -->
+<sub-flow name="business-logic-processing">
+	<!--
+		This flow is where the actual business-logic is performed.
 	-->
-	<flow name="main-flow">
-		<vm:listener doc:name="Listener" config-ref="VM_Config" queueName="toTransactionalVM" 
-			transactionalAction="ALWAYS_BEGIN"/> <!--2-->
-		<flow-ref name="business-logic-processing"/>
-	</flow>
-	
-	<!-- This is where the real work of the application will happen. -->
-	<sub-flow name="business-logic-processing">
-		<!--
-			This flow is where the actual business-logic is performed.
-		-->
-	</sub-flow>
+</sub-flow>
 ----
 <1> The message is written to the VM queue. It is now available for processing by the main flow.
 <2> The message is read from the VM queue transactionally. This ensures that if an error occurs, the reading will be rolled back and the message reprocessed.
@@ -120,26 +119,26 @@ The following code implements a reliable acquisition flow from an FTP listener (
 
 [source,xml,linenums]
 ----
-	<ftp:config name="FTP_Config">
-		<ftp:connection host="localhost" username="max" password="mulesoft"/>
-	</ftp:config>
-	<flow name="reliable-data-acquisition"> 
-		<ftp:listener config-ref="FTP_Config" watermarkEnabled="true" directory="someDirectory/in"> <!--1-->
-			<scheduling-strategy >
-				<fixed-frequency />
-			</scheduling-strategy>
-		</ftp:listener>
-		<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/>
-	</flow>
+<ftp:config name="FTP_Config">
+	<ftp:connection host="localhost" username="max" password="mulesoft"/>
+</ftp:config>
 
-	<flow name="doc-examplesFlow">
-		<vm:listener queueName="toTransactionalVM" config-ref="VM_Config" transactionalAction="ALWAYS_BEGIN"/>
-		<set-variable value="#[attributes.filename]" variableName="filepath"/>
-		<!-- File content is already present in payload --> 
-		<flow-ref name="business-logic-processing"/>
-		<ftp:delete path="#[vars.filepath]"/> <!--2-->
-	</flow>
-</mule>
+<flow name="reliable-data-acquisition">
+	<ftp:listener config-ref="FTP_Config" watermarkEnabled="true" directory="someDirectory/in"> <!--1-->
+		<scheduling-strategy >
+			<fixed-frequency />
+		</scheduling-strategy>
+	</ftp:listener>
+	<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/>
+</flow>
+
+<flow name="doc-examplesFlow">
+	<vm:listener queueName="toTransactionalVM" config-ref="VM_Config" transactionalAction="ALWAYS_BEGIN"/>
+	<set-variable value="#[attributes.filename]" variableName="filepath"/>
+	<!-- File content is already present in payload -->
+	<flow-ref name="business-logic-processing"/>
+	<ftp:delete path="#[vars.filepath]"/> <!--2-->
+</flow>
 ----
 <1> In case you wish to perform a transformation before publishing to VM, you may add a max redelivery count.
 <2> If the file is not intended to be deleted, do not use the Delete Operation. The same applies if the intended operation is Move.
