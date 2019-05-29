@@ -1,0 +1,130 @@
+= Using Flows for Orchestration
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, studio, mule esb, orchestration
+
+== Introduction
+
+A *flow* is a simple, yet flexible mechanism that enables you to orchestrate services using the sophisticated message flow capabilities of Mule. You can use a flow to automate integration processes and construct Mule message processing solutions by placing Mule elements in a valid order.
+
+== When to Use a Flow
+
+[TIP]
+*A flow is the most versatile and powerful integration mechanism available in Mule.*
+
+Flows are valuable for many use cases, including:
+
+* Simple integration tasks
+* Scheduling data processing
+* Connecting cloud and on-premise applications
+* Event processing for which multiple services need to be composed
+
+
+== The Anatomy of a Flow
+
+A flow is, in essence, a chain of Mule components. If you think of a Mule component as a lego block, a flow is the structure you build by combining the blocks. A flow has a message source, which is the source of messages that are processed by the component chain.
+
+//image::flow.jpg[.
+
+== Flow Configuration
+
+Configure a flow by using the XML <flow> element. Each flow has a name attribute, message source (unless it's a private flow), one or more components, and an optional error handler.
+
+*Basic Structure*
+
+[source,xml,linenums]
+----
+<flow name="">
+    - 0..1 Source
+    - 1..n Component(s)
+    - 0..1 Error Handler
+</flow>
+----
+
+Flows seem simple, yet they can be quite powerful. When combined with expressions in Mule, they enable the sophisticated processing of message contents. There are many elements that leverage expressions, including:
+
+* xref:mule-sdk::operations.adoc[Operations]
+* xref:about-components.adoc[Core Components]
+
+== Example
+
+*Simple Book Order Processing Flow*
+
+[source,xml,linenums]
+----
+<flow name="orderHandling">
+  <file:listener directory="/myDirectory">
+    <scheduling-strategy>
+      <fixed-frequency/>
+    </scheduling-strategy>
+    <file:matcher filenamePattern="*.xml"/>
+  </file:listener>
+  <ee:transform>
+    <ee:message>
+      <ee:set-payload resource="createBookOrdersTransformation.dwl"/>
+    </ee:message>
+  </ee:transform>
+  <foreach collection="#[payload.orders filterObject ((value, key, index) -> value.type == 'books')]">
+      <http:request method="POST" path="/book/inventory"/>
+      <http:request method="POST" path="/book/order"/>
+      <email:send toAddresses="#[payload.customer.email]">
+        <email:body >
+          <email:content ><![CDATA[#['Your order has been placed.']]]></email:content>
+        </email:body>
+      </email:send>
+      <db:insert>
+        <db:sql >INSERT INTO ORDERS(CUSTOMER, AMOUNT) VALUES (:id, :amount)</db:sql>
+        <db:input-parameters><![CDATA[#[{ id : payload.customer.id, amount: payload.order.total }]]]></db:input-parameters>
+      </db:insert>
+    </choice>
+  </foreach>
+  <error-handler >
+    <on-error-continue>
+      <jms:publish destination="failedOrders"/>
+    </on-error-continue>
+  </error-handler>
+</flow>
+----
+
+== Flow Behavior
+
+When the source receives or generates a message, Mule triggers the flow and invokes the configured components in a chain in the same order as the components are configured. Some components accept child component elements. Mule processes these before returning and continuing processing the main list.
+
+//image::flowrr.jpg[]
+
+== Private Flows
+
+A private flow is a flow that can't be accessed from outside the Mule app because it has no source defined. Therefore, private flows are only used if they are referenced from another construct running in the same Mule app. When configuring Mule using XML, use the _<flow-ref>_ element to include one flow in another.
+
+A private flow differs from a subflow in that a private flow has its own context and error handler.
+
+*Private Flow Example*
+
+[source,xml,linenums]
+----
+<flow name="privateFlow">
+  <set-payload value="b"/>
+</flow>
+
+<flow name="publicFlow">
+  <http:listener path="/in" config-ref="listenerConfig"/>
+  <set-payload value="a"/>
+  <flow-ref name="privateFlow"/>
+  <logger message="#[payload]"/>
+</flow>
+----
+
+=== Reusing Logic Across Applications
+
+When your logic needs to be shared among different Mule apps, we recommend
+parameterizing it and exposing it through the xref:1.1@mule-sdk::xml-sdk.adoc[XML SDK], which allows creating custom modules. Like with flows, the operations that custom modules expose can contain any Mule components. Custom modules are clearly parameterized and typed.
+
+
+== See Also
+
+* xref:understanding-orchestration-using-mule.adoc[Understanding Orchestration Using Mule]
+* xref:about-flows.adoc[Flows and Subflows]
+* xref:flowref-about.adoc[Flow Reference Component]
+* xref:error-handling.adoc[Error Handlers]
+* xref:1.1@mule-sdk::xml-sdk.adoc[XML SDK]
