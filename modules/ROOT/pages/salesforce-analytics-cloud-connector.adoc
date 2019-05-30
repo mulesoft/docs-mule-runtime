@@ -429,22 +429,22 @@ xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics"
 http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd
 ----
 +
-. Add the data-mapper namespace as follows:
+. Add the dw namespace as follows:
 
 +
 
 [source,text,linenums]
 ----
-xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
+xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
 ----
 
-. Add location of data mapper schema referred by data-mapper namespace with the following value:
+. Add location of dw schema referred by dw namespace with the following value:
 
 +
 
 [source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
 ----
 +
 . Add a context:property-placeholder element to your project, then configure its attributes as follows:
@@ -454,15 +454,6 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 [source,xml]
 ----
 <context:property-placeholder location="mule-app.properties"/>
-----
-+
-. Add a data-mapper:config element to your project, then configure its attributes as follows:
-
-+
-
-[source,xml,linenums]
-----
-<data-mapper:config name="CSV_To_List_Record_" transformationGraphPath="csv_to_list_record_.grf" doc:name="CSV_To_List_Record_"/>
 ----
 +
 . Add a sfdc-analytics:config element to your project, then configure its attributes as follows:
@@ -494,13 +485,28 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 </file:inbound-endpoint>
 ----
 +
-. Within the flow element add a data-mapper:transform element as follows:
+. Within the flow element add a transform-message element as follows:
 
 +
 
 [source,xml,linenums]
 ----
-<data-mapper:transform config-ref="CSV_To_List_Record_" doc:name="CSV To List&lt;Record&gt;"/>
+<dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	(Id: (trim payload01.Id) as :number) when payload01.Id? and ((trim payload01.Id) != ''),
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})]]></dw:set-payload>
+            </dw:transform-message>
 ----
 +
 . Within the flow element add a sfdc-analytics:upload-external-data-into-new-data-set-and-start-processing element as follows:
@@ -521,27 +527,45 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+<mule xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file"
 	xmlns:context="http://www.springframework.org/schema/context"
 	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
 	xmlns:spring="http://www.springframework.org/schema/beans"
-	xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics"
-	xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd
-http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
-http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
 http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
 http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd">
 	<context:property-placeholder location="mule-app.properties"/>
 	<sfdc-analytics:config name="Salesforce_Analytics_Cloud__Basic_authentication" username="${salesforce.username}" password="${salesforce.password}" securityToken="${salesforce.securityToken}" metadataFileName="${metadata.file.analytics}" doc:name="Salesforce Analytics Cloud: Basic authentication" url="${salesforce.url}"/>
-	<data-mapper:config name="CSV_To_List_Record_" transformationGraphPath="csv_to_list_record_.grf" doc:name="CSV_To_List_Record_"/>
+	<file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
 	<flow name="analytics_performanceFlow">
         <file:inbound-endpoint path="path_to_folder_to_monitor" moveToDirectory="path_to_folder_where_to_move_processed_files" responseTimeout="10000" doc:name="File">
         </file:inbound-endpoint>
-        <data-mapper:transform config-ref="CSV_To_List_Record_" doc:name="CSV To List&lt;Record&gt;"/>
-        <sfdc-analytics:upload-external-data-into-new-data-set-and-start-processing config-ref="Salesforce_Analytics_Cloud__Basic_authentication" type="recordId" operation="UPSERT" description="Test upload of 2500 records all in one step" label="records_2500_in_one_step" dataSetName="records_2500_in_one_step_with_app" edgemartContainer="TestContainer" notificationSent="ALWAYS" notificationEmail="name@email.com" doc:name="Salesforce Analytics Cloud">
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <sfdc-analytics:upload-external-data-into-new-data-set-and-start-processing config-ref="Salesforce_Analytics_Cloud__Basic_authentication" type="metadata.json:RELATIVE" operation="UPSERT" description="Test upload of 2500 records all in one step" label="records_2500_in_one_step" dataSetName="records_2500_in_one_step_with_app" edgemartContainer="TestContainer" notificationSent="ALWAYS" notificationEmail="name@email.com" doc:name="Salesforce Analytics Cloud">
             <sfdc-analytics:payload ref="#[payload]"/>
         </sfdc-analytics:upload-external-data-into-new-data-set-and-start-processing>
     </flow>
@@ -570,21 +594,21 @@ xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics"
 http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd
 ----
 
-. Add data-mapper namespace as follows:
+. Add dw namespace as follows:
 
 +
 
 ----
-xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
+xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
 ----
 
-. Add location of data mapper schema referred by data-mapper namespace with the following value:
+. Add location of dw schema referred by dw namespace with the following value:
 
 +
 
 [source,text,linenums]
 ----
-http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
 ----
 
 . Add a context:property-placeholder element to your project, then configure its attributes as follows:
@@ -594,15 +618,6 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 [source,xml]
 ----
 <context:property-placeholder location="mule-app.properties"/>
-----
-
-. Add a data-mapper:config element to your project, then configure its attributes as follows:
-
-+
-
-[source,xml,linenums]
-----
-<data-mapper:config name="CSV_To_List_Record_" transformationGraphPath="csv_to_list_record_.grf" doc:name="CSV_To_List_Record_"/>
 ----
 
 . Add a sfdc-analytics:config element to your project, then configure its attributes as follows:
@@ -660,13 +675,28 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 <sfdc-analytics:create-data-set config-ref="Salesforce_Analytics_Cloud__Basic_authentication" operation="OVERWRITE" description="${batch.dataSetDescription}" label="${batch.dataSetLabel}" dataSetName="${batch.dataSetName}" edgemartContainer="${batch.dataSetEdgemartContainer}" notificationSent="ALWAYS" notificationEmail="name@email.com" doc:name="Salesforce Analytics Cloud"/>
 ----
 
-. Add a data-mapper:transform element into batch:input of batch:job, then configure it as follows:
+. Add a transform-message element into batch:input of batch:job, then configure it as follows:
 
 +
 
 [source,xml,linenums]
 ----
-<data-mapper:transform config-ref="CSV_To_List_Record_" doc:name="CSV To List&lt;Record&gt;"/>
+<dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	(Id: (trim payload01.Id) as :number) when payload01.Id? and ((trim payload01.Id) != ''),
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})]]></dw:set-payload>
+            </dw:transform-message>
 ----
 
 . Add an empty batch:step element into batch:process-records of batch:job, then configure it as follows:
@@ -717,38 +747,50 @@ http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schem
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
-	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file"
 	xmlns:context="http://www.springframework.org/schema/context"
 	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
 	xmlns:spring="http://www.springframework.org/schema/beans"
-	xmlns:sfdc-analytics="http://www.mulesoft.org/schema/mule/sfdc-analytics"
-	xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="
-http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
-http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
 http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
-http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
 http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
 http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sfdc-analytics http://www.mulesoft.org/schema/mule/sfdc-analytics/current/mule-sfdc-analytics.xsd">
 	<context:property-placeholder location="mule-app.properties"/>
 	<sfdc-analytics:config name="Salesforce_Analytics_Cloud__Basic_authentication" username="${salesforce.username}" password="${salesforce.password}" securityToken="${salesforce.securityToken}" metadataFileName="${metadata.file.analytics}" doc:name="Salesforce Analytics Cloud: Basic authentication" url="${salesforce.url}"/>
-	<data-mapper:config name="CSV_To_List_Record_" transformationGraphPath="csv_to_list_record_.grf" doc:name="CSV_To_List_Record_"/>
+	<file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
 	<batch:job name="demoBatch">
         <batch:input>
             <file:inbound-endpoint path="path_to_folder_to_monitor" moveToDirectory="path_to_folder_where_to_move_processed_files" responseTimeout="10000"
                                    doc:name="File For Batch">
             </file:inbound-endpoint>
             <enricher source="#[payload]" target="#[variable:dataSetId]" doc:name="Message Enricher">
-                <sfdc-analytics:create-data-set config-ref="Salesforce_Analytics_Cloud__Basic_authentication" operation="OVERWRITE" description="${batch.dataSetDescription}" label="${batch.dataSetLabel}" dataSetName="${batch.dataSetName}" edgemartContainer="${batch.dataSetEdgemartContainer}" notificationSent="ALWAYS" notificationEmail="name@email.com" doc:name="Salesforce Analytics Cloud"/>
+                <sfdc-analytics:create-data-set config-ref="Salesforce_Analytics_Cloud__Basic_authentication" operation="OVERWRITE" description="desc" label="lbl" dataSetName="dsTest" edgemartContainer="TestContainer" notificationSent="ALWAYS" notificationEmail="name@email.com" type="metadata.json:RELATIVE" doc:name="Salesforce Analytics Cloud"/>
             </enricher>
-            <data-mapper:transform config-ref="CSV_To_List_Record_" doc:name="CSV To List&lt;Record&gt;"/>
+            <dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	(Id: (trim payload01.Id) as :number) when payload01.Id? and ((trim payload01.Id) != ''),
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})]]></dw:set-payload>
+            </dw:transform-message>
         </batch:input>
         <batch:process-records>
             <batch:step name="Batch_Step">
                 <batch:commit  doc:name="Batch Commit" size="3000">
-                    <sfdc-analytics:upload-external-data config-ref="Salesforce_Analytics_Cloud__Basic_authentication" type="recordId" dataSetId="#[variable:dataSetId]" doc:name="Salesforce Analytics Cloud">
+                    <sfdc-analytics:upload-external-data config-ref="Salesforce_Analytics_Cloud__Basic_authentication" type="metadata.json:RELATIVE" dataSetId="#[variable:dataSetId]" doc:name="Salesforce Analytics Cloud">
                         <sfdc-analytics:payload ref="#[payload]"/>
                     </sfdc-analytics:upload-external-data>
                 </batch:commit>
