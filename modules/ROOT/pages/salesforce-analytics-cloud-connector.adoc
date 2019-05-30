@@ -264,8 +264,8 @@ Now let's create the flow. Navigate through the project's structure and double-c
 image::search-for-file.png[Search for File]
 +
 . Drag the *File* element onto the canvas.
-. Search for *DataMapper* and drag it after *File*.
-. Search for *Salesforce Analytics Cloud* and drag it after *DataMapper*.
+. Search for *Transform message* and drag it after *File*.
+. Search for *Salesforce Analytics Cloud* and drag it after *Transform Message*.
 . After completing the previous steps you should see:
 +
 image::all-flow-unconfigured.png[Unconfigured All In One flow]
@@ -300,12 +300,29 @@ link:{attachmentsdir}/metadata.json[metadata.json]
 . In the *Description* enter *Test data set*.
 . In the *Label* field under *DataSet info* enter *Test data set*.
 . In the *Name* field under *DataSet info* enter *test_data_set*.
-. Double-click  the *DataMapper* element.
-. Click  the *Type* dropdown in the Input section and choose *CSV*
-. Click  `...` next to the *CSV* field of the Input section and browse to the csv file in the same folder you selected for the *File* connector.
-. Click the *Create mapping* button and you should see something similar to the picture below.
+. Double-click the *Transform message* element and add the follwoing mapping in the output section.
 +
-image::dm-mappings.png[Data mapper mappings]
+[source,xml,linenums]
+----
+%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	(Id: (trim payload01.Id) as :number) when payload01.Id? and ((trim payload01.Id) != ''),
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})
+----
++
+. It should look something like the following.
++
+image::all-transform-message.png[Transform message]
 +
 . Now everything is set up and the application can be deployed.
 
@@ -316,7 +333,6 @@ It's time to test the app. Run the app in Anypoint Studio (Right-click on projec
 Create a dataset and upload data into it by processing the data in several chunks.
 
 When using the batch component tune it based on the amount of memory that you provide to the Mule server.
-If you use DataMapper, be sure that streaming is enabled, in order to avoid load the entire input in memory.
 Bear in mind that default threading profile uses 16 threads and each thread is loading data in chunks of 100 records until it reaches the "Commit size" set on "Batch Commit" component.
 You can minimize the memory used by decreasing the number of threads.
 Finally you have to be aware of the fact that "Salesforce Analytics Cloud Connector" is also using some memory internally and you should tune "Commit Size" in order to find a good balance but do not set it too low because this will make it inefficient.
@@ -338,7 +354,7 @@ image::batch-component.jpg[Batch component on canvas]
 . Similar to what was done in step 1, search for *File*.
 . Drag *File* into the *Input* section of the batch element created earlier.
 . Search for *Message Enricher*, then drag and drop it after *File*.
-. Search for *DataMapper* and drag it after *Message Enricher*.
+. Search for *Transform Message* and drag it after *Message Enricher*.
 . Search for *Salesforce Analytics Cloud* and drag it into *Message Enricher*.
 . Search for *Batch commit* and drag it into the *Batch step* section of *Batch*.
 . Search for *Salesforce Analytics Cloud* and drag it into the *Batch commit* section of *Batch step*.
@@ -395,12 +411,29 @@ The application is logging a warning message if the data provided for processing
 image::fetch-metadata-bar.jpg[Fetch metadata progress bar]
 +
 . For *Data Set Id* enter *#[variable:dataSetId]*
-. Double-click the *DataMapper* element.
-. Click the *Type* dropdown in the Input section and choose *CSV*
-. Click `...` next to the *CSV* field of the Input section and browse to the csv file in the same folder you selected for the *File* connector.
-. Click the *Create mapping* button and you should see something like the following.
+. Double-click the *Transform message* element and add the follwoing mapping in the output section.
 +
-image::dm-mappings.png[Data mapper mappings]
+[source,xml,linenums]
+----
+%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	(Id: (trim payload01.Id) as :number) when payload01.Id? and ((trim payload01.Id) != ''),
+	(Country: trim payload01.Country) when payload01.Country? and ((trim payload01.Country) != ''),
+	(City: trim payload01.City) when payload01.City? and ((trim payload01.City) != ''),
+	(Year: (trim payload01.Year) as :number) when payload01.Year? and ((trim payload01.Year) != ''),
+	(Distance: (trim payload01.Distance) as :number) when payload01.Distance? and ((trim payload01.Distance) != ''),
+	(Currencies: ((trim payload01.Currencies) splitBy ";") as :array) 
+	when payload01.Currencies? and ((trim payload01.Currencies) != ''),
+	(CreationDate: (trim payload01.CreationDate) as :date{format: "yyyy/MM/dd"}) 
+	when payload01.CreationDate? and ((trim payload01.CreationDate) != '')
+})]
+----
++
+. It should look something like the following.
++
+image::batch-transform-message.png[Batch transform message]
 +
 . Double-click *Salesforce Analytics Cloud* from the *On complete* section of *Batch*.
 . From the *Connector configuration* dropdown select *Salesforce_Analytics_Cloud__Basic_authentication* (only this option should be available).
@@ -476,9 +509,7 @@ http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee
 ----
 +
 . Within the flow element add a file:inbound-endpoint element as follows:
-
 +
-
 [source,xml,linenums]
 ----
 <file:inbound-endpoint path="path_to_folder_to_monitor" moveToDirectory="path_to_folder_where_to_move_processed_files" responseTimeout="10000" doc:name="File">
@@ -486,9 +517,7 @@ http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee
 ----
 +
 . Within the flow element add a transform-message element as follows:
-
 +
-
 [source,xml,linenums]
 ----
 <dw:transform-message doc:name="Transform Message">
