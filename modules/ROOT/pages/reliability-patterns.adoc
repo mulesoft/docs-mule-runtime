@@ -1,0 +1,164 @@
+= Reliability Patterns
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: reliability, patterns, cluster, ha, transaction, delivery, ensure
+
+A reliability pattern is a design that results in reliable messaging for an application, even if the application receives messages from a non-transactional connector. A reliability pattern couples a reliable acquisition flow with an application logic flow, as shown in the following diagram:
+
+image::reliability-pattern.png[Reliability_Pattern]
+
+The reliable acquisition flow (the left side of the diagram) delivers a message reliably from a message source that does not implement transactions to an outbound operation of a connector that implements transactions. The operation can be of any type of the transactional endpoints, such as VM or JMS. If the reliable acquisition flow cannot deliver the message, it ensures that the message isn't lost.
+
+* For socket-based connections like HTTP, this means returning an "unsuccessful request" so that the client can retry the request.
+* For resource-based connections like File or FTP, it means not deleting the file, so that it can be reprocessed.
+
+The application logic flow (the right side of the diagram) delivers the message from the message source that uses a transactional connector to the business logic for the application.
+
+== Reliable Messaging
+
+High-reliability applications must have zero tolerance for message loss. This means that both the underlying Mule and its individual connections need to be reliable.
+
+If your application uses a transactional connection such as JMS, VM, or DB, reliable messaging is ensured by the built-in support for transactions in the connector. This means, for example, that you can configure a transaction on a JMS listener that makes sure messages are removed only from the JMS server when the transaction is committed. Doing this ensures that if an error occurs while processing the message, it is still available for reprocessing. In other words, the transactional support in these connectors ensures that messages are delivered reliably from a source to an operation, or between processors within a flow.
+
+If you want to move messages between different connectors that support transactions you need to use XA transactions to ensure that both connectors' transactions are committed as one atomic unit.
+
+//See xref:transaction-management.adoc[Transaction Management] for more information on XA and other types of transactions.
+
+If you have a web application that uses a non-transactional connector, such as HTTP, you must follow a reliability pattern to ensure reliable messaging for your application.
+
+[NOTE]
+VM file persistency is disabled on clusters, so VM endpoints persist in-memory in a clustered topology.
+
+== Comparing Endpoints in Reliability Patterns
+
+You can couple the reliable acquisition flow with any type of transactional endpoint. You don't have to use a VM endpoint in a reliability pattern. The following diagram illustrates a reliability pattern where the reliable acquisition flow delivers a message to a JMS endpoint:
+
+image::reliabilitypatternwithjms.png[ReliabilityPatternwithJMS]
+
+The VM connector uses in-memory queues by default, this makes it much faster than other transactional endpoints such as JMS.
+
+The following table lists the advantages and disadvantages of using VM, JMS, and JDBC endpoints in a reliable acquisition flow.
+
+[%header,cols="10a,60a,30a"]
+|===
+|Endpoint |Advantage |Disadvantage
+|VM (standalone Mule)
+|
+* Faster than JMS because everything is in-memory and in-process.
+* Provided ready to use with Mule. There is no need for additional software.
+|
+* Data is lost when Mule exits.
+* Non-clustered.
+|File-based VM (standalone Mule)
+|
+* Provided ready to use with Mule. There is no need for additional software.
+|
+* Non-clustered.
+|VM (Mule HA cluster)
+|
+* Faster than JMS because everything is in shared memory.
+* Provided ready to use with Mule. There is no need for additional software.
+|
+* Data is lost when the entire Mule cluster exits.
+|JDBC
+|
+* Depending on resources available, JDBC can hold a large amount of information.
+|
+* Can be complex to use since proper DBMS schemas are required.
+|JMS (not enabled for persistence)
+|
+* Allows sharing data with other Mule instances or non-Mule clients.
+|
+* It is slower than VM because it is in another process.
+|JMS (enabled for persistence)
+|
+* It is the most reliable choice because messages are persisted to disk.
+|
+* It is slower than VM because of disk access.
+|===
+
+== Implementing a Reliability Pattern
+
+Below is a code example that shows what a complete reliability pattern would look like, including the reliable acquisition flow and the application logic flow. In this example, the reliable acquisition flow part of the reliability pattern is HTTP-to-VM.
+
+=== Example: HTTP to VM
+
+[source,xml,linenums]
+----
+<!-- This is the reliable acquisition flow in the reliability pattern.  -->
+<flow name="reliable-data-acquisition">
+	<http:listener config-ref="HTTP_Listener_config" path="transactionalEndpoint"/>
+	<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/> <!--1-->
+</flow>
+
+<!-- This is the application logic flow in the reliability pattern.
+	It is a wrapper around a sub-flow, "business-logic-processing". -->
+<flow name="main-flow">
+	<vm:listener doc:name="Listener" config-ref="VM_Config" queueName="toTransactionalVM"
+		transactionalAction="ALWAYS_BEGIN"/> <!--2-->
+	<flow-ref name="business-logic-processing"/>
+</flow>
+
+<!-- This is where the real work of the application will happen. -->
+<sub-flow name="business-logic-processing">
+	<!--
+		This flow is where the actual business-logic is performed.
+	-->
+</sub-flow>
+----
+<1> The message is written to the VM queue. It is now available for processing by the main flow.
+<2> The message is read from the VM queue transactionally. This ensures that if an error occurs, the reading is rolled back and the message is reprocessed.
+
+[NOTE]
+This example shows VM file persistency, which does not work on clusters.
+
+== Implementing a Reliable Acquisition Flow
+
+The example provided in <<implementing-a-reliability-pattern>> showed a reliable acquisition flow for an HTTP listener to a VM publish operation. This scenario focuses on a reliable acquisition flow that has a non-transactional message source: FTP-to-VM (Or SFTP, FTPS).
+
+In this case, a resource-based connection is used. When using resource-based connections, you need to ensure to read the resource only once. This is done by setting `watermarkEnabled` to `true`.
+
+You must not set the `auto-delete` parameter to `true` because doing so deletes the file as soon as the flow finishes, even if the processing is done by another flow. The same applies to `moveToDirectory`.
+
+=== Example: FTP to VM
+
+The following code implements a reliable acquisition flow from an FTP listener (On New or Updated File) to a VM queue by a publish operation:
+
+[source,xml,linenums]
+----
+<ftp:config name="FTP_Config">
+	<ftp:connection host="localhost" username="max" password="mulesoft"/>
+</ftp:config>
+
+<flow name="reliable-data-acquisition">
+	<ftp:listener config-ref="FTP_Config" watermarkEnabled="true" directory="someDirectory/in"> <!--1-->
+		<scheduling-strategy >
+			<fixed-frequency />
+		</scheduling-strategy>
+	</ftp:listener>
+	<vm:publish config-ref="VM_Config" queueName="toTransactionalVM"/>
+</flow>
+
+<flow name="doc-examplesFlow">
+	<vm:listener queueName="toTransactionalVM" config-ref="VM_Config" transactionalAction="ALWAYS_BEGIN"/>
+	<set-variable value="#[attributes.filename]" variableName="filepath"/>
+	<!-- File content is already present in payload -->
+	<flow-ref name="business-logic-processing"/>
+	<ftp:delete path="#[vars.filepath]"/> <!--2-->
+</flow>
+----
+<1> To perform a transformation before publishing to VM, add a max redelivery count.
+<2> If the file is not intended to be deleted, do not use the `ftp:delete` operation. The same applies if the intended operation is `ftp:move`.
+
+A similar implementation is done for any other of the resourced-based connectors.
+
+== General Considerations
+
+When you implement a reliability pattern, consider the following points:
+
+* When the connector (message source) allows it, always use a transaction.
+* When you want to enlist multiple managed resources within the same transaction, use an XA transaction to bridge message sources.
+* The reliability of JMS is tied to the MQ implementation and how it is configured. Most MQ implementations allow you to configure whether messages are stored only in memory, or persisted. You can achieve reliability only if you configure the MQ server to persistently store messages before sending them forward. Otherwise, you risk losing messages in case of an MQ server crash.
+* Reliability has performance implications.
+* If the outbound operation in the reliable acquisition flow is not transactional (for example, a flow from file-to-FTP), the only way to ensure message delivery is to use a xref:try-scope-concept.adoc[Try Scope].
