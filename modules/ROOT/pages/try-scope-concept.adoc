@@ -39,7 +39,7 @@ The Try scope treats child operations as a transaction when the Transactional Ac
 
 * Ignore (`INDIFFERENT`):
 +
-Default. Actions are not treated as a transaction. Errors cause no rollbacks or commits. This is equivalent to suspend the transaction.
+Default. Actions are not treated as a transaction. Errors cause no rollbacks or commits. This is the equivalent to suspend the transaction.
 
 * Always Begin (`ALWAYS_BEGIN`)
 +
@@ -49,7 +49,7 @@ A new transaction is started every time the scope is executed.
 +
 Only relevant in cases where execution order may vary (for example, due to asynchronous actions occurring outside the flow): If the current processing of the flow has already begun a transaction, join it. Otherwise, begin a new one.
 
-=== Analyzing different Transactional Actions in Try Scope
+=== Analyzing Different Transactional Actions in Try Scope
 
 Supponse we have the next configuration: 
 
@@ -58,7 +58,7 @@ Supponse we have the next configuration:
 <flow name="someFlow">
 	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
 	<!-- Processors -->
-	<try transactionalAction="?">
+	<try transactionalAction="${action}">
 		<!-- Processors -->
 		<!-- Join if possible is the default value for jms:publish operation --> 
 		<jms:publish config-ref="JMS_Config" destination="test.out"/>
@@ -73,9 +73,9 @@ As expected, in case there are no processors that produces any error this will f
 
 We will analyze what happends with the transaction and messages with the `<raise-error/>` processor added, depending on the `transactionalAction` of the Try Scope: 
 
-* Ignore (`INDIFFERENT`): in this case, the transaction is _suspended_ while executing the try scope inner processors. When the error is raised, it is propagated to the source (which does not handle it with an `<on-error-continue>`). So, the transaction is rollbacked, and the message will be available again in the JMS queue. However, the message sent in the `jms:publish` operation has completely been sent, since the rollback of the transaction does not affect the publish operation, which was outside of the transaction scope (even though the `transactionalAction` of the `jms:publish` operation is `BEGIN_OR_JOIN`). This will be the exact same behaviour if, instead of having a Try Scope with a `transactionalAction="INDIFFERENT"`, we had the `jms:publish` with `transactionalAction="NOT_SUPPORTED"`. 
-* Always Begin (`ALWAYS_BEGIN`): this time a new transaction is began for the execution of the try scope. After the error is raised (and not handled), the new transaction is rollbacked, which means that the `jms:publish` operation will not commit and thus the message is not actually sent to the `test.out` queue. Then, the transaction of the flow (which was began by the message source) will also be rollbacked, and message will be available again in the `test.in` queue. 
-* Begin or Join (`BEGIN_OR_JOIN`): in this case, when the error is raised, it is not inmediately rollbacked. Since the flow could handle the raised error (therfore, commit the transaction) the message sent by the `jms:publish` could still be sent. This time, since the error is not handled with an `on-error-continue`, then the entire transaction is rollbacked and the result is the same as in the case of Always Begin. 
+* Ignore (`INDIFFERENT`): in this case, the transaction is _suspended_ while executing the Try Scope inner processors. When the error is raised, it is propagated to the source (which does not handle it with an `<on-error-continue>`). So, the transaction is rolled back, and the message will be available again in the JMS queue. However, the message sent in the `jms:publish` operation has been completely removed, since the rollback of the transaction does not affect the publish operation, which was outside of the transaction scope (even though the `transactionalAction` of the `jms:publish` operation is `BEGIN_OR_JOIN`). This will behave the same as if, instead of having a Try Scope with a `transactionalAction="INDIFFERENT"`, we had the `jms:publish` with `transactionalAction="NOT_SUPPORTED"`. 
+* Always Begin (`ALWAYS_BEGIN`): this time a new transaction is began for the execution of the try scope. After the error is raised (and not handled), the new transaction is rolled back, which means that the `jms:publish` operation will not commit and thus the message is not actually sent to the `test.out` queue. Then, the transaction of the flow (which was began by the message source) will also be rolled back, and message will be available again in the `test.in` queue. 
+* Begin or Join (`BEGIN_OR_JOIN`): in this case, when the error is raised, it is not inmediately rolled back. Since the flow could handle the raised error (therfore, commit the transaction) the message sent by the `jms:publish` could still be sent. This time, since the error is not handled with an `on-error-continue`, then the entire transaction is rolled back and the result is the same as in the case of Always Begin. 
 
 Suppose now we add an Error Handler at flow level:
 
@@ -84,7 +84,7 @@ Suppose now we add an Error Handler at flow level:
 <flow name="someFlow">
 	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
 	<!-- Processors -->
-	<try transactionalAction="?">
+	<try transactionalAction="${action}">
 		<!-- Processors -->
 		<!-- Join if possible is the default value for jms:publish operation --> 
 		<jms:publish config-ref="JMS_Config" destination="test.out"/>
@@ -100,7 +100,7 @@ Suppose now we add an Error Handler at flow level:
 
 We analyze this new scenario: 
 * Ignore (`INDIFFERENT`): Once again, the transaction is _suspended_, then message is sent in the `jms:publish` operation regardless of the error caused by the `raise-error` processor. Then, as the error is handled in the `on-error-continue` Error Handler, the transaction is commited and the message is consumed. 
-* Always Begin (`ALWAYS_BEGIN`): Since the transaction that runs within the Try Scope is a different one from the flow, this one is rollbacked (since it is not handled) and the error propagated and handled at flow level. Therefore, the message will still be consumed, but the message sent with the `jms:publish` operation not (that transaction is rollbacked)
+* Always Begin (`ALWAYS_BEGIN`): Since the transaction that runs within the Try Scope is a different one from the flow, this one is rolled back (since it is not handled) and the error propagated and handled at flow level. Therefore, the message will still be consumed, but the message sent with the `jms:publish` operation not (that transaction is rolled back)
 * Begin or Join (`BEGIN_OR_JOIN`): As mentioned in the previous example, the commit of the `jms:publish` message depends on the flow. Since the error is now handled by an `on-error-continue` Error Handler, the transaction will be commited. Thus, both the message read from the `jms:listener` source will consumed and the message sent with `jms:publish` will actually be sent.
 
 Suppose now, instetad of adding an Error Handler at flow level, we add it in the try scope, and the error is thrown 
@@ -111,7 +111,7 @@ after the execution of the it:
 <flow name="someFlow">
 	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
 	<!-- Processors -->
-	<try transactionalAction="?">
+	<try transactionalAction="${action}">
 		<!-- Processors -->
 		<!-- Join if possible is the default value for jms:publish operation --> 
 		<jms:publish config-ref="JMS_Config" destination="test.out"/>
@@ -126,11 +126,11 @@ after the execution of the it:
 </flow>
 ----
 
-In all this cases the transaction created at Flow level will be rollbacked, and the message will be available to be read again. We analyze what happends with the Try Scope:
+In all this cases the transaction created at Flow level will be rolled back, and the message will be available to be read again. We analyze what happends with the Try Scope:
 
 * Ignore (`INDIFFERENT`): Once again, the transaction is _suspended_, then message is sent in the `jms:publish` operation regardless of the error caused by the `raise-error` processor. 
 * Always Begin (`ALWAYS_BEGIN`): Since the transaction that runs within the Try Scope is a different one from the flow, this one is commited, and the message sent. 
-* Begin or Join (`BEGIN_OR_JOIN`): Now, the `jms:publish` operation is tied to the commit of the flow transaction, even if the Try Scope have finished its execution. Considering that the error raised in the flow is not handled (with an `on-error-continue`) and the transaction is rollbacked, this includes rollbacking the `jms:publish` operation and not sending the message. 
+* Begin or Join (`BEGIN_OR_JOIN`): Now, the `jms:publish` operation is tied to the commit of the flow transaction, even if the Try Scope have finished its execution. Considering that the error raised in the flow is not handled (with an `on-error-continue`) and the transaction is rolled back, this includes rollbacking the `jms:publish` operation and not sending the message. 
 
 
 == Variable and Payload Propagation
