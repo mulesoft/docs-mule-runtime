@@ -203,3 +203,25 @@ The output payload is a string with the message. Additional attributes are retur
 === Using Restricted Access Policies
 
 In situations where you have restricted access to your resources (to only send/receive amqps messages), enable the option *AMQPS-only credentials* inside the *Advanced* tab.
+
+=== Handling a very high number of messages
+
+When handling a very high number of messages (thousands per second), especially if publishing to and reading from the same destination within the same Mule application, you may see messages like this in the log:
+
+```
+[ERROR 2019-05-22 00:15:26,362 [ForkJoinPool.commonPool-worker-3] com.microsoft.azure.servicebus.MessageAndSessionPump: onMessage with message containing sequence number '95' threw exception com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Failed setting attributes from original API message.]
+```
+This problem is related to the processing strategy that Mule resolves automatically to "queue-asynchronous" when you configure the message listener in a flow.
+If a message is waiting for more than 30,000 ms to be processed by the flow, an exception is thrown and that causes an error (timeout in the mule SEDA queue).
+To avoid the error, you can create a custom queue-asynchronic configuration and increase the number of threads (`maxThreads` property, default 16) and / or increase the waiting time (`threadWaitTimeout`, default 30,000 ms). This configuration can be modified by selecting the flow, and within General -> Optional Processing Strategy -> Processing Strategy Ref, add a new Queued Asynchronous Processing Strategy.
+
+More information: https://docs.mulesoft.com/mule-runtime/3.7/flow-processing-strategies#fine-tuning-a-queued-asynchronous-processing-strategy
+
+=== Random errors when using manual ACK
+
+You may see errors like this one when working with a high number of messages and using manual ACK:
+
+```
+[com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Message with lockToken 2dc1312f-b263-4282-bbb0-566998eff6e6 could not be ACK at com.mulesoft.connectors.microsoft.azure.servicebus.internal.connection.Connection.ack(Connection.java:192)][ERROR 2019-05-22 00:17:30,822 [ReactorThread6f355ff5-5a36-487b-bb70-1a995a6ddf74] com.microsoft.azure.servicebus.primitives.CoreMessageReceiver: Completing pending updateState operation for delivery '?     ? &??I??=????' with exception com.microsoft.azure.servicebus.primitives.MessageLockLostException: The lock supplied is invalid. Either the lock expired, or the message has already been removed from the queue.]
+```
+When the connector performs a "prefetch", the lockToken's validity time is fixed in relation to that moment. The problem arises when the lockToken's validity time is not long enough to process the entire batch of records. In cases like this you may get an error because you intend to do an ACK of a lockToken that is expired. To prevent this, you can reduce the size of the prefetch (default to 100) and / or increase the validity time of the lockToken (this can be done when creating the queue/subscription from the connector, in the lock duration property or from Azure portal for existing queues). The maximum duration value for the lock token in Azure is 5 minutes (300 seconds).
