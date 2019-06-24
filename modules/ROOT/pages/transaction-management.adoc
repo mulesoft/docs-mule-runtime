@@ -78,7 +78,6 @@ A Transactional Action (`transactionalAction`) defines the type of action that o
 | Execute outside any existent transaction.
 |
 * Operations that support transactions
-* Try scope
 |===
 
 == Configuring a Transaction in the Message Source
@@ -145,6 +144,103 @@ When running in a transactional scope, the entire process must run in the same t
 * xref:flowref-about.adoc[Flow Reference]: If the flow (or subflow) being executed is running within a transaction, the execution of the flow (or subflow) referenced by the `flow-ref` continues with the same transaction. If the referenced flow has a message source that begins a transaction (For example a `jms:listener` source with `transactionalAction="ALWAYS_BEGIN"`), the `transactionalAction` is ignored. The `flow-ref` component executes the referenced flow components except for its message source.
 
 Any other router or scope (for example, Foreach) continues with the transaction and its behavior is not modified.
+
+== Error Handling
+
+When working with transactions, we need to know how to handle errors. This includes to continue with the transaction even if an specific error occurs, or to handle correctly the rollback. 
+
+As mentioned in the xref:on-error-scope-concept.adoc[On-Error Scope], there are two types of Error Handlers, which relate differently with Transactions:
+
+* On Error Propagate: If the `on-error-propagate` is in the Error Handler corresponding to the component that began the Transaction, then it rollbacks it **before executing the inner processors of the On Error Propagate Scope**. Thus, the inner processor do not run within the transaction. If the `on-error-propagate` is inside an inner element that did not start the Transaction, then it is not rolled back and the inner processors of such `on-error-propagate` remain running within the Transaction. Remember that running within a Transaction affect different scopes and routers. 
+* On Error Continue: the error is threated as managed and the Transaction remains active (and is able to commit). The inner processors of the On Error Continue run within the Transaction.
+
+For example:
+
+.
+[source,xml,linenums]
+----
+<flow name="someFlowWithTx">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<!-- Processors -->
+	<try>
+		<raise-error type="APP:SOME"/>
+		<error-handler>
+			<on-error-propagate>
+				<logger message="Fails"/>
+			</on-error-propagate>
+		</error-handler>
+	</try>
+	<error-handler>
+		<on-error-continue>
+			<logger message="continue with tx"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+----
+
+In the example, the message source (`jms:listener`) starts a Transaction, which is continued by the `try` Scope (`transactionalAction` is set to default, `INDIFFERENT`). When the error is raised, it is handled by the `error-handler` of the `try` Scope first. Even when the error is handled by an `on-error-propagate`, the Transaction is not rolled back, since it was not the `try` Scope the one that started it, so only the error handler of the flow can rollback the Transaction which was began at flow level. Then, the `logger` inside the `on-error-propagate` will continue running within the Transaction. The error is then propagated to the flow's `error-handler`, which handles it with an `on-error-continue`. The `logger` inside such `on-error-continue` runs within the transaction. Finally, the transaction is commited. 
+
+If the `flow` had an `on-error-propagate` instead of `on-error-continue`, then the transactional is would have been rolled back, and the logger within that `on-error-propagate` will not run within the Transaction. 
+
+This example has the same explanation if, instead of having a Try Scope, we work with a Flow Reference to another flow: 
+
+.
+[source,xml,linenums]
+----
+<flow name="someFlowWithTx">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<!-- Processors -->
+	<flow-ref name="someFlowContinuesTx"/>
+	<error-handler>
+		<on-error-continue>
+			<logger message="continue with tx"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+
+<flow name="someFlowContinuesTx">
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-propagate>
+			<logger message="Fails"/>
+		</on-error-propagate>
+	</error-handler>
+</flow>
+----
+
+Since the `someFlowContinuesTx` Flow is not the one that started the transaction, then its Error Handler will not rollback it. 
+
+Another example to understand the difference in the behaviour of the two types of Error Handlers will be the next one:
+
+.
+[source,xml,linenums]
+----
+<flow name="someFlow">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-continue>
+			<try transactionalAction="ALWAYS_BEGIN">
+				<logger message="hello"/>
+			</try>
+		</on-error-continue>
+	</error-handler>
+</flow>
+
+<flow name="someFlow2">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-propagate>
+			<try transactionalAction="ALWAYS_BEGIN">
+				<logger message="hello"/>
+			</try>
+		</on-error-propagate>
+	</error-handler>
+</flow>
+----
+
+Since the `on-error-continue` continues with the Transaction, that configuration is not a valid one. Therefore, this results in an error. In the second flow, as the Transaction has already been rolled back by the moment the inner processors of the `on-error-propagate` are executed, the configuration is correct.
 
 == See Also
 
