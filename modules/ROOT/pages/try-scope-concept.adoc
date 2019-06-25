@@ -19,19 +19,16 @@ Just like any error that is raised inside a flow, if an error is raised by a com
 * An On Error Continue executes ands sends the result of the execution to its container Try scope, which uses that result to complete the execution successfully. Any transactions at this point are also committed.
 * An On Error Propagate rolls back any transactions, executes, and uses that result to re-throw the existing error, meaning that its container Try Scope is considered as failing.
 
-If the Try scope has several components, then once a component raises an exception, subsequent components in the Try scope are skipped, regardless of the type of error handler that catches the exception. In the case of On Error Propagate, the error is propagated to the flow's error handling, as if the Try scope did not exist. In the case of On Error Continue, processing continues outside the Try scope at the next downstream flow component, as if the Try scope never threw an exception.
+If the Try scope has several components, then once a component raises an exception, subsequent components in the Try scope are skipped, regardless of the type of error handler that catches the exception. In the case of On Error Propagate, the error is propagated to the flow's Error Handler, as if the Try scope did not exist. In the case of On Error Continue, processing continues outside the Try scope at the next downstream flow component, as if the Try scope never threw an exception.
 
-In the example above, any database connection errors (DB:CONNECTIVITY) are propagated because of the On Error Propagate (`on-error-propagate`) setting. Propagation of this error causes the Try process to fail and the flow’s error handler to execute. Other errors are handled through On Error Continue (`on-error-continue`), so the Try is treated as successful when they occur, meaning that the next processor, an HTTP request, continues to execute.
+In the example above, any database connection errors (`DB:CONNECTIVITY`) are propagated because of the On Error Propagate (`on-error-propagate`) setting. Propagation of this error causes the Try process to fail and the flow’s Error Handler to execute. Other errors are handled through On Error Continue (`on-error-continue`), so the Try is treated as successful when they occur, meaning that the next processor, an HTTP request, continues its execution.
 
-
-
-Within your flow, you can group a set of event processors that may throw an error inside a Try Scope. The Try Scope allows you enclose various event processors in your flow and assign it an Error Handler scope in case that operation may fail. +
+Within your flow, you can group a set of event processors that might throw an error inside a Try Scope. The Try Scope allows you to enclose various event processors in your flow and assign it an Error Handler scope in case that operation fails. +
 You can also configure the operation inside the Try Scope to be processed as a transaction.
-
 
 == Handling Transactions
 
-You configure a Try scope so that it treats its child operations as an indivisible transaction. A transaction is a series of actions that should never be partially executed. Every operation within the scope of a transaction is executed in the same thread, and errors should lead to either a rollback or a commit.
+You configure a Try scope so that it treats its child operations as an indivisible transaction. A transaction is a series of actions that should never be partially executed. Every operation within the scope of a transaction is executed in the same thread, and errors must lead to either a rollback or a commit.
 
 image::error-handling-try-scope-config.png[Try Scope Configuration]
 
@@ -39,7 +36,7 @@ The Try scope treats child operations as a transaction when the Transactional Ac
 
 * Ignore (`INDIFFERENT`):
 +
-Default. If there is an active transaction, continues with it (the scope _joins_ the transaction). If not, no transaction is created. 
+Default. If there is an active transaction, continues with it (the scope _joins_ the transaction). If not, no transaction is created.
 
 * Always Begin (`ALWAYS_BEGIN`)
 +
@@ -47,7 +44,7 @@ A new transaction is started every time the scope is executed.
 
 * Begin or Join (`BEGIN_OR_JOIN`)
 +
-Only relevant in cases where execution order may vary (for example, due to asynchronous actions occurring outside the flow): If the current processing of the flow has already begun a transaction, join it. Otherwise, begin a new one.
+Only relevant in cases where execution order may vary (for example, due to asynchronous actions occurring outside the flow). If the current processing of the flow has already started a transaction, join it. Otherwise, initiate a new one.
 
 === Analyzing Different Transactional Actions in Try Scope
 
@@ -60,7 +57,7 @@ Suppose we have the next configuration:
 	<!-- Processors -->
 	<try transactionalAction="${action}">
 		<!-- Processors -->
-		<!-- Join if possible is the default value for jms:publish operation --> 
+		<!-- Join if possible is the default value for jms:publish operation -->
 		<jms:publish config-ref="JMS_Config" destination="test.out" transactionalAction="NOT_SUPPORTED"/>
 		<raise-error type="APP:SOME"/>
 		<!-- More Processors -->
@@ -69,7 +66,7 @@ Suppose we have the next configuration:
 </flow>
 ----
 
-As expected, if the processors within the `try` Scope do not produce any error, the scope finishes the execution and commits the transaction, independently of the configured `transactionalAction` value. 
+If the processors within the `try` Scope do not produce any error, the scope finishes the execution and commits the transaction, independently of the configured `transactionalAction` value.
 
 We will analyze what happens with the transaction and messages with the `<raise-error/>` processor added, depending on the `transactionalAction` of the `try` scope: 
 
@@ -87,7 +84,7 @@ Suppose now we add an Error Handler at flow level:
 	<!-- Processors -->
 	<try transactionalAction="${action}">
 		<!-- Processors -->
-		<!-- Join if possible is the default value for jms:publish operation --> 
+		<!-- Join if possible is the default value for jms:publish operation -->
 		<jms:publish config-ref="JMS_Config" destination="test.out"/>
 		<raise-error type="APP:SOME"/>
 		<!-- More Processors -->
@@ -114,10 +111,10 @@ after the execution of the scope:
 	<!-- Processors -->
 	<try transactionalAction="${action}">
 		<!-- Processors -->
-		<!-- Join if possible is the default value for jms:publish operation --> 
+		<!-- Join if possible is the default value for jms:publish operation -->
 		<jms:publish config-ref="JMS_Config" destination="test.out"/>
 		<!-- More Processors -->
-		<!-- There could be a processor that raises an error, it will be handled by the error handler --> 
+		<!-- There could be a processor that raises an error, it will be handled by the error handler -->
 		<error-handler>
 			<on-error-continue/>
 		</error-handler>
@@ -136,7 +133,7 @@ In all these cases the transaction created at Flow level will be rolled back, an
 
 == Variable and Payload Propagation
 
-Every payload modification or variable addition, modification, or removal is propagated through the rest of the execution. This propagation includes modifications that take place inside the error handlers. 
+Every payload modification or variable addition, modification, or removal is propagated through the rest of the execution. This propagation includes modifications that take place inside the error handlers.
 
 == See Also
 
