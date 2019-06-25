@@ -164,9 +164,14 @@ The transaction is not rolled back and the inner processors of the `on-error-pro
 +
 The error is considered managed, the transaction remains active and is able to commit. The inner processors of the On Error Continue run within the transaction.
 
-For example:
+=== Example: Error Raised in Try Scope
 
-.
+In this first example, the message source (`jms:listener`) starts a transaction, which is continued by the `try` Scope (`transactionalAction` is set to default, `INDIFFERENT`).
+
+When the error is raised, it is handled by the `error-handler` of the `try` Scope first. The error is handled by an `on-error-propagate`, but the transaction is not rolled back because it was not the `try` Scope the one that started the transaction. Only the error handler of the flow can rollback the transaction because it was initiated at flow level (from its message source).
+
+The `logger` inside the `on-error-propagate` runs within the transaction. The error is then propagated to the flow's `error-handler`, which handles it with an `on-error-continue`. The `logger` inside the `on-error-continue` runs within the transaction. Finally, the transaction is committed.
+
 [source,xml,linenums]
 ----
 <flow name="someFlowWithTx">
@@ -188,13 +193,12 @@ For example:
 </flow>
 ----
 
-In the example, the message source (`jms:listener`) starts a Transaction, which is continued by the `try` Scope (`transactionalAction` is set to default, `INDIFFERENT`). When the error is raised, it is handled by the `error-handler` of the `try` Scope first. Even when the error is handled by an `on-error-propagate`, the Transaction is not rolled back, since it was not the `try` Scope the one that started it, so only the error handler of the flow can rollback the Transaction which was began at flow level. Then, the `logger` inside the `on-error-propagate` will continue running within the Transaction. The error is then propagated to the flow's `error-handler`, which handles it with an `on-error-continue`. The `logger` inside such `on-error-continue` runs within the transaction. Finally, the transaction is commited. 
+If we replace the `on-error-propagate` with an `on-error-continue` in the example above, then the transaction is rolled back, and the logger inside this `on-error-propagate` does not run within the transaction.
 
-If the `flow` had an `on-error-propagate` instead of `on-error-continue`, then the transactional is would have been rolled back, and the logger within that `on-error-propagate` will not run within the Transaction. 
+=== Example: Error Raised in a Subflow
 
-This example has the same explanation if, instead of having a Try Scope, we work with a Flow Reference to another flow: 
+The following example behaves the same as the previous one, but instead of having a Try Scope it uses a Flow Reference and the error is raised in the referenced flow:
 
-.
 [source,xml,linenums]
 ----
 <flow name="someFlowWithTx">
@@ -217,15 +221,16 @@ This example has the same explanation if, instead of having a Try Scope, we work
 	</error-handler>
 </flow>
 ----
++
+Since the `someFlowContinuesTx` flow did not initiate the transaction, its Error Handler does not roll back the transaction.
 
-Since the `someFlowContinuesTx` Flow is not the one that started the transaction, then its Error Handler will not rollback it. 
+=== Example: Comparing Error Handlers
 
-Another example to understand the difference in the behaviour of the two types of Error Handlers will be the next one:
+This example shows the differences in the behavior of the two types of Error Handlers:
 
-.
 [source,xml,linenums]
 ----
-<flow name="someFlow">
+<flow name="flow1">
 	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
 	<raise-error type="APP:SOME"/>
 	<error-handler>
@@ -237,7 +242,7 @@ Another example to understand the difference in the behaviour of the two types o
 	</error-handler>
 </flow>
 
-<flow name="someFlow2">
+<flow name="flow2">
 	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
 	<raise-error type="APP:SOME"/>
 	<error-handler>
@@ -250,7 +255,9 @@ Another example to understand the difference in the behaviour of the two types o
 </flow>
 ----
 
-Since the `on-error-continue` continues with the Transaction, that configuration is not a valid one. Therefore, this results in an error. In the second flow, as the Transaction has already been rolled back by the moment the inner processors of the `on-error-propagate` are executed, the configuration is correct.
+In `flow1` the `on-error-continue` keeps the transaction active, but the `try` scope inside it tries to initiate a new one. The configuration is not valid and results in an error.
+
+In `flow2` the `on-error-propagate` rolls back the transaction, then the inner processors of the `on-error-propagate` are executed and a new transaction is created. This configuration is correct.
 
 == See Also
 
