@@ -225,3 +225,23 @@ You may see errors like this one when working with a high number of messages and
 [com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Message with lockToken 2dc1312f-b263-4282-bbb0-566998eff6e6 could not be ACK at com.mulesoft.connectors.microsoft.azure.servicebus.internal.connection.Connection.ack(Connection.java:192)][ERROR 2019-05-22 00:17:30,822 [ReactorThread6f355ff5-5a36-487b-bb70-1a995a6ddf74] com.microsoft.azure.servicebus.primitives.CoreMessageReceiver: Completing pending updateState operation for delivery '?     ? &??I??=????' with exception com.microsoft.azure.servicebus.primitives.MessageLockLostException: The lock supplied is invalid. Either the lock expired, or the message has already been removed from the queue.]
 ```
 When the connector performs a "prefetch", the lockToken's validity time is fixed in relation to that moment. The problem arises when the lockToken's validity time is not long enough to process the entire batch of records. In cases like this you may get an error because you intend to do an ACK of a lockToken that is expired. To prevent this, you can reduce the size of the prefetch (default to 100) and / or increase the validity time of the lockToken (this can be done when creating the queue/subscription from the connector, in the lock duration property or from Azure portal for existing queues). The maximum duration value for the lock token in Azure is 5 minutes (300 seconds).
+
+=== Reduce noise in Mule apps logs
+
+In some circumstances, the underlying library used by the connector may regularly log complete stacktraces with level WARN. These messages do not represent an issue but may clutter the logs.
+To reduce the noise in said logs, there are two alternatives. Both require changes in the `src/main/resources/log4j2.xml` file:
+
+1) You can specify an *AsyncLogger* for the library's package, raising the level of the log:
+
+```
+<!-- Recommended for packages not belonging to Mule -->
+<AsyncLogger name="com.microsoft.azure.servicebus" level="ERROR"/> 
+```
+
+2) You can add a *RegexFilter* to the existing appender (E.g. RollingFile):
+
+```
+<!-- Avoids the log of messages that contain the specified regexp -->
+<RegexFilter regex = ".message to filter.*" onMatch="DENY" onMismatch="ACCEPT"/>
+``` 
+*IMPORTANT: If the message is multiline it may not work correctly (RegexFilter).*
