@@ -48,7 +48,7 @@ Only relevant in cases where execution order may vary (for example, due to async
 
 === Analyzing Different Transactional Actions in Try Scope
 
-Suppose we have the next configuration: 
+The following example shows a `jms:listener` configured to initiate a transaction at flow level, a `try` scope that tries to initiate/join the transaction (depending on its configuration), and a `jms:publish` operation configured to run outside of the transaction.
 
 [source,xml,linenums]
 ----
@@ -68,14 +68,16 @@ Suppose we have the next configuration:
 
 If the processors within the `try` Scope do not produce any error, the scope finishes the execution and commits the transaction, independently of the configured `transactionalAction` value.
 
-We will analyze what happens with the transaction and messages with the `<raise-error/>` processor added, depending on the `transactionalAction` of the `try` scope: 
+The transaction and the messages are handled differently when a `<raise-error/>` processor is added, depending on the `transactionalAction` of the `try` scope:
 
-* Ignore (`INDIFFERENT`): in this case, the transaction is continued while executing the Try Scope inner processors. When the error is raised, it is propagated to the source (which does not handle it with an `<on-error-continue>`). So, the transaction is rolled back, and the message will be available again in the JMS queue. However, the `jms:publish` operation was completed and the message has been sent, since the rollback of the transaction does not affect the publish operation, which was outside of the transaction scope (the `transactionAction` is set to its default, `NOT_SUPPORTED`). If the `transactionalAction` of the `jms:publish` operation was set to `JOIN_IF_POSSIBLE`, then the operation will be rolled back. 
-* Always Begin (`ALWAYS_BEGIN`): This fails, since a transaction is already created.
-* Begin or Join (`BEGIN_OR_JOIN`): in this case, since a transaction was already created, the result will be just the same as in indiferent, joining the already created transaction. 
+* Ignore (`INDIFFERENT`): In this case, the transaction is continued while executing the Try Scope inner processors. When the error is raised, it is propagated to the source (which does not handle it with an `<on-error-continue>`). The transaction is rolled back, and the message will be available again in the JMS queue. However, the `jms:publish` operation was completed and the message has been sent since the rollback of the transaction does not affect the publish operation, which was outside of the transaction scope (the `transactionAction` is set to its default, `NOT_SUPPORTED`).
+** If the `transactionalAction` of the `jms:publish` operation is set to `JOIN_IF_POSSIBLE`, then the operation is rolled back.
+* Always Begin (`ALWAYS_BEGIN`): This raises an error because an active transaction already exists.
+* Begin or Join (`BEGIN_OR_JOIN`): In this case, a transaction was already initiated so the scope joins the active transaction. The result is the same as in `INDIFFERENT`.
 
+==== An Error Handler is Added at Flow Level
 
-Suppose now we add an Error Handler at flow level:
+In the following example, an Error Handler is added at flow level:
 
 [source,xml,linenums]
 ----
@@ -96,13 +98,15 @@ Suppose now we add an Error Handler at flow level:
 </flow>
 ----
 
-We analyze this new scenario: 
-* Ignore (`INDIFFERENT`): Once again, the transaction is _continued_. This time, the commit of the `jms:publish` message depends on the flow. Since the error is now handled by an `on-error-continue` Error Handler, the transaction is committed. Thus, both the message read from the `jms:listener` source is consumed and the message sent with `jms:publish` is actually sent.
-* Always Begin (`ALWAYS_BEGIN`): Same scenario as before, since a transaction was already began, this raises an error. 
-* Begin or Join (`BEGIN_OR_JOIN`): Same as `INDIFFERENT`.
+The behavior in this scenario is:
 
-Suppose now, instead of adding an Error Handler at flow level, we add it in the `try` Scope, and the error is thrown 
-after the execution of the scope:
+* Ignore (`INDIFFERENT`): The transaction is _continued_. This time, the commit of the `jms:publish` message depends on the flow. Because the error is now handled by an `on-error-continue` Error Handler, the transaction is committed. The message read from the `jms:listener` source is consumed, and the message processed by the `jms:publish` is actually sent.
+* Always Begin (`ALWAYS_BEGIN`): This raises an error because an active transaction already exists.
+* Begin or Join (`BEGIN_OR_JOIN`): Same behavior as `INDIFFERENT`.
+
+==== An Error Handler is Added in the Try Scope
+
+In this case, we add the Error Handler in the `try` Scope, and the error is thrown after the execution of the scope:
 
 [source,xml,linenums]
 ----
@@ -124,11 +128,11 @@ after the execution of the scope:
 </flow>
 ----
 
-In all these cases the transaction created at Flow level will be rolled back, and the message will be available to be read again. We analyze what happens with the `try` Scope: 
+In all these cases the transaction created at Flow level is rolled back, and the message remains available to be read again. The behavior in the `try` Scope is:
 
-* Ignore (`INDIFFERENT`): The transaction is _continued_, but since the error is not handled by an `on-error-continue` at the flow level, the transaction is rolled back, and the message is not sent. 
-* Always Begin (`ALWAYS_BEGIN`): Once again, this configuration is wrong, for trying to create a new Transaction even when there is already one active. 
-* Begin or Join (`BEGIN_OR_JOIN`): Once again, same scenario as `INDIFFERENT`. 
+* Ignore (`INDIFFERENT`): The transaction is _continued_ but the error is not handled by an `on-error-continue` at the flow level. This causes the transaction to be rolled back, and the message is not sent.
+* Always Begin (`ALWAYS_BEGIN`): This raises an error because an active transaction already exists.
+* Begin or Join (`BEGIN_OR_JOIN`): Same behavior as `INDIFFERENT`.
 
 
 == Variable and Payload Propagation
