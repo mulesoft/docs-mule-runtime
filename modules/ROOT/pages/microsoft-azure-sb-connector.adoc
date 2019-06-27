@@ -130,69 +130,95 @@ If a message is not acknowledged, it times out and goes to the end of the queue.
 |*Max. Messages to Receive*| Maximum number of messages to receive during the scheduled operation.
 |===
 
-== Use Case: Studio
+== Use Cases
 
-=== Get Queue list
+=== Send message to Queue or Topic
 
-image::microsoft-azure-sb-flow.png[General]
+Simple Mule application that sends a message to a Queue. Sending to Topic can be done in a similar way.
 
-. Create a new Mule application in Studio, and select an HTTP Connector as a source in the new flow.
-. Add a new HTTP Connector Configuration global element:
-.. Enter the following values for the `Host` and `Port` fields:
-+
-[%header%autowidth.spread]
-|===
-|Parameter |Value
-|*Host* |0.0.0.0
-|*Port* |8081
-|===
-+
-.. Click *Save*.
-. Assign the Global configuration to the HTTP Listener.
-. In the *Path* field for the HTTP Listener path, enter `/list`.
-. Drag and drop a new *Microsoft Azure Service Bus* component on the flow.
-. Configure the Microsoft Azure Service Bus connector global element with its environment values.
-. Select the `List queues` operation in the dropdown option.
-. Save and run the project as a Mule Application.
+. Create a new Mule application in Studio.
+. Add a new *HTTP Connector* as the source of the new flow. Make it listen to the port 8081, path `/send`.
+. Add a *Set Payload* or *Transform Message* and craft a message to be enqueued.
+. Drag a new *Microsoft Azure Service Bus* connector to the flow. Create a configuration for it.
+.. Set the "Publish message" operation, the "Destination Type" (`QUEUE` or `TOPIC`) and the "Destination name".
+. Since the "Publish message" operation has no return value, use another *Set Payload* to return a message: `#["message sent"]`.
 
-== Use Case: XML
+When you call `http://localhost:8081/send`, a message will be uploaded to the queue.
 
-[source,code]
-----
+=== Receive messages from a queue with manual ACK
 
-<?xml version="1.0" encoding="UTF-8"?>
+. Create a new Mule application in Studio.
+. Add a new *Microsoft Azure Service Bus* as the source of the new flow and create a configuration for it.
+.. Set it to use the "Queue listener". For topics, use "Subscription listener".
+.. Set the "Queue name" to the desired destination, and "Receive mode" to `MANUAL`.
+. Drag a *Variable* component to store the *Lock Token* from the received message, with this expression: `#[message.inboundProperties.get('lockToken')]`.
+. Do something with the message. For testing purposes, a simple *Logger* would suffice.
+. Add another *Microsoft Azure Service Bus*. Set it to call the "Acknowledge message" operation. For the "Lock" parameter, retrieve the *Lock Token* stored before.
 
-<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
-        xmlns:microsoft-azure-service-bus="http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus"
-        xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
-        xmlns="http://www.mulesoft.org/schema/mule/core"
-        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-        xmlns:spring="http://www.springframework.org/schema/beans"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.springframework.org/schema/beans
-http://www.springframework.org/schema/beans/spring-beans-current.xsd
-http://www.mulesoft.org/schema/mule/core
-http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-http://www.mulesoft.org/schema/mule/http
-http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus
-http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus/current/mule-microsoft-azure-service-bus.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking
-http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
-<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081"
-        doc:name="HTTP Listener Configuration"/>
-<microsoft-azure-service-bus:connection-string-config
-        name="Microsoft_Azure_Service_Bus__Connection_string"
-        connectionString="${config.cs}" namespace="${config.namespace}"
-        doc:name="Microsoft Azure Service Bus: Connection string"/>
-<flow name="list-queue">
-       <microsoft-azure-service-bus:list-queues
-        configref="Microsoft_Azure_Service_Bus__Connection_string"
-        doc:name="list queues"/>
-</flow>
-</mule>
+Every message received will be processed. If said processing is successful, it will be acknowledged.
 
-----
+For automatic ACK, set the "Receive mode" to `AUTOMATIC`. No need to manually handle the "Lock token" or call the "Acknowledge message" operation.
+
+=== Scheduled reception of messages
+
+. Set up a Mule application to receive messages from a queue or topic as you would normally do.
+. Observe that the "Queue listener" and "Subscription listener" have two extra parameters: "CRON expression" and "Max. messages to receive".
+.. Set the "CRON expression" following the UNIX standard. For example, to connect and receive messages every day at 8 AM, use `0 8 * * *`.
+.. Set "Max. messages to receive" to the maximum number of messages you wish the connector to receive every time a receive is triggered by the CRON expression.
+
+The connector will do a batch receive every time the CRON expression commands it. Any number of available messages up to the maximum set will be retrieved and processed by the flow.
+
+== Queue send batch
+
+. Start with the simple application created with the instructions. under the *Send message to Queue or Topic* title.
+. Replace the call to the "Publish message" operation with "Publish batch of messages". Make sure the "Destination type" and "Destination name" are properly set.
+. When crafting the message, be sure to create a list of strings, instead of only one, since we are sending many messages at once. For example. To split a string by the commas, and send every piece as an individual message, drag a *Transform message* and use the following script:
+```
+%dw 1.0
+%output application/java
+---
+payload splitBy ','
+```
+
+=== Schedule the logical enqueuing of a message
+
+If you wish to send a message to the queue or topic, but you wish it to be dispatched to its listeners at a certain time:name: value
+
+. Start with the simple application created with the instructions. under the *Send message to Queue or Topic* title.
+. Fill in the "Scheduled enqueue time UTC" of the "Publish message" call parameter with the date/time you want the message to be dispatched. Format example: `2019-06-27T21:16:46.866Z`.
+
+The message will be sent to the destination, which will not dispatch it immediately, but at the specified time.
+
+== REST operations
+
+The connector also supports Service Bus' REST API for queue, topic, subscription and rules management. These are the available operations:
+
+* Queue
+** Create
+** Get
+** Get Size
+** List
+** Update
+** Delete
+* Topic
+** Create
+** Get
+** List
+** Update
+** Delete
+* Subscription
+** Create
+** Get
+** Get Size
+** List
+** Update
+** Delete
+* Rule
+** Create
+** Get
+** List
+** Update
+** Delete
 
 == Additional Information
 
