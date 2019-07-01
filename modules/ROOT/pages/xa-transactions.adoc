@@ -29,7 +29,6 @@ To configure the message sources that supports XA transaction, please check out 
 * VM
 * DB
 
-
 == Configuring Try Scope to use XA Transactions
 
 To configure a Try Scope to run a XA Transaction:
@@ -40,11 +39,54 @@ To configure a Try Scope to run a XA Transaction:
 
 See also xref:try-scope-concept.adoc[Try Scope Concept] for more information on how Try Scope handles transactions.
 
-
 == Using XA Transactions with Different Resources
 
+Regardless of how the Transaction is began (i.e. Transactional Message Source or Try Scope), then any other Connector Operation that supports Transactions may join the Transaction, by setting its Transactional Action to `ALWAYS_JOIN` or `JOIN_IF_POSSIBLE`. Since XA Transactions are meant to work with different resources, you can have different resources operations join the transaction. For example: 
 
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<set-payload value="Hello World"/>
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+		<db:insert config-ref="Database_Config">
+			<db:sql>${insertQuery}</db:sql>
+		</db:insert>
+	</try>
+	<error-handler>
+		<on-error-propagate enableNotifications="true" logException="true"/>
+	</error-handler>
+</flow>
+----
+
+Suppose the `db:insert` operation fails, then before the error handler (`on-error-propagate`) is executed, the transaction is rolled back. Therefore, the message sent through the `vm:publish` is not confirmed to be sent, and
+the message in the `jms:consume` is not actually consumed, so it is available next time to be consumed again. 
+
+Suppose now the error handler is changed to an `on-error-continue`:
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<set-payload value="Hello World"/>
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+		<db:insert config-ref="Database_Config">
+			<db:sql>${insertQuery}</db:sql>
+		</db:insert>
+	</try>
+	<error-handler>
+		<on-error-continue enableNotifications="true" logException="true">
+			<jms:publish config-ref="ANOTHER_JMS_Config" destination="someOtherQueue" transactionalAction="ALWAYS_JOIN"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+----
+
+Now, if the `db:insert` operation fails, the transaction is not rolled back. Instead, the Transaction is commited after the `jms:publish` (which runs within the XA Transaction) executes. Therefore, the message sent using `vm:publish` is pubished, the message from `jms:consume` is consumed, and the message publish with `jms:publish` is also sent. Consider that the `jms:publish` inside the `on-error-continue` has another configuration for the connector. This is not required, but is possible. With single source (local) Transactions, this is not a valid configuration, since all operations running within a Transaction (that joins it) must use the same Configuration to work as designed. 
 
 == See Also
 
 * xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions]
+* xref:transaction-management.adoc[Transaction Management].
