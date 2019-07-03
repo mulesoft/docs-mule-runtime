@@ -1,0 +1,91 @@
+= XA Transactions
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: xa, transactions, jms, vms, db, ibmmq
+
+Extended Architecture Transactions (or XA Transactions) can be used to group a series of operations from multiple transactional resources, such as VM, JMS or Database, into a single reliable global transaction.
+
+The XA (eXtended Architecture) standard is an X/Open group standard which specifies the interface between a global transaction manager and local transactional resource managers. The XA protocol defines a 2-phase commit protocol which can be used to reliably coordinate and sequence a series of atomic operations across multiple servers of different types. Each local XA resource manager supports the A.C.I.D properties (Atomicity, Consistency, Isolation, and Durability) which help guarantee completion of a sequence of operations in the resource managed by the XA resource manager. Examples of transactional systems which often include local XA resource managers include databases, application servers, messaging queues, and transactional caches.
+
+The global transaction manager is responsible for coordinating the transactional semantics of the global transaction between all the local XA transaction managers participating in the global transaction. To do this, each prepare and commit phase in the 2-phase commit is coordinated globally (often over the network) with each local XA resource manager.
+
+The advantage of XA global transactions is that one global transaction manager can communicate and coordinate with multiple different transactional resources in a common and standard way. If any of the local resource managers report an error in the global transaction, the global transaction manager coordinates the rollback of any already prepared operations in each of the other local resource managers.
+For example, a global transaction might include several operations to one or more databases, as well as messages sent to a JMS server on one or more topics. If anything goes wrong in the transaction, the global transaction manager guarantees that every resource is reset to the state before the global transaction was started. This keeps developers from having to include complex rollback or recovery logic outside the application.
+
+The disadvantage of XA global transactions is that they can add tremendous latency to your transactions, especially if the resources are distributed over slow or unreliable network connections, and it can be difficult to recover if there are physical failures of systems in the middle of a globally distributed transaction.
+
+== XA Transactions and Performance
+
+A global XA transaction is often a more reliable way of coordinating multiple XA resources, but it often increases latency and also requires additional resources such as an external transaction manager. A global transaction is only as reliable as the global transaction manager itself. For greater reliability, you need to use a transaction manager that also persists the state of each XA resource as the global transaction progresses through the prepare and commit phases, in case the transaction manager fails or loses network connectivity to any of the local XA resource managers during the global transaction.
+
+== Configuring your Resource to use XA Transactions
+
+To configure the message sources that supports XA transaction, please check out the Connectors documentation:
+
+* JMS
+* IBMMQ
+* VM
+* Database
+
+== Configuring a Try Scope to use XA Transactions
+
+To configure a Try Scope to use XA Transactions, follow these steps:
+
+1. Add the Try Scope from the Mule Palette.
+2. Go to the *General* tab in the Try configuration panel.
+3. Configure the Try Scope `Transactional Action` to `ALWAYS_BEGIN`, and the `Transaction Type` to `XA`.
+
+See also xref:try-scope-concept.adoc[Try Scope Concept] for more information on how Try Scope handles transactions.
+
+== Using XA Transactions with Different Resources
+
+Regardless of how the Transaction is started (either from a Transactional Message Source or from a Try Scope), any Connector Operation that supports Transactions may join the Transaction by setting its Transactional Action to `ALWAYS_JOIN` or `JOIN_IF_POSSIBLE`. Because XA Transactions are meant to work with different resources, operations from different resources can join the transaction. For example:
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<set-payload value="Hello World"/>
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+		<db:insert config-ref="Database_Config">
+			<db:sql>${insertQuery}</db:sql>
+		</db:insert>
+	</try>
+	<error-handler>
+		<on-error-propagate enableNotifications="true" logException="true"/>
+	</error-handler>
+</flow>
+----
+
+If the `db:insert` operation fails, the transaction is rolled back before the error handler (`on-error-propagate`) is executed. Therefore, the message sent through the `vm:publish` is not confirmed to be sent, and
+the message in the `jms:consume` is not actually consumed, so it is available next time to be consumed again.
+
+In the following example, the error handler is changed to an `on-error-continue`:
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<set-payload value="Hello World"/>
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+		<db:insert config-ref="Database_Config">
+			<db:sql>${insertQuery}</db:sql>
+		</db:insert>
+	</try>
+	<error-handler>
+		<on-error-continue enableNotifications="true" logException="true">
+			<jms:publish config-ref="ANOTHER_JMS_Config" destination="someOtherQueue" transactionalAction="ALWAYS_JOIN"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+----
+
+If the `db:insert` operation fails, the transaction is not rolled back. Instead, the Transaction is committed after the `jms:publish` (which runs within the XA Transaction) executes. Therefore, the message sent using `vm:publish` is published, the message from `jms:consume` is consumed, and the message sent using `jms:publish` is also published. Consider that the `jms:publish` inside the `on-error-continue` has another configuration for the connector. This is not required but is possible. With single source (local) Transactions, this is not a valid configuration, since all operations that join a Transaction must use the same Configuration to work as designed.
+
+== See Also
+
+* xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions]
+* xref:transaction-management.adoc[Transaction Management].
