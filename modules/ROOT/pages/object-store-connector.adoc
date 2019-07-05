@@ -66,6 +66,22 @@ The Object Store connector is compatible with:
 
 Starting with version 2.0.0, the Object Store connector is licensed commercially with Anypoint Platform as with other Select connectors.
 
+[[objectstoretypes]]
+== Object Store Types
+
+On-premises:
+
+* *In memory*: Content is only stored in memory. If the runtime goes down, you lose your data. 
+* *Persistent*: Object store data goes to disk. If Mule runtime is restarted, the object store content persists.
+* *Shared*: If a cluster is running, the content of the object store persists across cluster nodes. When a new node spins up, it has access to the existing object store content.
+* *External OS implementation*: Allows you to use an external implementation as the backend for the object store. Examples include a MySQL database or Redis.
+
+On CloudHub:
+
+* *In memory*: Object store data is stored in the memory of the JVM, and when the Mule application stops or is redeployed, all the data is lost.
+* *Persistent*: Content is stored in an outside persistence layer and data survives runtime restarts or application redeployments. The outside persistence layer can be one of the following: Cloud Object Store v1 (CloudHub-managed MySQL database) or a cloud object store v2 (API service built on top of an AWS DynamoDB).
+* *Shared*: Mule workers in CloudHub are not in a cluster, therefore they do not share memory the same way as on-premises. However, if an application is configured to use Object Store v2, then the object store data is stored in the cloud and the data is shared across workers.
+* *External OS implementation*: This is the same as on-premises - allows you to use an external implementation as the backend for the object store. Examples include a MySQL database or Redis.
 
 [[install]]
 == Install this Connector
@@ -491,51 +507,46 @@ Paste this code into your XML Editor to quickly load the flow for this example u
 ----
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:objectstore="http://www.mulesoft.org/schema/mule/objectstore"
-xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
-xmlns:http="http://www.mulesoft.org/schema/mule/http"
-xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
-xmlns="http://www.mulesoft.org/schema/mule/core"
-xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-	xmlns:spring="http://www.springframework.org/schema/beans"
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" 
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" 
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" 
+	xmlns:objectstore="http://www.mulesoft.org/schema/mule/objectstore" 
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+	xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://www.springframework.org/schema/beans
-	http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-http://www.mulesoft.org/schema/mule/objectstore
-http://www.mulesoft.org/schema/mule/objectstore/current/mule-objectstore.xsd
+http://www.mulesoft.org/schema/mule/objectstore http://www.mulesoft.org/schema/mule/objectstore/current/mule-objectstore.xsd
 http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking
-http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
-    <objectstore:config name="ObjectStore__Configuration"
-    partition="employees" doc:name="ObjectStore: Configuration"/>
-    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0"
-    port="8081" doc:name="HTTP Listener Configuration"/>
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <objectstore:config name="ObjectStore__Connector" partition="employees" doc:name="ObjectStore: Connector"/>
     <flow name="objectstore-store-employee-flow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/store" doc:name="HTTP"/>
-        <dw:transform-message doc:name="Transform Message">
+        <dw:transform-message doc:name="Transform Message" metadata:id="956c4ffe-8e25-4c9e-a47d-944d715146e1">
             <dw:set-payload><![CDATA[%dw 1.0
 %output application/json
 ---
 {
-		id: inboundProperties.'http.query.params'.id,
-		name: inboundProperties.'http.query.params'.name,
-		lname: inboundProperties.'http.query.params'.lname,
-		age: inboundProperties.'http.query.params'.age
+	id: inboundProperties.'http.query.params'.id,
+	name: inboundProperties.'http.query.params'.name,
+	lname: inboundProperties.'http.query.params'.lname,
+	age: inboundProperties.'http.query.params'.age
 }]]></dw:set-payload>
         </dw:transform-message>
-        <objectstore:store config-ref="ObjectStore__Configuration"
-	key="#[message.inboundProperties.'http.query.params'.id]"
-	value-ref="#[payload]" doc:name="Store employee"/>
-        <objectstore:retrieve-all-keys config-ref="ObjectStore__Configuration" doc:name="Get all keys"/>
-        <logger message="Keys : #[payload]" level="INFO" doc:name="Log Employee Id's"/>
+        <object-to-byte-array-transformer doc:name="Object to Byte Array"/>
+        <objectstore:store config-ref="ObjectStore__Connector" key="#[message.inboundProperties.'http.query.params'.id]" value-ref="#[payload]" doc:name="Store employee"/>
+        <objectstore:retrieve-all-keys config-ref="ObjectStore__Connector" doc:name="Get all keys"/>
+        <logger level="INFO" doc:name="Log Employee Id's" message="Keys : #[payload]" />
         <set-payload value="Keys : #[payload]" doc:name="Show Employee Id's"/>
     </flow>
     <flow name="objectstore-retrieve-employee-flow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieve" doc:name="HTTP"/>
-        <objectstore:retrieve config-ref="ObjectStore__Configuration"
-	key="#[message.inboundProperties.'http.query.params'.id]" doc:name="Retrieve Employee"/>
+        <objectstore:retrieve config-ref="ObjectStore__Connector" key="#[message.inboundProperties.'http.query.params'.id]" doc:name="Retrieve Employee"/>
+        <byte-array-to-object-transformer doc:name="Byte Array to Object"/>
         <logger message="Employee: #[payload]" level="INFO" doc:name="Log Employee"/>
         <set-payload value="Employee : #[payload]" doc:name="Show Employee"/>
     </flow>
