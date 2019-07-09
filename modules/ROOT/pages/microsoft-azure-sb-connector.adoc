@@ -134,41 +134,57 @@ If a message is not acknowledged, it times out and goes to the end of the queue.
 
 === Send a Message to a Queue or Topic
 
-The following Mule app sends a message to a queue. You can create a similar Mule app to send a message to a topic:
+The following example uses a Mule app to send a message to an Amazon Azure Service Bus queue. You can create a similar app to send a message to an Amazon Azure Service Bus topic:
 
 . Create a new Mule app in Studio.
-. Add an *HTTP Connector* as the source of the flow. Set the *Port* to 8081 and the *Path* to `/send`.
-. Add a *Set Payload* or *Transform Message*, and create a message to enqueue .
-. Drag a *Microsoft Azure Service Bus* connector to the flow, and configure the connector.
-.. Set the "Publish message" operation, the "Destination Type" (`QUEUE` or `TOPIC`) and the "Destination name".
+. Add an *HTTP Connector* as the flow source.
+. In the HTTP connector configuration, set the *Port* field to `8081` and the *Path* field to`/send`.
+. Add a *Set Payload* or *Transform Message*, and create a message for the queue.
+. Drag the *Microsoft Azure Service Bus* connector to the flow, and then configure the connector:
+
+/// I see Queue receive and Topic receive as operations. Not Publish ///////message.
+
+.. Set the "Publish message" operation, "Destination Type" (`QUEUE` or `TOPIC`) and the "Destination name".
 . Since the "Publish message" operation has no return value, use another *Set Payload* to return a message: `#["message sent"]`.
 
-When you call `http://localhost:8081/send`, a message is uploaded to the queue.
 
-=== Receive messages from a Queue with a Manual ACK
+When you call `http://localhost:8081/send`, Mule uploads the message to the queue.
+
+=== Receive Messages from a Queue or Topic with a Manual ACK
 
 . Create a new Mule app in Studio.
-. Add and configure *Microsoft Azure Service Bus* as the source of the flow.
-.. Set it to use the "Queue listener". For topics, use "Subscription listener".
-.. Set the "Queue name" to the desired destination, and "Receive mode" to `MANUAL`.
-. Drag a *Variable* component to store the *Lock Token* from the received message, with this expression: `#[message.inboundProperties.get('lockToken')]`.
+. Add a *Microsoft Azure Service Bus* connector as the flow source, and configure the connector:
+.. In the *Operation field*, select *Queue receive* or *Topic receive*.
+.. Set the *Queue* field or *Topic* field to the desired destination, and "Receive mode" to `MANUAL`.
+
+/// Not finding the Receive mode field
+
+. Drag a *Variable* component to the flow.
+. Store the *Lock Token* from the received message by using this expression: `#[message.inboundProperties.get('lockToken')]`.
 . Do something with the message. For testing purposes, a simple *Logger* would suffice.
-. Add another *Microsoft Azure Service Bus*. Set it to call the "Acknowledge message" operation. For the "Lock" parameter, retrieve the *Lock Token* stored before.
+. Add another *Microsoft Azure Service Bus* connector to the flow and set it to call the *Ack message* operation. For the *Lock Token* field value, retrieve the *Lock Token* stored before.
 
-Every message received will be processed. If said processing is successful, it will be acknowledged.
+Mule processes every message received and acknowledges successful message processing.
 
-For automatic ACK, set the "Receive mode" to `AUTOMATIC`. No need to manually handle the "Lock token" or call the "Acknowledge message" operation.
+/// Ask about if Mule acks all received messages.
+
+To have Mule automatically acknowledge messages, set the *Receive Mode"* field to `AUTOMATIC`.
+
+/// where is the receive mode field?
 
 === Scheduled Reception of Messages
 
-. Set up a Mule application to receive messages from a queue or topic as you would normally do.
-. Observe that the "Queue listener" and "Subscription listener" have two extra parameters: "CRON expression" and "Max. messages to receive".
-.. Set the "CRON expression" following the UNIX standard. For example, to connect and receive messages every day at 8 AM, use `0 8 * * *`.
-.. Set "Max. messages to receive" to the maximum number of messages you wish the connector to receive every time a receive is triggered by the CRON expression.
+The following Mule app...
 
-The connector will do a batch receive every time the CRON expression commands it. Any number of available messages up to the maximum set will be retrieved and processed by the flow.
+. Create a Mule app to receive messages from a queue or topic as described above. When you create the app:
+.. Set the *Unix CRON Expression* field to a CRON expression that follows the UNIX standard. For example, to connect and receive messages everyday at 8 AM, use `0 8 * * *`.
+.. Set the *Max Messages to Receive* field to the maximum number of messages for the connector to receive every time the CRON expression triggers a receive.
+
+The connector executes a batch receive every time the CRON expression commands it. Any number of available messages up to the maximum set will be retrieved and processed by the flow.
 
 == Queue Send Batch
+
+The Mule app ...
 
 . Start with the simple application created with the instructions. under the *Send message to Queue or Topic* title.
 . Replace the call to the "Publish message" operation with "Publish batch of messages". Make sure the "Destination type" and "Destination name" are properly set.
@@ -180,9 +196,9 @@ The connector will do a batch receive every time the CRON expression commands it
 payload splitBy ','
 ```
 
-=== Schedule the logical enqueuing of a message
+=== Schedule the Logical Enqueuing of a Message
 
-To send a message to the queue or topic and have the message dispatched to its listeners at a specified time:name: value
+The following example creates a Mule app to send a message to all listeners at a specified time:
 
 . Start with the simple application created with the instructions. under the *Send message to Queue or Topic* title.
 . Fill in the "Scheduled enqueue time UTC" of the "Publish message" call parameter with the date/time you want the message to be dispatched. Format example: `2019-06-27T21:16:46.866Z`.
@@ -233,14 +249,15 @@ In situations where you have restricted access to your resources (to only send/r
 
 === Handling a Very High Number of Messages
 
-When handling a very high number of messages (thousands per second), especially if publishing to and reading from the same destination within the same Mule app, you may see messages like this in the log:
+When handling a very high number of messages (thousands per second), especially if publishing to and reading from the same destination within the same Mule app, you might see messages like this in the log:
 
 ```
 [ERROR 2019-05-22 00:15:26,362 [ForkJoinPool.commonPool-worker-3] com.microsoft.azure.servicebus.MessageAndSessionPump: onMessage with message containing sequence number '95' threw exception com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Failed setting attributes from original API message.]
 ```
 This problem relates to the processing strategy that Mule resolves automatically to "queue-asynchronous" when you configure the message listener in a flow.
-If a message is waiting for more than 30,000 ms to be processed by the flow, Mule throws an exception, which causes an error (timeout in the mule SEDA queue).
-To avoid this error, create a custom queue-asynchronic configuration and increase the number of threads (`maxThreads` property, default 16) and / or increase the waiting time (`threadWaitTimeout`, default 30,000 ms). To modify this configuration, select the flow, and within General -> Optional Processing Strategy -> Processing Strategy Ref, add a new Queued Asynchronous Processing Strategy.
+If a message waits for more than 30,000 ms to be processed by the flow, Mule throws an exception that causes an error (timeout in the mule SEDA queue).
+
+To avoid this error, create a custom queue-asynchronic configuration and increase the number of threads (`maxThreads` property, default 16), increase the waiting time (`threadWaitTimeout`, default 30,000 ms), or both. This configuration can be modified by selecting the flow, and within General -> Optional Processing Strategy -> Processing Strategy Ref, add a new Queued Asynchronous Processing Strategy.
 
 For more information, see https://docs.mulesoft.com/mule-runtime/3.7/flow-processing-strategies#fine-tuning-a-queued-asynchronous-processing-strategy
 
@@ -251,12 +268,11 @@ You may see errors like this one when working with a high number of messages and
 ```
 [com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Message with lockToken 2dc1312f-b263-4282-bbb0-566998eff6e6 could not be ACK at com.mulesoft.connectors.microsoft.azure.servicebus.internal.connection.Connection.ack(Connection.java:192)][ERROR 2019-05-22 00:17:30,822 [ReactorThread6f355ff5-5a36-487b-bb70-1a995a6ddf74] com.microsoft.azure.servicebus.primitives.CoreMessageReceiver: Completing pending updateState operation for delivery '?     ? &??I??=????' with exception com.microsoft.azure.servicebus.primitives.MessageLockLostException: The lock supplied is invalid. Either the lock expired, or the message has already been removed from the queue.]
 ```
-When the connector performs a "prefetch", the lockToken's validity time is fixed in relation to that moment. The problem arises when the lockToken's validity time is not long enough to process the entire batch of records. In these cases, you may get an error because you intend to do an ACK of a lockToken that is expired. To prevent this, reduce the size of the prefetch (default to 100) and / or increase the validity time of the lockToken (this can be done when creating the queue/subscription from the connector, in the lock duration property or from Azure portal for existing queues). The maximum duration value for the lock token in Azure is 5 minutes (300 seconds).
+When the connector performs a "prefetch", the lockToken's validity time is fixed in relation to that moment. The problem arises when the lockToken's validity time is not long enough to process the entire batch of records. In cases like this, Mule might throw an error because you intend to do an ACK of a lockToken that is expired. To prevent this, reduce the size of the prefetch (default to 100), and increase the validity time of the lockToken, or both.  (this can be done when creating the queue/subscription from the connector, in the lock duration property or from Azure portal for existing queues). The maximum duration value for the lock token in Azure is 5 minutes (300 seconds).
 
-=== Reduce Noise in the Logs for Mule Apps
+=== Reduce Noise in Mule Apps Logs
 
-In some circumstances, the underlying library used by the connector regularly logs complete stacktraces with a WARN level. These messages do not represent an issue, but they can clutter the logs.
-To reduce noise in the logs, there are two alternatives. Both require changes in the `src/main/resources/log4j2.xml` file:
+In some circumstances, the underlying library used by the connector might regularly log complete stacktraces with level WARN. These messages do not represent an issue, but they can clutter the logs. To reduce the noise in the logs, make either of the following changes to the `src/main/resources/log4j2.xml` file:
 
 * Specify an *AsyncLogger* for the library's package, raising the level of the log:
 
@@ -265,14 +281,19 @@ To reduce noise in the logs, there are two alternatives. Both require changes in
 <AsyncLogger name="com.microsoft.azure.servicebus" level="ERROR"/>
 ```
 
-* Add a *RegexFilter* to the existing appender (for example, RollingFile):
+* Add a *RegexFilter* to the existing appender (E.g. RollingFile):
 
 ```
 <!-- Avoids the log of messages that contain the specified regexp -->
 <RegexFilter regex = ".message to filter.*" onMatch="DENY" onMismatch="ACCEPT"/>
 ```
-*IMPORTANT: If the message is multiline it may not work correctly (RegexFilter).*
+IMPORTANT: If the message is multiline, RegexFilter might not work correctly.
 
 === Listeners (Sources) in Network Disconnection and Reconnection Scenarios
 
-In situations with network connection problems, if you want the Listeners (Sources) components in the Azure connector to automatically execute reconnection attempts, you must specify a reconnection strategy. Specify the reconnection strategy when creating or editing the *'Connector Configuration'* in the Azure connector (parameter group: *'Basic Settings'*). In the *'Connector Configuration'* pop-up screen, access the *'Reconnection'* tab and select a *'Standard Reconnection'* strategy. There we could indicate the *'Frequency (ms)'* of the check and the number of *'Reconnection Attempts'*.
+In situations were there are network connection problems, you can direct the sources components for the Azure connector to automatically execute reconnection attempts by specifying a reconnection strategy. You can specify a reconnection strategy when you create or edit the connector configuration:
+
+. In the *General* tab of the connector configuration, select the plus sign next to the *Connector Configuration* field.
+. Select one of the *Connector Configuration* options.
+. In the *Reconnection* tab, select *Standard Reconnection*.
+. Optionally, specify a non-default value for the *Frequency (ms)* and *Reconnection Attempts* fields.
