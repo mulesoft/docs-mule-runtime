@@ -19,7 +19,7 @@ The following table describes the characteristics of each transaction type and t
 [%header,cols="20a,35a,45a"]
 |===
 | Transaction Type | Characteristics | Requisites to Join the Transaction
-| xref:single-resource-transaction.adoc[Single Resource (Local)] 
+| xref:single-resource-transaction.adoc[Single Resource (Local)]
 |
 * Performs better than XA transactions.
 |
@@ -78,7 +78,6 @@ A Transactional Action (`transactionalAction`) defines the type of action that o
 | Execute outside any existent transaction.
 |
 * Operations that support transactions
-* Try scope
 |===
 
 == Configuring a Transaction in the Message Source
@@ -120,7 +119,7 @@ image::transaction-config-studio.png[transaction-config-studio]
 +
 Add the `transactionalAction` element and the `transactionType` element (if necessary), and set their values.
 +
-Below is an XML example where the Try scope demarcates a transaction that includes a Database operation (`db:insert`) and a VM operation (`vm:publish`). Either both will be applied if the entire process succeeds, or none will be applied if an error is raised within the Try scope:
+In the following XML example the Try scope demarcates a transaction that includes a Database operation (`db:insert`) and a VM operation (`vm:publish`). Either both will be applied if the entire process succeeds, or none will be applied if an error is raised within the Try scope:
 +
 [source,xml,linenums]
 ----
@@ -146,7 +145,122 @@ When running in a transactional scope, the entire process must run in the same t
 
 Any other router or scope (for example, Foreach) continues with the transaction and its behavior is not modified.
 
+== Error Handling
+
+When an error occurs during a transaction, your application must be able to handle the error and continue with the transaction or do a rollback.
+
+There are two types of error handlers, which behave differently when an error is raised during a transaction:
+
+* On Error Propagate
+** If the `on-error-propagate` is inside the error handler corresponding to the component that began the transaction:
++
+The transaction is rolled back before executing the processors of the `on-error-propagate` scope. This means that the processors inside the error handler do not run within the transaction.
+
+** If the `on-error-propagate` is inside an element that did not start the transaction:
++
+The transaction is not rolled back and the processors inside the `on-error-propagate` run within the transaction. Remember that some scopes and routers behave differently when executing within a transaction.
+
+* On Error Continue
++
+The error is considered managed, the transaction remains active and is able to commit. The processors inside the `on-error-continue` run within the transaction.
+
+=== Example: Error Raised in Try Scope
+
+In this first example, the message source (`jms:listener`) starts a transaction, which is continued by the `try` Scope (`transactionalAction` is set to default, `INDIFFERENT`).
+
+When the error is raised, it is handled by the `error-handler` of the `try` Scope first. The error is handled by an `on-error-propagate`, but the transaction is not rolled back because it was not the `try` Scope the one that started the transaction. Only the error handler of the flow can rollback the transaction because it was initiated at flow level (from its message source).
+
+The `jms:publish` inside the `on-error-propagate` joins the transaction. The error is then propagated to the flow's `error-handler`, which handles it with an `on-error-continue`. The `jms:consume` inside the `on-error-continue` runs within the transaction. Finally, the transaction is committed.
+
+[source,xml,linenums]
+----
+<flow name="someFlowWithTx">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<!-- Processors -->
+	<try>
+		<raise-error type="APP:SOME"/>
+		<error-handler>
+			<on-error-propagate>
+				<jms:publish config-ref="JMS_Config" destination="test.out" transactionalAction="ALWAYS_JOIN"/>
+			</on-error-propagate>
+		</error-handler>
+	</try>
+	<error-handler>
+		<on-error-continue>
+			<jms:consume config-ref="JMS_Config" destination="test.in2" transactionalAction="ALWAYS_JOIN"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+----
+
+If the `on-error-continue` is replaced with an `on-error-propagate` in the previous example, then the transaction is rolled back before the execution of the processors. In this scenario, the configuration is not correct because the `jms:consume` cannot join any transaction.
+
+=== Example: Error Raised in a Referenced Flow
+
+The following example behaves the same as the previous one, but instead of having a Try Scope it uses a Flow Reference and the error is raised in the referenced flow:
+
+[source,xml,linenums]
+----
+<flow name="someFlowWithTx">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<!-- Processors -->
+	<flow-ref name="someFlowContinuesTx"/>
+	<error-handler>
+		<on-error-continue>
+			<jms:consume config-ref="JMS_Config" destination="test.in2" transactionalAction="ALWAYS_JOIN"/>
+		</on-error-continue>
+	</error-handler>
+</flow>
+
+<flow name="someFlowContinuesTx">
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-propagate>
+			<jms:publish config-ref="JMS_Config" destination="test.out" transactionalAction="ALWAYS_JOIN"/>
+		</on-error-propagate>
+	</error-handler>
+</flow>
+----
+
+Because the `someFlowContinuesTx` flow did not initiate the transaction, its error handler does not roll back the transaction.
+
+=== Example: Comparing Error Handlers
+
+This example shows the differences in the behavior of the two types of error handlers:
+
+[source,xml,linenums]
+----
+<flow name="flow1">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-continue>
+			<try transactionalAction="ALWAYS_BEGIN">
+				<logger message="hello"/>
+			</try>
+		</on-error-continue>
+	</error-handler>
+</flow>
+
+<flow name="flow2">
+	<jms:listener config-ref="JMS_Config" destination="test.in" transactionalAction="ALWAYS_BEGIN"/>
+	<raise-error type="APP:SOME"/>
+	<error-handler>
+		<on-error-propagate>
+			<try transactionalAction="ALWAYS_BEGIN">
+				<logger message="hello"/>
+			</try>
+		</on-error-propagate>
+	</error-handler>
+</flow>
+----
+
+In `flow1` the `on-error-continue` keeps the transaction active, but the `try` scope inside it tries to initiate a new one. The configuration is not valid and results in an error.
+
+In `flow2` the `on-error-propagate` rolls back the transaction, then the processors inside the `on-error-propagate` are executed and a new transaction is created. This configuration is correct.
+
 == See Also
 
 * xref:try-scope-concept.adoc[Try Scope]
 * xref:reliability-patterns.adoc[Reliability Patterns]
+* xref:on-error-scope-concept.adoc[On-Error Scope]
