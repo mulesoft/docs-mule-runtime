@@ -88,6 +88,57 @@ If the `db:insert` operation fails, the transaction is not rolled back. Instead,
 
 Consider that the `jms:publish` inside the `on-error-continue` has another configuration for the connector. This is not required but is possible. With single source (local) Transactions, this is not a valid configuration, since all operations that join a Transaction must use the same Configuration to work as designed.
 
+[[_nested_tx_]]
+== Nesting Transactions
+
+With XA Transaction, you are able to nest transactions. This means, when executing within a transaction, you can create a new Transaction (using the xref:try-scope-concept.adoc[Try Scope]). Therefore, operations that run within the new transaction will be accountable to it. If the nested transaction is rollback, it does not mean that the original one will rollback. After the nested transaction has finished (committed or rolled back), the original transaction continues its execution. 
+
+For example:
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<try transactionalAction="ALWAYS_BEGIN" transactionType="XA"/>
+			<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+			<db:insert config-ref="Database_Config">
+				<db:sql>${insertQuery}</db:sql>
+			</db:insert>
+			<raise-error type="APP:SOME"/>
+		</try>
+	</try>
+	<error-handler>
+		<on-error-continue/>
+	</error-handler>
+</flow>
+----
+
+In the example above, there is an original transaction created by the first `try` Scope. Then, there is a second one created by the `try` Scope within it. So, the `vm:publish` operation runs within the first transaction, the `jms:consume` and the `db:insert` will run within the second transaction. In the example, after the error is raised, the second transaction is rolled back (and so, the two mentioned operations), but since the first try handles the error with an `on-error-propagate`, the first transaction commits (therefore, the `vm:publish` operation). Another example could be:
+
+[source,xml,linenums]
+----
+<flow name="exampleFlow" >
+	<try transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+		<vm:publish queueName="someVmQueue" config-ref="VM_Config"/>
+		<try>
+			<try transactionalAction="ALWAYS_BEGIN" transactionType="XA"/>
+				<jms:consume config-ref="JMS_Config" destination="someQueue"/>
+				<raise-error type="APP:SOME"/>
+			</try>
+			<error-handler>
+				<on-error-continue/>
+			</error-handler>
+		</try>
+		<db:insert config-ref="Database_Config">
+			<db:sql>${insertQuery}</db:sql>
+		</db:insert>
+	</try>
+</flow>
+----
+
+This time, the second `try` scope does not create a transaction. It is there only to provide error handling, so we can continue with the next operations. The third `try` does create a transaction. Now, both `vm:publish` and `db:insert` run within the first transaction, and `jms:consume` operation does it in the second one. When the error is raised, the second operation is rolled back. Then, the error propagated is handled by the `on-error-continue` of the second `try` scope. After that, the first `try` scope continues with its execution (the `db:insert` operation), and the first transaction is committed. 
+
 == See Also
 
 * xref:using-bitronix-to-manage-transactions.adoc[Using Bitronix to Manage Transactions]
