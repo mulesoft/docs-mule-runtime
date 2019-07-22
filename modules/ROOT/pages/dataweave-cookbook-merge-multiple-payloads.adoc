@@ -1,78 +1,23 @@
-= Merge Multiple Payloads
+= Merge Fields from Separate Objects
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: studio, anypoint, transform, transformer, format, aggregate, filter, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, contains, as
 
-This DataWeave example deals with an input that contains a collection of collections. The first payload index `payload[0]` lists price by book, and the second `payload[1]` lists authors by book, where each book can be identified by a unique `bookId` key. This transformation merges both payload array elements into one, matching their keys, where one book may have several authors.
+The DataWeave examples merge fields from separate input arrays. The first (`firstInput`) is a DataWeave variable that lists price by book ID, and the second (`secondInput`) lists authors by book ID. Each book has a unique `bookId` key.
 
+The DataWeave scripts produce the same output. Both scripts use two `map` functions with a filter, and one of them also creates an alias for the `bookId`:
 
-[NOTE]
-Note that this is not the same as having as an input a single payload that consists of an array. Here, payload is an array of arrays.
+* The first `map` function iterates over the elements of the `firstInput`
+array. As the function evaluates each element, a second `map` function uses a filter to identify any elements in the second array (`secondInput`) that match the `filter` criteria (`secondInput filter ($.*bookId contains firstInputValue.bookId)`). The filter returns an element from `secondInput` that contains a `bookId` value that matches the `bookId` value in the `firstInput` element.
+* The second `map` function evaluates that filtered element and then uses `secondInputValue.author` to select and populate the value of its `"author"` field in the object `{author : secondInputValue.author}`.
+* `filter` limits the scope of the second `map` function to objects in the `secondInput` that share the same `bookId`.
 
-It uses these functions:
-
-* `map` goes through the elements of the first payload element (`payload[0]`). While on each element, a second `map` function goes through the elements of the second payload (`payload[1]`) that match the filter criteria.
-* `using` defines a shorter alias within the scope of the main `map` function.
-* `filter` limits the scope of the second `map` function to only objects that share the same `bookId` as is currently being processed by the first `map` function. In that way, only relevant authors for each are listed in the output.
-
-
-
-.DataWeave
+.DataWeave Script:
 [source,dataweave,linenums]
 ----
 %dw 2.0
-output application/json
----
-
-payload[0]  map (bookListing) -> using (id = bookListing.bookId) {
-	bookId:	id,
-    title:  bookListing.title,
-	price: 	bookListing.price as Number,
-	(payload[1] filter ($.*bookId contains id)  map (bookAuthor) -> {
-		author:bookAuthor.author
-   })
-}
-----
-
-////
-This is not the same as the original example. Like that it's not too different from the "group by" example, except that it does things in a less efficient way.
-
-The whole point of this example is that the input is in separate objects.
-
-
-.Input
-[source,json,linenums]
-----
-{
-  "Book Price by ID" : [
-    {
-      "bookId": 101,
-      "title": "Some Book",
-      "price" : 7.15
-    },
-    {
-      "bookId": 102,
-      "title": "Another Book",
-      "price" : 40.75
-    }],
-  "Book Author by ID"  : [
-    {
-      "bookId": 101,
-      "author"  : "Some Body"
-    },
-    {
-      "bookId": 102,
-      "author"  : "Some Body Else"
-    }]
-}
-----
-////
-
-.Input 1 for Collection - Payload[0]
-[source,json,linenums]
-----
-[
+var firstInput = [
   { "bookId":"101",
     "title":"world history",
     "price":"19.99"
@@ -83,12 +28,7 @@ The whole point of this example is that the input is in separate objects.
     "price":"15.99"
   }
 ]
-----
-
-.Input 2 for Collection - Payload[1]
-[source,json,linenums]
-----
-[
+var secondInput = [
   {
     "bookId":"101",
     "author":"john doe"
@@ -98,61 +38,79 @@ The whole point of this example is that the input is in separate objects.
     "author":"jane doe"
   }
 ]
+output application/json
+---
+firstInput map (firstInputValue) ->
+  {
+    theId : firstInputValue.bookId as Number,
+    theTitle: firstInputValue.title,
+    thePrice: firstInputValue.price as Number,
+    (secondInput filter ($.*bookId contains firstInputValue.bookId) map (secondInputValue) -> {
+      theAuthor : secondInputValue.author
+    })
+  }
 ----
 
+As the next script shows, you can also write the same script using an `id` alias (created with `using (id = firstInputValue.bookId)`). The alias replaces the  selector expression, `firstInputValue.bookId`, which is longer.
 
+.DataWeave Script with Alias:
+[source,dataweave,linenums]
+----
+%dw 2.0
+var firstInput = [
+  { "bookId":"101",
+    "title":"world history",
+    "price":"19.99"
+  },
+  {
+    "bookId":"202",
+    "title":"the great outdoors",
+    "price":"15.99"
+  }
+]
+var secondInput = [
+  {
+    "bookId":"101",
+    "author":"john doe"
+  },
+  {
+    "bookId":"202",
+    "author":"jane doe"
+  }
+]
+output application/json
+---
+firstInput map (firstInputValue) -> using (id = firstInputValue.bookId)
+  {
+    theValue : id as Number,
+    theTitle: firstInputValue.title,
+    thePrice: firstInputValue.price as Number,
+    (secondInput filter ($.*bookId contains id)  map (secondInputValue) -> {
+      theAuthor : secondInputValue.author
+    })
+  }
+----
 
+Both scripts produce the same output.
 
 .Output
 [source,json,linenums]
 ----
 [
   {
-    "bookId": "101",
-    "title": "world history",
-    "year": "2017",
-    "isbn": "11111",
-    "price": "19.99",
-    "author": "john doe"
+    "theId": 101,
+    "theTitle": "world history",
+    "thePrice": 19.99,
+    "theAuthor": "john doe"
   },
   {
-    "bookId": "202",
-    "title": "the great outdoors",
-    "year": "2016",
-    "isbn": "22222",
-    "price": "15.99",
-    "author": "jane doe"
+    "theId": 202,
+    "theTitle": "the great outdoors",
+    "thePrice": 15.99,
+    "theAuthor": "jane doe"
   }
 ]
 ----
-
-
-
-
-
-////
-.Output
-[source,json,linenums]
-----
-[
-  {
-    "bookId": 101,
-    "title": "Some Book",
-    "price": 7.15,
-    "author": "Some Body"
-  },
-  {
-    "bookId": 102,
-    "title": "Another Book",
-    "price": 40.75,
-    "author": "Some Body Else"
-  }
-]
-----
-////
-////
-Note that the *sample data* section of the Transform component does not allow you to provide it a collection of multiple payloads as a sample. The only way to test this example is running it.
-////
 
 == Related Examples
 
