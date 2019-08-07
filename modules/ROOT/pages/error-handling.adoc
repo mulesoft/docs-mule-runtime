@@ -4,53 +4,267 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: error handling, exceptions, exception catching, exceptions
 
-From a high-level perspective, errors that occur in Mule fall into one of two
-categories: system errors and messaging errors.
+Errors that occur in Mule fall into one of two major categories:
+messaging errors and system errors.
+
+== System Errors
+
+Mule throws a system error when an exception occurs at the system level and
+no Mule event is involved. A system error handler manages these errors.
+
+A system error handler handles exceptions that occur:
+
+* During application start-up.
+* When a connection to an external system fails.
+
+When a system error occurs, Mule sends an error notification to registered
+listeners, logs the error, and if the error is caused by a connection failure,
+executes a reconnection strategy.
+
+System error handlers are not configurable in Mule.
 
 == Messaging Errors
 
 Mule throws a messaging error (a xref:mule-error-concept.adoc[Mule error])
-whenever a problem occurs within a flow. To handle Mule errors, you can
-set up xref:on-error-scope-concept.adoc[On Error] components inside the
-scope-like Error Handler component. By default, any unhandled errors are logged
-and propagated.
+whenever a problem occurs within a flow of a Mule app, where Mule events
+and the messages they contain are processed.
 
-When a Mule Event that is getting processed through a Mule flow raises an error, the normal flow execution stops, and the process is transferred to the Error Handler component. Inside the Error Handler component, you set up On Error components to match error types and expressions. Within each On Error component, the error path you define can incorporate any number of event processors to handle the error as precisely as you want. The Error Handler component will route an error to the first On Error scope that matches
-the error.
-
-This figure shows what happens when an event processor throws a Mule error:
+The following figure shows what happens when an event processor, such as a
+Mule component or connector operation, throws a Mule error:
 
 image::error-handling-39be7.png[]
 
-You can override the default error handling behavior either per flow or within a flow. You can group a sequence of components together into a xref:try-scope-concept.adoc[Try Scope] to further override the flow's error handling behavior. The default Error Handler can also be customized with a reference to the desired handler in the app's configuration.
+You can handle Mule messaging errors in more than one way:
 
-=== Global Error-Handling Configuration for Messaging Errors
+* You can rely on the <<default_error_handling>> mechanism through built-in
+Error Handler components in a flow or Try component.
+* Within a flow, you can set up xref:on-error-scope-concept.adoc[On-Error
+components] (On Error Continue and On Error Propagate) inside the flow's
+built-in Error Handler component.
+* Outside a flow, you can set up a global Error Handler component and
+reference it from other Error Handler configurations. The global
+Error Handler can also contain On-Error components and their contents.
+* It is also possible to set up error handling from within a
+xref:try-scope-concept.adoc[Try scope] that resides in a flow.
 
-The following XML example sets a default payload for all unhandled errors.
+[[default_error_handling]]
+== Using Default Error Handling for Messages
 
-.Example: XML Configuration for the App
+By default, unhandled messaging errors are logged and propagated. When a flow is
+processing a Mule message that raises an error, the normal execution of the flow
+stops, and the process transfers to the flow's Error Handler component.
+
+For example, the following example shows a simple Mule app configuration
+that relies on default error handling instead of using any On-Error components
+to handle the error.
+
+image::error-handlers-default.png[]
+
+The XML for the default error handling example looks like this:
+
 [source,xml,linenums]
 ----
-<configuration defaultErrorHandler-ref="allErrorHandler"/>
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" >
+  <http:request-connection host="jsonplaceholder.typicode.com" port="80" />
+</http:request-config>
+<flow name="error-handlers-example" >
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/users"/>
+  <http:request method="GET" doc:name="Request" config-ref="HTTP_Request_configuration" path="/somebadrequest"/>
+</flow>
+----
 
-<error-handler name="allErrorHandler">
-    <on-error-continue>
-        <set-payload value="#[error.description]"/>
+After you start a Mule app with this configuration and trigger the HTTP listener
+by loading `0.0.0.0/users:8081` in a browser, the flow makes an HTTP request
+(`+http://jsonplaceholder.typicode.com:80/somebadrequest+`) for a file that
+does not exist. As a result, the Studio console logs and propagates
+the error to the web browser.
+
+* The Studio console prints an error message. The message indicates that
+the default handler, `OnErrorPropagateHandler`, propagates a 404 error returned
+from the HTTP GET request. Mule identifies this error as HTTP:NOT_FOUND.
++
+[source,txt,linenums]
+----
+****************************************************************************
+
+ERROR 2019-08-05 21:49:38,323
+  [[error-handlers-normal].http.requester.HTTP_Request_configuration.04 SelectorRunner]
+  [event: ] org.mule.runtime.core.internal.exception.OnErrorPropagateHandler:
+****************************************************************************
+Message               : HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/somebadrequest' failed: not found (404).
+Error type            : HTTP:NOT_FOUND
+Element               : error-handlers-example/processors/0 @ error-handlers-normal:error-handlers-normal.xml:16 (Request)
+Element XML           : <http:request method="GET"
+                              doc:name="Request"
+                              doc:id="51e94e98-2a62-4fa7-98e0-942bed31ee11"
+                              config-ref="HTTP_Request_configuration"
+                              path="/somebadrequest">
+                        </http:request>
+
+  (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
+****************************************************************************
+----
++
+* A description of the HTTP:NOT_FOUND error (a 404 error) appears in the browser:
++
+[source,txt,linenums]
+----
+HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/somebadrequest'
+failed: not found (404).
+----
++
+This Mule error description appears for two reasons: The default error handler
+uses an On Error Propagate process (`OnErrorPropagateHandler`), which causes
+the flow to fail and the HTTP listener to prepare an error response for the
+404 associated with the unfound file. In addition, the HTTP listener is using
+default error (`error.description`) and success (`payload`) responses to
+return the message body, instead of custom responses, so the browser shows the
+description of the error.
+
+[[on_error_continue]]
+== Using On-Error Components to Handle Messaging Errors
+
+Instead of relying on the default error-handling mechanism, you can use
+On-Error components (On Error Continue and On Error Propagate) inside
+a built-in or global Error Handler component.
+
+The following example shows a simple flow that is configured in Studio to return
+the results of an HTTP request when the HTTP listener is triggered. Unlike the
+<<default_error_handling, default error-handling example>>, this example
+configures On Error Continue (`on-error-continue`) inside the flow's built-in
+Error Handler (`error-handler`) component, and On Error Continue contains a
+Logger that writes a description of the error.
+
+image::error-handlers-flow.png[]
+
+The XML for the example looks like this:
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" >
+  <http:request-connection host="jsonplaceholder.typicode.com" port="80" />
+</http:request-config>
+<flow name="error-handlers-normalFlow" >
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/users"/>
+  <http:request method="GET" config-ref="HTTP_Request_configuration" path="/somebadrequest"/>
+  <logger level="INFO" doc:name="Logger" />
+  <error-handler>
+    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" >
+      <logger level="ERROR" doc:name="Logger" message="#[error.description]"/>
     </on-error-continue>
+  </error-handler>
+</flow>
+----
+
+As in the default error-handling example, the requested page is not found, so
+the flow returns a 404 error that Mule identifies as an HTTP:NOT_FOUND error.
+However, in this case, the tab of the browser used to trigger the HTTP
+listener is blank because the error is not propagated. With On Error Continue,
+the flow in the example is treated as though it ends successfully with a 200 for
+the GET request, even though the page is not found. The HTTP listener executes
+the behavior for the default success response (returning a `payload` content
+as the message body). Because the page was not found, there is not content to
+display in the browser, so the browser tab is blank.
+
+The Studio console also prints an error message (the first ERROR below) indicating
+that `OnErrorContinueHandler` is handling the error, and it prints an ERROR message
+from the logger (the second ERROR below) that describes the Mule error
+(`error.description`, see xref:mule-error-concept.adoc[Mule Errors]).
+
+[source,txt,linenums]
+----
+ERROR 2019-08-05 14:24:06,825
+[[error-handlers-normal].http.requester.HTTP_Request_configuration.03 SelectorRunner]
+  [event: ] org.mule.runtime.core.internal.exception.OnErrorContinueHandler:
+********************************************************************************
+Message               : HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/somebadrequest' failed: not found (404).
+Error type            : HTTP:NOT_FOUND
+Element               : error-handlers-normalFlow/processors/0 @ error-handlers-normal:error-handlers-normal.xml:15 (Request)
+Element XML           : <http:request method="GET" doc:name="Request"
+                           doc:id="51e94e98-2a62-4fa7-98e0-942bed31ee11"
+                           config-ref="HTTP_Request_configuration"
+                           path="/somebadrequest">
+                        </http:request>
+
+  (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
+********************************************************************************
+
+ERROR  2019-08-05 14:24:06,827 [[error-handlers-normal].http.requester.HTTP_Request_configuration.03 SelectorRunner]
+      [event: 5b2dbd90-b7c7-11e9-918b-8c8590a99d48] org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
+      HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/somebadrequest' failed: not found (404).
+----
+
+If you instead create the same Mule app using On Error Propagate
+(`on-error-propagate`) instead of On Error Continue (`on-error-continue`), you
+receive the same error messages in the Studio console, but you also see the
+logged error message in your browser. This behavior is identical to the
+default error handling behavior because both use On Error Propagate.
+
+Note that within each On-Error component, the error path you define can
+incorporate any number of event processors to handle specific error types as
+precisely as you want. The Error Handler component routes an error to the
+first On Error scope that matches the error.
+
+For more complex error handling configurations at the flow level, see
+xref:intro-error-handlers.adoc[Introduction to Mule 4: Error Handlers].
+For more information about On Error Continue and On Error Propagate, see
+xref:on-error-scope-concept.adoc[On-Error components].
+
+[[global_error_handler]]
+== Referencing a Global Error Handler for Messaging Errors
+
+You can customize the default error handling behavior with a reference to a
+global error handler that you configure. The global error handler can be
+useful if you want more than one flow to handle errors in the same way.
+
+=== Setting a Global Error-Handling Configuration
+
+The following XML configuration defines a default error-handling configuration
+uses the `defaultErrorHandler-ref` attribute value in
+`<configuration doc:name="Configuration" defaultErrorHandler-ref="allErrorHandler" />`
+to reference the `<error-handler name="allErrorHandler"/>` configuration.
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" >
+  <http:request-connection host="json.typicode.com/" port="80" />
+</http:request-config>
+<configuration doc:name="Configuration" defaultErrorHandler-ref="allErrorHandler" />
+<flow name="someFlow" >
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/users"/>
+  <http:request method="GET" doc:name="Request" config-ref="HTTP_Request_configuration" path="/somebadrequest"/>
+</flow>
+<error-handler name="allErrorHandler" >
+  <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" >
+    <set-payload value="#[error.description]" doc:name="Set Payload" />
+  </on-error-continue>
 </error-handler>
 ----
 
 In the Studio UI, the global error-handling example looks like this:
 
-image::error-handling-global.png[]
+image::error-handlers-global.png[]
 
-The example includes two main components, an Error Handler (`error-handler`)
-with embedded components that are visible in the Studio canvas and a global
-error-handling configuration, which is not visible in the canvas. The empty
-flow in the UI example is present only to illustrate that the global error
-configuration lies outside of any flow in the Mule app.
+The example includes two main components for handling errors, an Error Handler
+(`error-handler`) with embedded components that are visible in the Studio canvas
+and a global error-handling configuration, which is not visible in the canvas.
+The flow (*someFlow*) in the UI example illustrates that the global error
+configuration lies outside any flow in the Mule app.
 
-To set up the global error-handling example through the Studio UI, instead
+Because the request produces an HTTP:NOT_FOUND error, the Studio console prints
+an error message indicating that `OnErrorContinueHandler` is handling the error.
+The error is not propagated because of its On Error Continue configuration,
+which is described in more detail in <<on_error_continue>>.
+
+To set up the global error-handling example through the Studio UI instead
 of writing the configuration in XML markup:
 
 . Drag the Error Handler component from the *Mule Palette* to the Studio canvas,
@@ -61,12 +275,85 @@ Notice that the component is not part of any flow.
 . Drag the On Error Continue component into the Error Handler component.
 . Drag a Set Payload component into the On Error Continue component.
 +
-Note that the Set Payload component is an example. You can other components,
+Note that the Set Payload component is an example. You can use other components,
 such as a Logger, and you can write your own error message inside that
 component. The Set Payload example uses a Mule variable for the error
 description (see the `error` variable in
 xref:dataweave-variables-context.adoc[Predefined Variables] for details).
 +
+. Create a global error handler configuration by following the steps in
+<<global_error_handler>>.
+. Set up the HTTP listener and HTTP request components using the values
+described in the XML.
+. Check that the XML configuration looks correct by clicking *Configuration XML*
+(located below the Studio canvas).
+
+=== Referencing a Global Error-Handling Configuration from a Flow
+
+NOTE: These global configurations are XML-only. For alternative configurations,
+see <<flow_error_config>>.
+
+The following XML example references a global On Error Continue element
+(`<on-error-continue/>`) using `<on-error ref="loggingErrorHandler"/>`
+within an `<error-handler/>` element.
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<on-error-continue name="loggingErrorHandler">
+    <logger message="#['Error: ' ++ error.description]" level="INFO"/>
+</on-error-continue>
+
+<flow name="withSharedHandler">
+	<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/"/>
+	<http:request url="http://jsonplaceholder.typicode.com/badrequestbad" method="GET"/>
+	<error-handler >
+        <on-error ref="loggingErrorHandler"/>
+  </error-handler>
+</flow>
+----
+
+You can reference a global error handler from a Mule flow. The following example
+sets up a flow with an Error Handler that logs all errors through a reference.
+
+.Example: XML Configuration for the App
+[source,xml,linenums]
+----
+<error-handler name="loggingErrorHandler">
+    <on-error-continue>
+        <logger message="#['Error: ' ++ error.description]"/>
+    </on-error-continue>
+</error-handler>
+
+<flow name="withSharedHandler">
+    <http:request url="http://example.com"/>
+    <error-handler ref="loggingErrorHandler"/>
+</flow>
+----
+
+In this XML example, the global error handler is configured with through an
+`<error-handler/>` element named `loggingErrorHandler`. The flow references
+the error handler with `<error-handler ref="loggingErrorHandler"/>`.
+
+To reference a global error handler configuration from a flow in Studio:
+
+. In the Mule app, click *Configuration XML* (located below the Studio canvas).
+. Make sure that a global error-handling configuration (`<error-handler/>`) is
+present, and if not create one.
++
+<<global_error_handler>> provides guidance on this configuration process.
++
+. Within your `<flow/>` element, type the XML for the reference, for example,
+`<error-handler ref="loggingErrorHandler"/>`.
+
+[[global_error_handler]]
+=== Creating a Global Error-Handling Configuration
+
+You can create a global error-handling configuration that you can reference from
+the Studio UI.
+
 . Create a global error-handing configuration that references *allErrorHandler*:
 +
 image::error-handling-global-type.png[]
@@ -84,51 +371,11 @@ image::error-handling-global-config.png[]
 +
 .. From the select *Configuration* dialog, select *allErrorHandler* for the
 *Default Error Handler* field, and click *OK*.
-. Check that the XML configuration looks correct by clicking *Configuration XML*
-(located below the Studio canvas).
-
-=== Flow-Level Configuration for Handling Messaging Errors
-
-Just as you can reference error handlers to specify the default, error handlers
-can also be referenced from within flows. The following example sets up a
-flow with an Error Handler that logs all errors through a reference:
-
-.Example: XML Configuration for the App
-[source,xml,linenums]
-----
-<error-handler name="loggingErrorHandler">
-    <on-error-continue>
-        <logger message="#['Error: ' ++ error.description ++ ', Payload: ' ++ payload]"/>
-    </on-error-continue>
-</error-handler>
-
-<flow name="withSharedHandler">
-    <http:request url="http://example.com"/>
-    <error-handler ref="loggingErrorHandler"/>
-</flow>
-----
-
-//TODO: question out to RODRO about whether we can config this via the Studio GUI.
-
-== System Errors
-
-Mule throws a system error when an exception occurs at the system level.
-
-If no Mule Event is involved, the errors are handled by a system error handler.
-
-A system error handler handles exceptions that occur:
-
-* During application start-up.
-* When a connection to an external system fails.
-
-When a system error occurs, Mule sends an error notification to registered
-listeners, logs the error, and if the error is caused by a connection failure,
-executes a reconnection strategy.
-
-System error handlers are not configurable in Mule.
 
 == See Also
 
 * xref:mule-error-concept.adoc[Mule Errors]
 * xref:on-error-scope-concept.adoc[On-Error Error Handlers]
 * xref:try-scope-concept.adoc[Try Scope]
+* xref:intro-error-handlers.adoc[Introduction to Mule 4: Error Handlers]
+* xref:migration-core-exception-strategies.adoc[Migrating Exception Strategies to Mule Error Handlers]
