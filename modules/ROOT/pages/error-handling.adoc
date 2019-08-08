@@ -4,9 +4,12 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: error handling, exceptions, exception catching, exceptions
 
-Errors that occur in Mule fall into one of two major categories:
-messaging errors and system errors.
+Errors that occur in Mule belong to one of two major categories:
 
+* <<system_errors>>
+* <<messaging_errors>>
+
+[[system_errors]]
 == System Errors
 
 Mule throws a system error when an exception occurs at the system level and
@@ -14,7 +17,7 @@ no Mule event is involved. A system error handler manages these errors.
 
 A system error handler handles exceptions that occur:
 
-* During application start-up.
+* During application startup.
 * When a connection to an external system fails.
 
 When a system error occurs, Mule sends an error notification to registered
@@ -23,6 +26,7 @@ executes a reconnection strategy.
 
 System error handlers are not configurable in Mule.
 
+[[messaging_errors]]
 == Messaging Errors
 
 Mule throws a messaging error (a xref:mule-error-concept.adoc[Mule error])
@@ -40,9 +44,10 @@ You can handle Mule messaging errors in more than one way:
 Error Handler components in a flow or Try component.
 * Within a flow, you can set up xref:on-error-scope-concept.adoc[On-Error
 components] (On Error Continue and On Error Propagate) inside the flow's
-built-in Error Handler component.
-* Outside a flow, you can set up a global Error Handler component and
-reference it from other Error Handler configurations. The global
+built-in Error Handler component. These components can contain any number of
+components to process and create messages about the error.
+* Outside a flow, you can set up a <<global_error_handler, global Error Handler>>
+component and reference it from other Error Handler configurations. The global
 Error Handler can also contain On-Error components and their contents.
 * It is also possible to set up error handling from within a
 xref:try-scope-concept.adoc[Try scope] that resides in a flow.
@@ -130,6 +135,65 @@ description of the error.
 Instead of relying on the default error-handling mechanism, you can use
 On-Error components (On Error Continue and On Error Propagate) inside
 a built-in or global Error Handler component.
+
+[[flow_error_config]]
+=== Set Up Error Handling within a Flow
+
+Within a flow's built-in Error Handler component, you can set up one or more
+On Error components to match error types and expressions. The following example
+outlines the general structure for handling errors that occur within a given
+flow. One flow uses On Error Continue (`on-error-continue`) in its Error Handler
+component. The other flow uses On Error Propagate (`on-error-propagate`).
+
+[source,xml,linenums]
+----
+<flow name="catch">
+  <!-- flow logic -->
+  <error-handler>
+    <on-error-continue>
+      <!-- error handling logic -->
+    </on-error-continue>
+  </error-handler>
+</flow>
+
+<flow name="rollback">
+  <!-- flow logic -->
+  <error-handler>
+    <on-error-propagate>
+      <!-- error handling logic -->
+    </on-error-propagate>
+  </error-handler>
+</flow>
+----
+
+For an example, see xref:error-handling.adoc#[]
+
+== Reusing On-Error Scopes
+
+Just like error handlers can be shared by exposing them globally and referencing them
+in flows and try scopes, on-error scopes can be reused as well. You can define and name
+an on-error scope globally and then reference it using a reference on-error component as
+in the example below.
+
+.Example: XML Configuration for Referenced On-Error
+[source,xml,linenums]
+----
+<on-error-propagate name="sharedPropagateHandler">
+  <logger message="An unhandled error has occurred."/>
+</on-error-propagate>
+
+<on-error-continue type="EXPRESSION" name="sharedContinueHandler">
+  <logger message="An expression failed to evaluate."/>
+</on-error-continue>
+
+<error-handler name="reusingHandlers">
+  <on-error ref="sharedContinueHandler"/>
+  <on-error-continue type="ROUTING">
+    <logger message="An expression failed to evaluate."/>
+  </on-error-continue>
+  <on-error ref="sharedPropagateHandler"/>
+</error-handler>
+----
 
 The following example shows a simple flow that is configured in Studio to return
 the results of an HTTP request when the HTTP listener is triggered. Unlike the
