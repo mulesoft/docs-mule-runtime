@@ -1,8 +1,8 @@
-= Microsoft Azure Service Bus Connector
+= Microsoft Azure Service Bus Connector - Mule 3
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:imagesdir: ../../assets/images/
+:imagesdir: ../assets/images/
 
 Support Category: Select
 
@@ -20,6 +20,7 @@ For software requirements and compatibility
 information, see the connector's release notes.
 
 == Install the Connector in Anypoint Studio
+
 . In Anypoint Studio, click the Exchange icon in the Studio task bar.
 . Click *Login* in Anypoint Exchange.
 . Search for the connector and click *Install*.
@@ -209,15 +210,17 @@ The following example configures a Mule app to send multiple messages to a queue
 
 . Create a Mule app to receive messages from a queue or topic, as described in <<basic>>.
 . Replace the *Publish message* operation with the *Publish batch of messages* operation. Make sure the *Destination type* and *Destination name* are properly set.
-. When crafting the message, be sure to create a comma-separated list of strings, because the app will send many messages simultaneously.
+. When crafting the message, be sure to create a comma-separated list of strings, because the app sends many messages simultaneously.
 +
 To split a comma-separated string of messages separated into separate messages, drag a *Transform message* transformer to the canvas and use the following script:
-```
+
+[source,dataweave,linenums]
+----
 %dw 1.0
 %output application/java
 ---
 payload splitBy ','
-```
+----
 
 [[enqueuing]]
 === Schedule the Logical Enqueuing of a Message
@@ -274,9 +277,14 @@ In situations where your resources can only send and receive amqp messages, enab
 
 If Mule processes a very high number of messages (such as thousands per second), especially if it publishes to and reads from the same destination in one Mule app, you might see messages like the following in the log:
 
-```
-[ERROR 2019-05-22 00:15:26,362 [ForkJoinPool.commonPool-worker-3] com.microsoft.azure.servicebus.MessageAndSessionPump: onMessage with message containing sequence number '95' threw exception com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Failed setting attributes from original API message.]
-```
+[source,code,linenums]
+----
+[ERROR 2019-05-22 00:15:26,362 [ForkJoinPool.commonPool-worker-3] 
+com.microsoft.azure.servicebus.MessageAndSessionPump: onMessage with 
+message containing sequence number '95' threw exception com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Failed 
+setting attributes from original API message.]
+----
+
 The error can occur because Mule processes errors asynchronously by default. To fix this error, select  `queue-asynchronous` when you configure the message listener in a flow.
 If a message waits for more than 30,000 ms to be processed by the flow, Mule throws an exception that causes an error (timeout in the Mule SEDA queue).
 
@@ -298,9 +306,16 @@ For more information, see xref:flow-processing-strategies.adoc[Flow Processing S
 
 You might receive errors like this one when working with a high number of messages while a using manual ACK:
 
-```
-[com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Message with lockToken 2dc1312f-b263-4282-bbb0-566998eff6e6 could not be ACK at com.mulesoft.connectors.microsoft.azure.servicebus.internal.connection.Connection.ack(Connection.java:192)][ERROR 2019-05-22 00:17:30,822 [ReactorThread6f355ff5-5a36-487b-bb70-1a995a6ddf74] com.microsoft.azure.servicebus.primitives.CoreMessageReceiver: Completing pending updateState operation for delivery '?     ? &??I??=????' with exception com.microsoft.azure.servicebus.primitives.MessageLockLostException: The lock supplied is invalid. Either the lock expired, or the message has already been removed from the queue.]
-```
+[source,code,linenums]
+----
+[com.mulesoft.connectors.microsoft.azure.servicebus.internal.error.exception.ConsumerException: Message 
+with lockToken 2dc1312f-b263-4282-bbb0-566998eff6e6 could not be ACK at com.mulesoft.connectors.microsoft.azure.servicebus.internal.connection.Connection.ack(Connection.java:192)]
+[ERROR 2019-05-22 00:17:30,822 [ReactorThread6f355ff5-5a36-487b-bb70-1a995a6ddf74]
+com.microsoft.azure.servicebus.primitives.CoreMessageReceiver: Completing pending 
+updateState operation for delivery '?     ? &??I??=????' with exception com.microsoft.azure.servicebus.primitives.MessageLockLostException: The lock supplied 
+is invalid. Either the lock expired, or the message has already been removed from the queue.]
+----
+
 When the connector performs a prefetch, the lockToken's validity time is fixed in relation to that moment. The problem arises when the lockToken's validity time is not long enough to process the entire batch of records. In these cases, Mule might throw an error because the lockToken expired before you do an ACK.
 
 To prevent this issue, reduce the size of the prefetch (default 100), and increase the validity time of the lock token, or both. You can do this in the *lock duration* property when creating the queue or subscription from the connector or from the Azure portal (for existing queues). The maximum duration value for the lock token in Azure is 5 minutes (300 seconds).
@@ -311,17 +326,20 @@ In some circumstances, the underlying library used by the connector might regula
 
 * Specify an *AsyncLogger* for the library's package, raising the level of the log:
 
-```
+[source,xml,linenums]
+----
 <!-- Recommended for packages not belonging to Mule -->
 <AsyncLogger name="com.microsoft.azure.servicebus" level="ERROR"/>
-```
+----
 
 * Add a *RegexFilter* to the existing appender (that is, RollingFile):
 
-```
+[source,xml,linenums]
+----
 <!-- Avoids the log of messages that contain the specified regexp -->
 <RegexFilter regex = ".message to filter.*" onMatch="DENY" onMismatch="ACCEPT"/>
-```
+----
+
 IMPORTANT: If the message is multiline, *RegexFilter* might not work correctly.
 
 === Listeners (Sources) in Network Disconnection and Reconnection Scenarios
