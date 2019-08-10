@@ -33,35 +33,39 @@ Mule throws a messaging error (a xref:mule-error-concept.adoc[Mule error])
 whenever a problem occurs within a flow of a Mule app, where Mule events
 and the messages they contain are processed.
 
-The following figure shows what happens when an event processor, such as a
-Mule component or connector operation, throws a Mule error:
-
-image::error-handling-39be7.png[]
-
 You can handle Mule messaging errors in more than one way:
 
-* You can rely on the <<default_error_handling>> mechanism through built-in
-Error Handler components in a flow or Try component.
+* You can rely on the <<default_error_handling, default error handling>> mechanism.
 * Within a flow, you can set up xref:on-error-scope-concept.adoc[On-Error
 components] (On Error Continue and On Error Propagate) inside the flow's
 built-in Error Handler component. These components can contain any number of
-components to process and create messages about the error.
+components to process the error.
++
+The following figure shows what happens when an event processor, such as a
+Mule component or connector operation, throws a Mule error:
++
+image::error-handling-39be7.png[]
++
 * Outside a flow, you can set up a <<global_error_handler, global Error Handler>>
 component and reference it from other Error Handler configurations. The global
 Error Handler can also contain On-Error components and their contents.
 * It is also possible to set up error handling from within a
-xref:try-scope-concept.adoc[Try scope] that resides in a flow.
+xref:try-scope-concept.adoc[Try scope] that resides in a flow. The scope contains
+a built-in Error Handler in which you can configure On-Error components and
+their contents.
+
 
 [[default_error_handling]]
-== Using Default Error Handling for Messages
+=== Using Default Error Handling for Messages
 
 By default, unhandled messaging errors are logged and propagated. When a flow is
 processing a Mule message that raises an error, the normal execution of the flow
-stops, and the process transfers to the flow's Error Handler component.
+stops, and the process transfers to the flow's default error handler, which
+propagates the error.
 
-For example, the following example shows a simple Mule app configuration
-that relies on default error handling instead of using any On-Error components
-to handle the error.
+The following example shows a simple Mule app configuration that relies on
+default error handling instead of using explicitly configured error handling
+components to manage the error.
 
 image::error-handlers-default.png[]
 
@@ -113,7 +117,8 @@ Element XML           : <http:request method="GET"
 ****************************************************************************
 ----
 +
-* A description of the HTTP:NOT_FOUND error (a 404 error) appears in the browser:
+* A description of the HTTP:NOT_FOUND error appears in the browser tab you
+use to trigger the listener:
 +
 [source,txt,linenums]
 ----
@@ -121,79 +126,20 @@ HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/somebadrequest'
 failed: not found (404).
 ----
 +
-This Mule error description appears for two reasons: The default error handler
-uses an On Error Propagate process (`OnErrorPropagateHandler`), which causes
-the flow to fail and the HTTP listener to prepare an error response for the
-404 associated with the unfound file. In addition, the HTTP listener is using
-default error (`error.description`) and success (`payload`) responses to
+This Mule error description appears in the browser for two reasons: The default
+error handler uses an On Error Propagate process (`OnErrorPropagateHandler`),
+which causes the flow to fail and the HTTP listener to prepare an error response
+for the 404 associated with the unfound file. In addition, the HTTP listener is
+using default error (`error.description`) and success (`payload`) responses to
 return the message body, instead of custom responses, so the browser shows the
 description of the error.
 
 [[on_error_continue]]
-== Using On-Error Components to Handle Messaging Errors
+=== Using On-Error Components to Handle Messaging Errors
 
 Instead of relying on the default error-handling mechanism, you can use
-On-Error components (On Error Continue and On Error Propagate) inside
-a built-in or global Error Handler component.
-
-[[flow_error_config]]
-=== Set Up Error Handling within a Flow
-
-Within a flow's built-in Error Handler component, you can set up one or more
-On Error components to match error types and expressions. The following example
-outlines the general structure for handling errors that occur within a given
-flow. One flow uses On Error Continue (`on-error-continue`) in its Error Handler
-component. The other flow uses On Error Propagate (`on-error-propagate`).
-
-[source,xml,linenums]
-----
-<flow name="catch">
-  <!-- flow logic -->
-  <error-handler>
-    <on-error-continue>
-      <!-- error handling logic -->
-    </on-error-continue>
-  </error-handler>
-</flow>
-
-<flow name="rollback">
-  <!-- flow logic -->
-  <error-handler>
-    <on-error-propagate>
-      <!-- error handling logic -->
-    </on-error-propagate>
-  </error-handler>
-</flow>
-----
-
-For an example, see xref:error-handling.adoc#[]
-
-== Reusing On-Error Scopes
-
-Just like error handlers can be shared by exposing them globally and referencing them
-in flows and try scopes, on-error scopes can be reused as well. You can define and name
-an on-error scope globally and then reference it using a reference on-error component as
-in the example below.
-
-.Example: XML Configuration for Referenced On-Error
-[source,xml,linenums]
-----
-<on-error-propagate name="sharedPropagateHandler">
-  <logger message="An unhandled error has occurred."/>
-</on-error-propagate>
-
-<on-error-continue type="EXPRESSION" name="sharedContinueHandler">
-  <logger message="An expression failed to evaluate."/>
-</on-error-continue>
-
-<error-handler name="reusingHandlers">
-  <on-error ref="sharedContinueHandler"/>
-  <on-error-continue type="ROUTING">
-    <logger message="An expression failed to evaluate."/>
-  </on-error-continue>
-  <on-error ref="sharedPropagateHandler"/>
-</error-handler>
-----
+xref:on-error-scope-concept.adoc[On-Error components] (On Error Continue and
+On Error Propagate) inside a built-in or global Error Handler component.
 
 The following example shows a simple flow that is configured in Studio to return
 the results of an HTTP request when the HTTP listener is triggered. Unlike the
@@ -231,14 +177,14 @@ However, in this case, the tab of the browser used to trigger the HTTP
 listener is blank because the error is not propagated. With On Error Continue,
 the flow in the example is treated as though it ends successfully with a 200 for
 the GET request, even though the page is not found. The HTTP listener executes
-the behavior for the default success response (returning a `payload` content
+the behavior for the default success response (returning `payload` content
 as the message body). Because the page was not found, there is no content to
 display in the browser, so the browser tab is blank.
 
-The Studio console also prints an error message (the first ERROR below) indicating
-that `OnErrorContinueHandler` is handling the error, and it prints an ERROR message
-from the logger (the second ERROR below) that describes the Mule error
-(`error.description`, see xref:mule-error-concept.adoc[Mule Errors]).
+The Studio console also prints an error message (the first ERROR message below)
+indicating that `OnErrorContinueHandler` is handling the error, and it prints an
+ERROR message from the logger (the second ERROR below) that describes the Mule
+error (an `error.description`, see xref:mule-error-concept.adoc[Mule Errors]).
 
 [source,txt,linenums]
 ----
@@ -281,16 +227,20 @@ For more information about On Error Continue and On Error Propagate, see
 xref:on-error-scope-concept.adoc[On-Error components].
 
 [[global_error_handler]]
-== Referencing a Global Error Handler for Messaging Errors
+=== Referencing a Global Error Handler for Messaging Errors
 
 You can customize the default error handling behavior with a reference to a
 global error handler. The global error handler can be useful if you want
 more than one flow or Try scope to handle errors in the same way.
 
-=== Setting a Global Error-Handling Configuration
+* <<global_error_config_set>>
+* <<global_error_config_ref>>
+
+[[global_error_config_set]]
+==== Setting a Global Error-Handling Configuration
 
 The following XML configuration defines a default error-handling configuration
-uses the `defaultErrorHandler-ref` attribute value in
+that uses
 `<configuration doc:name="Configuration" defaultErrorHandler-ref="allErrorHandler" />`
 to reference the `<error-handler name="allErrorHandler"/>` configuration.
 
@@ -346,42 +296,35 @@ component. The Set Payload example uses a Mule variable for the error
 description (see the `error` variable in
 xref:dataweave-variables-context.adoc[Predefined Variables] for details).
 +
-. Create a global error handler configuration by following the steps in
-<<global_error_handler>>.
+. Create a global error-handling reference in Studio:
+.. Click *Global Elements* to open *Global Configuration Elements*.
++
+*Global Elements* is located below the Studio canvas.
++
+.. In *Global Configuration Elements*, click *Create* to open the
+*Choose Global Type* dialog.
++
+image::error-handling-global-type.png[]
++
+.. From the dialog, select *Global Configuration* --> *Configuration*, and then
+click *OK* to open the *Configuration* dialog.
++
+image::error-handling-global-config.png[]
++
+.. From the select *Configuration* dialog, select *allErrorHandler* for the
+*Default Error Handler* field, and click *OK*.
 . Set up the HTTP listener and HTTP request components using the values
 described in the XML.
 . Check that the XML configuration looks correct by clicking *Configuration XML*
 (located below the Studio canvas).
 
-=== Referencing a Global Error-Handling Configuration from a Flow
+[[global_error_config_ref]]
+=== Referencing an Error-Handling Configuration from a Flow
 
-NOTE: These global configurations are XML-only. For alternative configurations,
-see <<flow_error_config>>.
+NOTE: The configuration of some elements in these examples is XML-only.
 
-The following XML example references a global On Error Continue element
-(`<on-error-continue/>`) using `<on-error ref="loggingErrorHandler"/>`
-within an `<error-handler/>` element.
-
-[source,xml,linenums]
-----
-<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
-	<http:listener-connection host="0.0.0.0" port="8081" />
-</http:listener-config>
-<on-error-continue name="loggingErrorHandler">
-    <logger message="#['Error: ' ++ error.description]" level="INFO"/>
-</on-error-continue>
-
-<flow name="withSharedHandler">
-	<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/"/>
-	<http:request url="http://jsonplaceholder.typicode.com/badrequestbad" method="GET"/>
-	<error-handler >
-        <on-error ref="loggingErrorHandler"/>
-  </error-handler>
-</flow>
-----
-
-You can reference a global error handler from a Mule flow. The following example
-sets up a flow with an Error Handler that logs all errors through a reference.
+A flow can reference a global error handler that resides outside the flow. The
+flow logs all its errors through a reference.
 
 .Example: XML Configuration for the App
 [source,xml,linenums]
@@ -398,49 +341,46 @@ sets up a flow with an Error Handler that logs all errors through a reference.
 </flow>
 ----
 
-In this XML example, the global error handler is configured with through an
+In this XML example, the global error handler is configured through an
 `<error-handler/>` element named `loggingErrorHandler`. The flow references
 the error handler with `<error-handler ref="loggingErrorHandler"/>`.
 
 To reference a global error handler configuration from a flow in Studio:
 
+. From Studio, drag an *Error Handler* component from the *Mule Palette*
+to the canvas, and configure it components through the UI.
 . In the Mule app, click *Configuration XML* (located below the Studio canvas).
-. Make sure that a global error-handling configuration (`<error-handler/>`) is
-present, and if not create one.
-+
-<<global_error_handler>> provides guidance on this configuration process.
-+
-. Within your `<flow/>` element, type the XML for the reference, for example,
-`<error-handler ref="loggingErrorHandler"/>`.
+. [XML-only configuration] Within your `<flow/>` element, type the XML for the
+reference, for example, `<error-handler ref="loggingErrorHandler"/>`.
 
-[[global_error_handler]]
-=== Creating a Global Error-Handling Configuration
+The following example references a global On Error Continue element
+(`<on-error-continue/>`) using `<on-error ref="loggingErrorHandler"/>`
+within an `<error-handler/>` element. Both require manual configuration
+through the *Configuration XML*, rather than the UI.
 
-You can create a global error-handling configuration that you can reference from
-the Studio UI.
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<on-error-continue name="loggingErrorHandler">
+    <logger message="#['Error: ' ++ error.description]" level="INFO"/>
+</on-error-continue>
 
-. Create a global error-handing configuration that references *allErrorHandler*:
-+
-image::error-handling-global-type.png[]
-+
-.. In Studio, click *Global Elements* to open *Global Configuration Elements*.
-+
-*Global Elements* is located below the Studio canvas.
-+
-.. In *Global Configuration Elements*, click *Create* to open the
-*Choose Global Type* dialog.
-.. From the dialog, select *Global Configuration* --> *Configuration*, and then
-click *OK* to open the *Configuration* dialog.
-+
-image::error-handling-global-config.png[]
-+
-.. From the select *Configuration* dialog, select *allErrorHandler* for the
-*Default Error Handler* field, and click *OK*.
+<flow name="withSharedHandler">
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/"/>
+  <http:request url="http://jsonplaceholder.typicode.com/badrequestbad" method="GET"/>
+  <error-handler >
+    <on-error ref="loggingErrorHandler"/>
+  </error-handler>
+</flow>
+----
 
 == See Also
 
 * xref:mule-error-concept.adoc[Mule Errors]
 * xref:on-error-scope-concept.adoc[On-Error Error Handlers]
 * xref:try-scope-concept.adoc[Try Scope]
+* xref:raise-error-component-reference.adoc[Raise Error Component]
 * xref:intro-error-handlers.adoc[Introduction to Mule 4: Error Handlers]
 * xref:migration-core-exception-strategies.adoc[Migrating Exception Strategies to Mule Error Handlers]
