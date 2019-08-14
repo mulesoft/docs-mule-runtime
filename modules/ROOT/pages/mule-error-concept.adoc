@@ -3,26 +3,60 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-Mule execution failures result in a Mule Error. Each Mule Error has the following components:
+Mule execution failures result in an error. When a Mule app is running, both
+the Mule runtime engine and the module and connector operations configured
+in the app can throw errors.
 
-[%header,cols=“10%,60%,30%”]
+Mule errors are grouped into <<error_types, error types>> that follow a hierarchical
+order and use a naming convention that helps you identify the source of the error
+and handle the error at the level you choose. You can also create custom error
+types that you map to these errors. The mappings can help you further
+differentiate and group errors that you need to handle in your app.
+
+To inspect and use values of Mule errors in your error handling configurations,
+you can also use <<selector_expressions, selector expressions>>.
+
+Mule errors include expression (`EXPRESSION`) and stream-related errors
+(`STREAM_MAXIMIMUM_SIZE_EXCEEDED`), while the operations can throw many different
+types of errors. Examples include `HTTP:NOT_FOUND` (a 404 error) and
+`HTTP:CONNECTIVITY` errors from the HTTP listener in the HTTP connector.
+`DB:BAD_SYNTAX` and `DB:QUERY_EXPRESSION` are errors that the Select operation in
+the Database connector can throw.
+
+The reference documentation for modules and connectors (for example,
+the xref:connectors::http/http-connector.adoc[HTTP Connector] and
+xref:connectors::database/database-documentation.adoc[Database Connector]
+references) lists Mule errors.
+
+[[selector_expressions]]
+== Selector Expressions for Mule Errors
+
+Mule errors are complex data types with several fields, such as a description
+and type. When logging and handling Mule errors, can select the values from any
+number of the error fields.
+
+[%header,cols=“1,5,2”]
 |===
-|Component| Description| Expression
+| Field | Description | Selector Expression
 
 |Description
-|A description regarding the problem
-|`#[error.description]`
+|A description of the problem.
+|`#[error.description]` and
+
+|Detailed Description
+|A description of the problem, which can be the same or more extensive than the description.
+|`#[error.detailedDescription]`
 
 |Type
-|A type, used to characterize the problem and allow routing within an error handler
+|A type, used to characterize the problem and allow for routing within an error handler.
 |`#[error.errorType]`
 
 |Cause
-|The underlying Java Throwable that resulted in the failure
+|The underlying Java `Throwable` that resulted in the failure.
 |`#[error.cause]`
 
 |Message
-|An optional Mule Message regarding the problem
+|An optional Mule message about the problem.
 |`#[error.errorMessage]`
 
 |Child Errors
@@ -30,43 +64,105 @@ Mule execution failures result in a Mule Error. Each Mule Error has the followin
 |`#[error.childErrors]`
 |===
 
-Each component in a Mule application declares the type of errors it throws so it's easy for you to identify potential errors when designing a Mule flow.
+For example, when an HTTP request fails with an `HTTP:NOT_FOUND` error (for a 404
+status code), the values for each part of the Error Message are:
 
-For example, when an HTTP request fails with a 401 status code, the Mule Error looks like this:
-
+* `#[error.description]` returns:
++
+[source,txt,linenums]
 ----
-Description: HTTP GET on resource ‘http://localhost:36682/testPath’ failed: unauthorized (401)
-Type: HTTP:UNAUTHORIZED
-Cause: a ResponseValidatorTypedException instance
-Error Message:  { "message" : "Could not authorize the user." }
+HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/mybadrequest' failed: not found (404).
 ----
++
+* `#[error.detailedDescription]` returns `HTTP GET on resource 'http://jsonplaceholder.typicode.com:80/mybadrequest' failed: not found (404).`
+* `#[error.errorType]` returns `HTTP:NOT_FOUND`
+* `#[error.cause]` returns `org.mule.extension.http.api.request.validator.ResponseValidatorTypedException`
+* `#[error.errorMessage]` returns:
++
+[source,txt,linenums]
+----
+org.mule.runtime.core.internal.message.DefaultMessageBuilder$MessageImplementation
+{
+  payload=org.mule.runtime.core.internal.streaming.bytes.ManagedCursorStreamProvider@223d8f75
+  mediaType=application/json; charset=UTF-8
+  attributes=org.mule.extension.http.api.HttpResponseAttributes
+{
+   Status Code=404
+   Reason Phrase=Not Found
+   Headers=[
+      date=Sat, 03 Aug 2019 04:28:29 GMT
+      content-type=application/json; charset=utf-8
+      content-length=2
+      connection=keep-alive
+      set-cookie=__cfduid=de19ed0b495b5b58e74fa0ee31a700d651564806509; expires=Sun, 02-Aug-20 04:28:29 GMT; path=/; domain=.typicode.com; HttpOnly
+      x-powered-by=Express
+      vary=Origin, Accept-Encoding
+      access-control-allow-credentials=true
+      cache-control=public, max-age=14400
+      pragma=no-cache
+      expires=Sat, 03 Aug 2019 08:28:29 GMT
+      x-content-type-options=nosniff
+      etag=W/"2-vyGp6PvFo4RvsFtPoIWeCReyIC8"
+      via=1.1 vegur
+      cf-cache-status=HIT
+      age=96
+      server=cloudflare
+      cf-ray=50058b8add0a92fe-SJC
+   ]
+}
+  attributesMediaType=*/*
+}
+----
++
+* `#[error.childErrors]` returns: `[]`
 
-== Error Types
+[[error_types]]
+== Mule Error Types
 
-In the example above, the error type is `HTTP:UNAUTHORIZED`, not simply `UNAUTHORIZED`. +
-Error types consist of both a namespace and an identifier, allowing you to distinguish the types according to their domain.
-For example, there are `HTTP:NOT_FOUND` and `FILE:NOT_FOUND` error types. +
-While connectors define their namespace, core runtime errors have the implicit `MULE` one. +
-So `MULE:EXPRESSION` and `EXPRESSION` are interpreted as one.
+Mule errors have a namespace (such as `HTTP:` and `FILE:`) and identifier
+(such as `NOT_FOUND`), and they belong to a hierarchy of error types.
 
-Another important characteristic of error types is that they may have a parent type. For example, `HTTP:UNAUTHORIZED` has `MULE:CLIENT_SECURITY` as the parent, which, in turn, has `MULE:SECURITY` as the parent. This establishes error types as specifications of more global ones: an HTTP unauthorized error is a type of client security error, which is a type of a more broad security issue.
+The naming convention enables you to
+distinguish errors according to their domain. For example, instead of
+throwing `NOT_FOUND`, the HTTP connector can throw `HTTP:NOT_FOUND`, and the
+File connector can throw `FILE:NOT_FOUND` errors.
 
-These hierarchies allow routing to be more general. For example, a handler for `MULE:SECURITY` catches HTTP unauthorized errors as well as OAuth errors. +
-Below you can see what the core runtime’s hierarchy looks like:
+Unlike connectors, Mule runtime errors have an implicit `MULE` namespace, so
+`MULE:EXPRESSION` and `EXPRESSION` are interpreted the same way.
+
+Error types can have a parent
+type. For example, the parent of `HTTP:UNAUTHORIZED` is `MULE:CLIENT_SECURITY`,
+and the parent of `MULE:CLIENT_SECURITY` is `MULE:SECURITY`. This hierarchy
+implies that each error type is a specification of more global error type.
+For example, an `HTTP:UNAUTHORIZED` error type is a type of client security
+error (`MULE:CLIENT_SECURITY`), which is a type of a more broad security issue
+(`MULE:SECURITY`).
+
+The hierarchies enable you to route errors in a general or more specific way. For
+example, an error handler for `MULE:SECURITY` catches `HTTP:UNAUTHORIZED` errors
+and OAuth errors. The follow figure shows the core runtime hierarchy:
 
 image::error-hierarchy.png[Error Hierarchy]
 
-All errors belong to one of these two main types: `ANY` or `CRITICAL`. All types under `ANY` are matched by its parent and can be handled, while error types under `CRITICAL` are so severe that cannot be handled and will only be logged.  +
+All errors belong to one of these two main types: `ANY` or `CRITICAL`. Each type
+under `ANY` is matched by its parent and can be handled, while error types under
+`CRITICAL` are so severe that cannot be handled and are only logged. `CRITICAL`
+errors include `FATAL_JVM_ERROR` and `OVERLOAD`.
 
-Whenever there is no clear reason for the failure, a component can use the `UNKNOWN` type. This error needs to be handled through the `ANY` type, allowing you to define unclear errors in the future, without changing the existing behavior of the app.
+Whenever there is no clear reason for a failure, a component can use the
+`UNKNOWN` type. You handle this error through the `ANY` type to define unclear
+errors, without changing the existing behavior of the app.
 
-When it comes to connectors, each connector defines its error type hierarchy considering the core runtime hierarchy, though `CONNECTIVITY` and `RETRY_EXHAUSTED` types are always present since they are common to all connectors.
+For connectors, each connector defines its error type hierarchy considering
+the core runtime hierarchy, though `CONNECTIVITY` and `RETRY_EXHAUSTED` types
+are always present because they are common to all connectors.
 
-Below is a full list of Error Types:
+Error Types:
 
-* `ANY`: Error type that matches all error types that may occur in a Flow and can be handled. This does not include errors that may occur on the source.
+* `ANY`: Error type that matches all error types that occur in a Flow and can be
+handled. This type does not include errors that occur on the source.
 ** `TRANSFORMATION`: indicates an error occurred while transforming a value. This involves Mule Runtime internal transformations and not DataWeave transformations.
-** `EXPRESSION`: indicates an error occurred while evaluating an expression.
+** `EXPRESSION`: indicates an error occurred while evaluating a DataWeave expression.
 ** `VALIDATION`: indicates a validation error occurred.
 *** `DUPLICATE_MESSAGE`: indicates a validation error regarding a message being processed twice. For example, using the xref:idempotent-message-validator.adoc[Idempotent message validator].
 ** `REDELIVERY_EXHAUSTED`: indicates that max attempts to reprocess a message from a source have been exhausted.
@@ -94,21 +190,31 @@ Below is a full list of Error Types:
 
 == Custom Error Types
 
-To use custom error types, you need to define them either when mapping or when raising the errors.
-These errors require a specific custom namespace to distinguish them from other existing types
-within an application. This means that in an application using HTTP and DB, those
-two namespaces cannot be used. You should define namespaces related to the particular Mule application name or context, and avoid using existing connector namespaces.
+To use custom error types, you need to define them either when mapping or when
+xref:raise-error-component-reference.adoc[raising] the errors. These errors
+require a specific custom namespace to
+distinguish them from other existing types within an application. This means
+that an app that uses HTTP and Database connector operations cannot use the
+HTTP and DB namespaces for custom error types.
 
-For example, a customer aggregation API could use the `CUSTOMER` namespace for it's
-custom error types and an order processing API could use the `ORDER` namespace.
+You need to define namespaces that are related to the particular Mule app name
+or context and avoid using existing connector namespaces. For example, a
+customer aggregation API might use the `CUSTOMER` namespace for its custom
+error types, and an order-processing API might use the `ORDER` namespace.
 
 == Error Mappings
 
-In each operation of your flow, you can map the possible error types to a custom error type of your choosing. You can use these custom error types to differentiate exactly where an error occurred in your flow.
+In each operation of your flow, you can map the possible error types to a
+custom error type of your choosing. You can use these custom error types to
+differentiate where an error occurred in your flow.
+For example, if your flow has two HTTP Request operations that reach out to
+different REST services, a connectivity failure on either produces the same
+error. By mapping each error to different custom error types, you can
+differentiate the error handling of each operation failure and quickly identify
+the source of the error in the Mule app logs.
 
-For example, if your flow has two HTTP Request operations that reach out to different REST services, a connectivity failure on either produces the same error. But by mapping each to different custom error types, you can differentiate the error handling of each operation failure and also quickly identify the source of the error in the Mule application logs.
-
-In the example below, you can see how mappings allow granular error handling by defining two custom error types: `APP:CUSTOMER_API` and `APP:ORDER_API`.
+In the following example, you can see how mappings allow granular error handling
+by defining two custom error types: `APP:CUSTOMER_API` and `APP:ORDER_API`.
 
 Example XML Configuration for Mappings:
 [source,xml,linenums]
