@@ -4,43 +4,15 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: mule, esb, studio, raise, error
 
-This Core component generates a Mule Error, as if a failure had occurred, which allows you to customize its description and type.
+This core component generates a Mule error, as if a failure had occurred, which allows you to customize its description and type.
 
-Use this component to only raise core runtime errors, such as `MULE:SECURITY`, `MULE:CONNECTIVITY`, etc, or custom ones.
+Use this component to only raise:
+
+* Core runtime errors, such as `MULE:SECURITY`, `MULE:CONNECTIVITY`, etc.
+* Custom error types. +
+
+[NOTE]
 You cannot raise an error from another connector or module like `FILE:FILE_NOT_FOUND`, `JSON:INVALID_SCHEMA`. You cannot use a connector's existing namespace.
-
-For core runtime errors types, you must use the implicit namespace and identifier, you can only customize the error's description message. +
-For custom error types, declare a new namespace. The namespace of an error type should help you identify the origin of an error. +
-You cannot use existing namespaces from connectors or modules, since these have their defined namespaces.
-Once you declare a custom namespace by using it in a `raise-error`, you can use it in other
-`raise-error` components and custom types.
-
-The following example flow produces an `ACCOUNT:INSUFFICIENT_FUNDS` error when a
-transfer amount surpasses the available balance, preventing the transfer from
-taking place. Additionally, it generates a dynamic description by providing an
-expression with failure details.
-
-.Example: XML Configuration of the Flow
-[source,xml,linenums]
-----
-<flow name="raise-error-example-flow">
-  <http:request url="https://unsecurebank.com/balance" target="balance"/>
-  <choice>
-      <when expression="#[payload.amount > vars.balance]">
-          <raise-error type="ACCOUNT:INSUFFICIENT_FUNDS" description="#['Cannot transfer $(payload.amount) since only $(vars.balance) are available.']"/>
-      </when>
-  </choice>
-  <http:request url="https://unsecurebank.com/transfer"/>
-</flow>
-----
-
-This example raises an error with a static description and features a custom type using
-the `ORDER` namespace:
-
-[source,xml,linenums]
-----
- <raise-error description="Email is invalid. Cannot complete transaction." type="ORDER:INVALID_DATA"/>
-----
 
 == Raise Error Configuration
 
@@ -55,6 +27,87 @@ the `ORDER` namespace:
 `type="ORDER:INVALID_DATA"`
 
 |===
+
+== Raise Core Runtime Errors Types
+For core runtime errors types, you must use the implicit namespace and identifier, you can only customize the error's description message. For example:
+
+[source,xml,linenums]
+----
+<raise-error type="MULE:CONNECTIVITY" description="Error description message"/>
+----
+
+== Raise Custom Errors Types
+For custom error types, declare a new namespace. The namespace of an error type should help you identify the origin of an error. For example:
+
+[source,xml,linenums]
+----
+<raise-error type="CUSTOM:CUSTOM_ERROR" description="Error description message"/>
+----
+
+You cannot use existing namespaces from connectors or modules, since these have their defined namespaces.
+Once you declare a custom namespace by using it in a `raise-error`, you can use it in other `raise-error` components and custom types.
+
+
+== Examples
+
+The following simple example flow raises a `VALUE: EXCEEDED_VALUE` error when the user enters a number greater than 10.
+
+* The Choice router components adds conditional processing to the flow.
+* If the number value is greater than 10 in the request `http://localhost:8081/test?number=11`, the Raise Error component raises the error type `VALUE: EXCEEDED_VALUE` and description `Parameter value exceeded`.
+* Then, a Logger component logs the error message `The number value exceeds 10` in the On Error Continue component flow whose type is `VALUE: EXCEEDED_VALUE`.
+* If the number value is lower than 10 in the request `http://localhost:8081/test?number=1`, a Logger component returns the default message `The number value is lower than 10`.
+* If no number value parameter is passed in the request `http://localhost:8081/test`, a Logger component returns the message `The parameter number is missing`.
+
+XML Configuration of the Flow:
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="8e14c3c2-94ee-4394-b56f-f861fdb518fc" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="raiseErrorFlow" doc:id="393d25ff-c699-42ad-a90c-653801b14b9f" >
+  <http:listener doc:name="Listener" doc:id="8c0f7286-0428-4578-b90e-bc1a8ae0ff03" config-ref="HTTP_Listener_config" path="/test"/>
+  <choice doc:name="Choice" doc:id="560d7e31-c122-4a95-9716-a9988a1c4a85" >
+    <when expression="#[message.attributes.queryParams.number &gt; 10]">
+      <raise-error doc:name="Raise error" doc:id="9cc4cf6c-5639-4151-8acc-d553a47ae4cb" type="VALUE: EXCEEDED_VALUE" description="Parameter value exceeded." />
+    </when>
+    <otherwise >
+      <logger level="INFO" doc:name="Logger" doc:id="e4c85e3a-ecb5-4d82-8a0c-0e94deae4da0" message="The number value is lower than 10"/>
+    </otherwise>
+  </choice>
+  <error-handler >
+    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="8e8e59e5-df6d-4db2-9328-4e936ace610b" type="VALUE: EXCEEDED_VALUE">
+      <logger level="INFO" doc:name="Logger" doc:id="e5d38ccd-223c-49f9-a5a7-02d102cfba76" message="The number value exceeds 10"/>
+    </on-error-continue>
+    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f84d9962-e5a6-4b9f-a081-55d05d7f1cda" type="MULE:EXPRESSION">
+      <logger level="INFO" doc:name="Logger" doc:id="726331ca-11e1-444f-a2cd-f7df78856746" message="The parameter number is missing"/>
+    </on-error-continue>
+  </error-handler>
+</flow>
+----
+
+The following example assumes that a flow produces an `ACCOUNT:INSUFFICIENT_FUNDS` error when a transfer amount surpasses the available balance, preventing the transfer from taking place. Additionally, it generates a dynamic description by providing an expression with failure details.
+
+XML Configuration of the Flow:
+[source,xml,linenums]
+----
+<flow name="raise-error-example-flow">
+  <http:request url="https://unsecurebank.com/balance" target="balance"/>
+  <choice>
+      <when expression="#[payload.amount > vars.balance]">
+          <raise-error type="ACCOUNT:INSUFFICIENT_FUNDS" description="#['Cannot transfer $(payload.amount) since only $(vars.balance) are available.']"/>
+      </when>
+  </choice>
+  <http:request url="https://unsecurebank.com/transfer"/>
+</flow>
+----
+
+The following example assumes that an error raises with a static description and features a custom type using the `ORDER` namespace.
+
+XML Configuration of the Raise Error component:
+[source,xml,linenums]
+----
+ <raise-error description="Email is invalid. Cannot complete transaction." type="ORDER:INVALID_DATA"/>
+----
 
 == See Also
 
