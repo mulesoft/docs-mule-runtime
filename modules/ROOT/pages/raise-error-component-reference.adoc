@@ -21,10 +21,10 @@ You cannot raise an error from another connector or module like `FILE:FILE_NOT_F
 | Field | Value | Description | Example
 
 | Description | String or DataWeave expression | Specifies the error description. |
-`description="Invalid email. Cannot complete transaction."`
+`description="Error description message."`
 
 | Type | String | Specifies the type of the error. |
-`type="ORDER:INVALID_DATA"`
+`type="CUSTOM:CUSTOM_ERROR"`
 
 |===
 
@@ -41,7 +41,7 @@ For custom error types, declare a new namespace. The namespace of an error type 
 
 [source,xml,linenums]
 ----
-<raise-error type="CUSTOM:CUSTOM_ERROR" description="Error description message"/>
+<raise-error type="ORDER:INVALID_DATA" description="Email is invalid. Cannot complete transaction"/>
 ----
 
 You cannot use existing namespaces from connectors or modules, since these have their defined namespaces.
@@ -50,39 +50,39 @@ Once you declare a custom namespace by using it in a `raise-error`, you can use 
 
 == Examples
 
-The following simple example flow raises a `VALUE: EXCEEDED_VALUE` error when the user enters a number greater than 10.
+The following example of a driving lessons platform checks that the user is over 16 years old to drive. The flow raises a `PRECONDITIONS: INCORRECT_AGE` error when the user enters an age lower than 16 years.
 
 * The Choice router components adds conditional processing to the flow.
-* If the number value is greater than 10 in the request `http://localhost:8081/test?number=11`, the Raise Error component raises the error type `VALUE: EXCEEDED_VALUE` and description `Parameter value exceeded`.
-* Then, a Logger component logs the error message `The number value exceeds 10` in the On Error Continue component flow whose type is `VALUE: EXCEEDED_VALUE`.
-* If the number value is lower than 10 in the request `http://localhost:8081/test?number=1`, a Logger component returns the default message `The number value is lower than 10`.
-* If no number value parameter is passed in the request `http://localhost:8081/test`, a Logger component returns the message `The parameter number is missing`.
+* If the number value is lower than 16 in the request `http://localhost:8081/test?age=15`, the Raise Error component raises the error type `PRECONDITIONS: INCORRECT_AGE` and description `Minimum age of 16 required to drive`.
+* Then, a Logger component logs the error message `Minimum age required to drive is 16 years old` in the On Error Continue component flow whose type is `PRECONDITIONS: INCORRECT_AGE`.
+* If the number value is greater than 16 in the request `http://localhost:8081/test?age=17`, a Logger component returns the default message `TUser age above 16 years. Allowed to drive`.
+* If no age value parameter is passed in the request `http://localhost:8081/test`, a Logger component returns the message `The parameter age is missing`.
 
 XML Configuration of the Flow:
 [source,xml,linenums]
 ----
-<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="8e14c3c2-94ee-4394-b56f-f861fdb518fc" >
-  <http:listener-connection host="0.0.0.0" port="8081" />
-</http:listener-config>
-<flow name="raiseErrorFlow" doc:id="393d25ff-c699-42ad-a90c-653801b14b9f" >
-  <http:listener doc:name="Listener" doc:id="8c0f7286-0428-4578-b90e-bc1a8ae0ff03" config-ref="HTTP_Listener_config" path="/test"/>
-  <choice doc:name="Choice" doc:id="560d7e31-c122-4a95-9716-a9988a1c4a85" >
-    <when expression="#[message.attributes.queryParams.number &gt; 10]">
-      <raise-error doc:name="Raise error" doc:id="9cc4cf6c-5639-4151-8acc-d553a47ae4cb" type="VALUE: EXCEEDED_VALUE" description="Parameter value exceeded." />
-    </when>
-    <otherwise >
-      <logger level="INFO" doc:name="Logger" doc:id="e4c85e3a-ecb5-4d82-8a0c-0e94deae4da0" message="The number value is lower than 10"/>
-    </otherwise>
-  </choice>
-  <error-handler >
-    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="8e8e59e5-df6d-4db2-9328-4e936ace610b" type="VALUE: EXCEEDED_VALUE">
-      <logger level="INFO" doc:name="Logger" doc:id="e5d38ccd-223c-49f9-a5a7-02d102cfba76" message="The number value exceeds 10"/>
-    </on-error-continue>
-    <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f84d9962-e5a6-4b9f-a081-55d05d7f1cda" type="MULE:EXPRESSION">
-      <logger level="INFO" doc:name="Logger" doc:id="726331ca-11e1-444f-a2cd-f7df78856746" message="The parameter number is missing"/>
-    </on-error-continue>
-  </error-handler>
-</flow>
+<http:listener-config name="HTTP_Listener_config">
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<flow name="raiseErrorFlow">
+		<http:listener config-ref="HTTP_Listener_config" path="/test"/>
+		<choice>
+			<when expression="#[message.attributes.queryParams.age &lt; 16]">
+				<raise-error type="PRECONDITIONS: INCORRECT_AGE" description="Minimum age of 16 required to drive  " />
+			</when>
+			<otherwise >
+				<logger level="INFO" message="User age above 16 years. Allowed to drive"/>
+			</otherwise>
+		</choice>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" type="PRECONDITIONS: INCORRECT_AGE">
+				<logger level="INFO" message="Minimum age to drive is 16 years old"/>
+			</on-error-continue>
+			<on-error-continue enableNotifications="true" logException="true"  type="MULE:EXPRESSION">
+				<logger level="INFO" message="The parameter age is missing"/>
+			</on-error-continue>
+		</error-handler>
+	</flow>
 ----
 
 The following example assumes that a flow produces an `ACCOUNT:INSUFFICIENT_FUNDS` error when a transfer amount surpasses the available balance, preventing the transfer from taking place. Additionally, it generates a dynamic description by providing an expression with failure details.
@@ -101,13 +101,6 @@ XML Configuration of the Flow:
 </flow>
 ----
 
-The following example assumes that an error raises with a static description and features a custom type using the `ORDER` namespace.
-
-XML Configuration of the Raise Error component:
-[source,xml,linenums]
-----
- <raise-error description="Email is invalid. Cannot complete transaction." type="ORDER:INVALID_DATA"/>
-----
 
 == See Also
 
