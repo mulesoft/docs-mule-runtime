@@ -637,6 +637,43 @@ output application/xlsx header=true
 }
 ----
 
+The following example streams an Excel file and transforms it to JSON:
+* It configures the HTTP listener to stream the XLSX input
+by setting `outputMimeType="application/xlsx; streaming=true"`.
+In the Studio UI, you can use the *MIME Type* on the listener to `application/xlsx`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* It uses a DataWeave script in the *Transform Message* component to iterate
+over each row in the XLSX payload (an XLSX sheet called `"Sheet Name"`) and
+select the values of each cell in the row (using `row.a`, `row.b`).
+
+.Streaming Example:
+[source,xml,linenums]
+----
+<http:listener-config
+    name="HTTP_Listener_config"
+    doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="streaming_flow" >
+  <http:listener
+    doc:name="Listener"
+    config-ref="HTTP_Listener_config"
+    path="/"
+    outputMimeType="application/xlsx; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Sheet Name" map ((row) ->
+
+{ foo: row.a, bar: row.b }
+)]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
 === Reader Properties (for Excel)
 
 When defining `application/xlsx` input for the DataWeave reader, you can set
@@ -649,6 +686,11 @@ the following property.
 headers. Valid options: `true` or `false`
 | `ignoreEmptyLine` | Boolean | `true` a| Indicates whether to ignore empty
 line. Valid options: `true` or `false`
+| `streaming` | Boolean | `false` a| Introduced in Mule 4.2.2: Indicates whether
+to read the input Excel file as a stream of data. Streaming is intended for
+processing a large file in which case the reader accesses each row sequentially,
+keeping one row in memory at a time, instead of making all data available at
+once. So, streaming does not permit random access to rows in the file.
 | `tableOffset` | String | None a| The position of the first cell in the
 table (`<Column><Row> example A1`).
 | `zipBombCheck` | Boolean | `true` a| If set to `false`, the zip bomb check is
