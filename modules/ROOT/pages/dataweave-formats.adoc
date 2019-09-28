@@ -448,10 +448,10 @@ Leandro,Shokida
 [[stream_csv]]
 .Streaming Example:
 
-By default, the CSV reader stores input data in a file in-memory, but for large
-files, you can instead set a `streaming` property to improve performance. To
-illustrate streaming, the next example streams a CSV file and transforms it
-to JSON:
+By default, the CSV reader stores input data from an entire file in-memory as
+it reads the file, but for large files, you can improve the performance of the
+reader by set a `streaming` property to `true`. To demonstrate the use of
+this property, the next example streams a CSV file and transforms it to JSON:
 
 * It configures the HTTP listener to stream the CSV input
 by setting `outputMimeType="application/csv; streaming=true"`.
@@ -461,7 +461,7 @@ It also sets `header=true` for illustration purposes, though this setting is the
 default.
 * It uses a DataWeave script with the `map` function in the *Transform Message*
 component to iterate over each row in the CSV payload and selects the value of
-each field in the `zip` column by using `row.zip`.
+each field in the `zip` column.
 
 [source,xml,linenums]
 ----
@@ -495,9 +495,7 @@ zipcode: row.zip
 Note that example indicates that the input file is located in Studio project
 directory `src/main/resources`, which is the location of `${app.home}`.
 
-The structure of the CSV input looks something like this, though a streamed file
-is typically much longer because you usually stream to enhance performance
-when reading a large file.
+The structure of the CSV input looks something like the following.
 
 .CSV File Input for Streaming Example (truncated):
 [source,csv,linenums]
@@ -511,8 +509,10 @@ street,city,zip,state,beds,baths,sale_date
 5828 PEPPERMILL CT,SACRAMENTO,95841,CA,3,1,Wed May 21 00:00:00 EDT 2018
 ----
 
-The Write operation in the example returns a file `output.json` that
-contains the result of the transformation.
+Note that a streamed file is typically much longer.
+
+The Write operation in the streaming example returns a file, `output.json`,
+which contains the result of the transformation.
 
 .Output for Streaming Example:
 [source,json,linenums]
@@ -564,7 +564,7 @@ contains header field names. . Valid options: `true` or `false`
 | `streaming` | Boolean | `false` a| Used for streaming input CSV.
 Valid options: `true` or `false` (Use only if entries are accessed sequentially.)
 See the <<stream_csv, streaming example>> above, and see
-xref:dataweave-languag-introduction#dw_readers_writers[DataWeave Readers and Writers].
+xref:dataweave-language-introduction.adoc#dw_readers_writers[DataWeave Readers and Writers].
 |===
 
 * When `header=true` you can then access the fields within the input anywhere
@@ -1283,59 +1283,111 @@ the following property.
 | `streaming` | Boolean | `false` a| Used for streaming input. Use only if
 entries are accessed sequentially. Valid options: `true` or `false`.
 The input must be a top-level array. For more on streaming in DataWeave, see
-xref:dataweave-languag-introduction#dw_readers_writers[DataWeave Readers and Writers].
+xref:dataweave-language-introduction.adoc#dw_readers_writers[DataWeave Readers and Writers].
 |===
 
-To illustrate streaming, the following example streams a JSON file, which reads
-each element in an array one at a time, and transforms the JSON to XML:
+To demonstrate streaming, the following example streams a JSON file by reading
+each element in an array one at a time:
 
-* It configures the HTTP listener to stream the JSON inputi
+* It configures the HTTP listener to stream the JSON input
 by setting `outputMimeType="application/json; streaming=true"`.
 In the Studio UI, you can use the *MIME Type* on the listener to `application/json`
 and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
-* It uses a DataWeave script in the *Transform Message* component to iterate
-over the JSON payload and transform it to XML.
+* It uses a DataWeave script in the *Transform Message* component to
+select and iterate over the array in the JSON payload.
 
 .Streaming Example:
 [source,xml,linenums]
 ----
-<http:listener-config
-    name="HTTP_Listener_config"
-    doc:name="HTTP Listener config" >
-  <http:listener-connection host="0.0.0.0" port="8081" />
-</http:listener-config>
-<flow name="streaming_flow" >
-  <http:listener
-    doc:name="Listener"
-    config-ref="HTTP_Listener_config"
-    path="/"
-    outputMimeType="application/json; streaming=true"/>
+<file:config name="File_Config" doc:name="File Config" />
+<flow name="dw-streaming-jsonFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read"
+     config-ref="File_Config"
+     path="${app.home}/myjsonarray.json"
+     outputMimeType="application/json; streaming=true"/>
   <ee:transform doc:name="Transform Message" >
     <ee:message >
       <ee:set-payload ><![CDATA[%dw 2.0
-output application/xml
+output application/json
 ---
-payload map ((element) -> element)]]>
-      </ee:set-payload>
+payload.myJsonExample map ((element) -> {
+returnedElement : element.zipcode
+})]]></ee:set-payload>
     </ee:message>
   </ee:transform>
+  <file:write doc:name="Write"
+    path="/path/to/output/file/output.json"
+    config-ref="File_Config1"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
 </flow>
 ----
 
-The JSON input array something like this, though a streamed file is
-typically much longer because you usually stream to enhance performance
-when reading a large file.
+The JSON input payload looks like the following.
 
-.CSV Input for Streaming Example (truncated):
+.JSON Input for Streaming Example (truncated):
 [source,json,linenums]
 ----
-TODO
+{ "myJsonExample" : [
+    {
+      "name" : "Shoki",
+      "zipcode": "95838"
+    },
+    {
+      "name" : "Leandro",
+      "zipcode": "95823"
+    },
+    {
+      "name" : "Mariano",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Cristian",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Kevin",
+      "zipcode": "95824"
+    },
+    {
+      "name" : "Stanley",
+      "zipcode": "95841"
+    }
+  ]
+}
 ----
 
-.Output for Streaming Example:
-[source,xml,linenums]
+The Write operation in the streaming example returns a file, `output.json`,
+which contains the content of the transformation. The Logger in the JSON
+example prints same output.
+
+.Output for JSON Streaming Example:
+[source,json,linenums]
 ----
-TODO
+[
+  {
+    "returnedElement": "95838"
+  },
+  {
+    "returnedElement": "95823"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95824"
+  },
+  {
+    "returnedElement": "95841"
+  }
+]
 ----
 
 [[skip_on_null]]
