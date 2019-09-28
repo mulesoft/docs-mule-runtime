@@ -446,73 +446,95 @@ Leandro,Shokida
 ----
 
 [[stream_csv]]
-To illustrate streaming, the next example streams an CSV file and
-transforms it to JSON:
+.Streaming Example:
+
+By default, the CSV reader stores input data in a file in-memory, but for large
+files, you can instead set a `streaming` property to improve performance. To
+illustrate streaming, the next example streams a CSV file and transforms it
+to JSON:
 
 * It configures the HTTP listener to stream the CSV input
 by setting `outputMimeType="application/csv; streaming=true"`.
 In the Studio UI, you can use the *MIME Type* on the listener to `application/csv`
-and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
-* It uses a DataWeave script in the *Transform Message* component to iterate
-over each row CSV payload and select the values of each cell in the row (using
-`row.a`, `row.b`).
+and the *Parameters* for the MIME Type to *Key* `streaming` with *Value* `true`.
+It also sets `header=true` for illustration purposes, though this setting is the
+default.
+* It uses a DataWeave script with the `map` function in the *Transform Message*
+component to iterate over each row in the CSV payload and selects the value of
+each field in the `zip` column by using `row.zip`.
 
-.Streaming Example:
 [source,xml,linenums]
 ----
-<http:listener-config
-    name="HTTP_Listener_config"
-    doc:name="HTTP Listener config" >
-  <http:listener-connection host="0.0.0.0" port="8081" />
-</http:listener-config>
-<flow name="streaming_flow" >
-  <http:listener
-    doc:name="Listener"
-    config-ref="HTTP_Listener_config"
-    path="/"
-    outputMimeType="application/csv; streaming=true"/>
+<flow name="dw-streamingFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read
+     path="${app.home}/input.csv"
+     config-ref="File_Config"
+     outputMimeType="application/csv; streaming=true; header=true"/>
   <ee:transform doc:name="Transform Message" >
     <ee:message >
       <ee:set-payload ><![CDATA[%dw 2.0
 output application/json
 ---
-payload map ((row) ->
-
-{ foo: row.a, bar: row.b }
-)]]></ee:set-payload>
+payload map ((row) -> {
+zipcode: row.zip
+})]]></ee:set-payload>
     </ee:message>
   </ee:transform>
+  <file:write doc:name="Write"
+    config-ref="File_Config1"
+    path="/path/to/output/file/output.json"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
 </flow>
 ----
 
-The structure of the CSV input looks something like this, though a streamed file
-is typically much longer because you usually only stream to enhance performance
-when reading the file.
+Note that example indicates that the input file is located in Studio project
+directory `src/main/resources`, which is the location of `${app.home}`.
 
-.CSV Input for Streaming Example (truncated):
+The structure of the CSV input looks something like this, though a streamed file
+is typically much longer because you usually stream to enhance performance
+when reading a large file.
+
+.CSV File Input for Streaming Example (truncated):
 [source,csv,linenums]
 ----
-a, b
-value1, value2
-value3, value4
-value5, value6
+street,city,zip,state,beds,baths,sale_date
+3526 HIGH ST,SACRAMENTO,95838,CA,2,1,Wed May 21 00:00:00 EDT 2018
+51 OMAHA CT,SACRAMENTO,95823,CA,3,1,Wed May 21 00:00:00 EDT 2018
+2796 BRANCH ST,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+2805 JANETTE WAY,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+6001 MCMAHON DR,SACRAMENTO,95824,CA,2,1,,Wed May 21 00:00:00 EDT 2018
+5828 PEPPERMILL CT,SACRAMENTO,95841,CA,3,1,Wed May 21 00:00:00 EDT 2018
 ----
+
+The Write operation in the example returns a file `output.json` that
+contains the result of the transformation.
 
 .Output for Streaming Example:
 [source,json,linenums]
 ----
 [
   {
-    "foo": "value1",
-    "bar": "value2"
+    "zipcode": "95838"
   },
   {
-    "foo": "value3",
-    "bar": "value4"
+    "zipcode": "95823"
   },
   {
-    "foo": "value5",
-    "bar": "value6"
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95824"
+  },
+  {
+    "zipcode": "95841"
   }
 ]
 ----
@@ -541,7 +563,8 @@ contains header field names. . Valid options: `true` or `false`
 | `separator` | Char | `,` a| Character that separates one record from another.
 | `streaming` | Boolean | `false` a| Used for streaming input CSV.
 Valid options: `true` or `false` (Use only if entries are accessed sequentially.)
-See the <<stream_csv, streaming example>>.
+See the <<stream_csv, streaming example>> above, and see
+xref:dataweave-languag-introduction#dw_readers_writers[DataWeave Readers and Writers].
 |===
 
 * When `header=true` you can then access the fields within the input anywhere
@@ -1258,13 +1281,15 @@ the following property.
 |===
 | Parameter | Type | Default | Description
 | `streaming` | Boolean | `false` a| Used for streaming input. Use only if
-entries are accessed sequentially. Valid options: `true` or `false`
+entries are accessed sequentially. Valid options: `true` or `false`.
+The input must be a top-level array. For more on streaming in DataWeave, see
+xref:dataweave-languag-introduction#dw_readers_writers[DataWeave Readers and Writers].
 |===
 
-To illustrate streaming, the next example streams an JSON file and
-transforms it to XML:
+To illustrate streaming, the following example streams a JSON file, which reads
+each element in an array one at a time, and transforms the JSON to XML:
 
-* It configures the HTTP listener to stream the JSON input
+* It configures the HTTP listener to stream the JSON inputi
 by setting `outputMimeType="application/json; streaming=true"`.
 In the Studio UI, you can use the *MIME Type* on the listener to `application/json`
 and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
@@ -1290,18 +1315,16 @@ over the JSON payload and transform it to XML.
       <ee:set-payload ><![CDATA[%dw 2.0
 output application/xml
 ---
-payload map ((row) ->
-
-{ foo: row.a, bar: row.b }
-)]]></ee:set-payload>
+payload map ((element) -> element)]]>
+      </ee:set-payload>
     </ee:message>
   </ee:transform>
 </flow>
 ----
 
-The structure of the CSV input looks something like this, though a streamed file
-is typically much longer because you usually only stream to enhance performance
-when reading the file.
+The JSON input array something like this, though a streamed file is
+typically much longer because you usually stream to enhance performance
+when reading a large file.
 
 .CSV Input for Streaming Example (truncated):
 [source,json,linenums]
