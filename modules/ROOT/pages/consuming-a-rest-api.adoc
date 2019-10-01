@@ -1,0 +1,275 @@
+= Consuming a REST API
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+To consume a REST API from within a Mule application, you can configure an HTTP Request Connector. This document describes how to prepare a request, call a REST API, and work with its response.
+
+If you connect to the same REST API many times, or work with an API having complex authentication protocols, consider xref:mule-sdk::index.adoc[developing your own Connector using the Mule SDK]. Check whether a connector already exists in https://www.anypoint.mulesoft.com/exchange/[Anypoint Exchange] for the API you want to connect to. You can search in Exchange through Anypoint Studio's Mule Palette. 
+
+== Basic Anatomy
+
+In its simplest incarnation, a Mule application for consuming a REST API consists of the following things:
+
+* One or more message processors configured to build your request
+
+* An HTTP request operation configured to call the REST API
+
+* One or more message processors configured to accept and process the response
+
+image::consuming-a-rest-api-configuration-1.png[consuming-a-rest-api]
+
+You can configure portions of the application that build the request and process the response. This document focuses on calling the REST API with an HTTP connector.
+
+== Minimum Configuration
+
+The REST API you're consuming needs to have a http://raml.org[RAML] file that describes it. In the RAML, you can define the following things:
+
+* Authentication
+* A base URI for configuring the outbound HTTP endpoint
+* Scope
++
+Based on authentication credentials, the application can limit calls to only GET requests on certain resources, for example, or otherwise limit access to a resource.
++
+* Resources
++
+You need configure the path of the resources for the outbound HTTP endpoint.
++
+* Methods
++
+The default method for the HTTP outbound endpoint is POST, so you need to be aware of what methods are supported for the resource and, if necessary, change this default to the method you need to make a successful call.
++
+* Input validation
++
+For POST and PUT calls, the API almost always requires that input format, such as JSON and XML match its schema.
+
+If you reference a RAML file that describes your API, then the HTTP connector proactively presents you with smart suggestions.
+
+In Mule Runtime, you can define or configure the following things:
+
+* Output format
++
+After the HTTP request operation in your flow, you need message processors to accept the response from the API and translate the response into a useable format.
++
+* Redirects
++
+If the API uses redirects, enable redirects in your HTTP request operation.
++
+* Timeout
+* Headers for methods
++
+POST, PUT, and DELETE requests almost always require headers.
++
+* URI and Query Parameters
+* Error handling
+
+Check xref:connectors::http-connector[HTTP Connector documentation] for more information on how to configure the request operation. 
+
+
+=== Simple Example
+
+This example consumes the https://jsonplaceholder.typicode.com/todos/1[JSONPlaceholder API].
+
+In this example:
+
+* The API doesn't require authentication.
+* The base URL is `://jsonplaceholder.typicode.com/`
+* This API is a mock API for development purposes
+* The sample API requests available in the documentation show that to get information about user with `id=1` the request must be:
+
+----
+https://jsonplaceholder.typicode.com/users/1
+----
+
+This URL uses the following format:
+
+* Protocol: `http`
+* API Base URL: `jsonplaceholder.typicode.com`
+* Resource path: `/users/1`
+* Query Parameters: None, in this case.
+
+To implement this call in your Mule application, configure your HTTP request operation as described below. This example shows _only_ the configuration of this HTTP Connector. To make this example work, you would need to, at minimum, to configure a Message Source to trigger a message in the flow and at least one message processor to accept the response. See the xref:rest-api-examples.adoc[full examples] for more information.
+
+=== Example in Studio
+
+. Add in your application an HTTP request operation. 
+. In the HTTP Request Configuration, write `jsonplaceholder.typicode.com` as the Host. The default port value is 80, which is the same as this case.  
++
+image::consuming-a-rest-api-configuration.png[]
++
+. Click OK. 
+. In the operation configuration, add `/users/1` in path.
++
+When you specify the host you set in the global element together with the path to comprise the entire URL you want to reach.
++
+. Select the Method you want to use from the drop-down list. This example uses GET.
++
+image::consuming-a-rest-api-configuration-2.png[]
++
+. Save your application
++
+If the API you are calling requires working with security requirements, involves redirects, or requires a specifying an HTTP content-type and encoding header, the HTTP connector supports additional configuration options to manage these details.
+
+=== Example in the XML Editor
+
+[source,xml,linenums]
+----
+<http:request-config name="HTTP_Request_configuration">
+    <http:request-connection host="jsonplaceholder.typicode.com" />
+  </http:request-config>
+
+<flow name="basic_tutorialFlow1">
+
+    <...>
+
+    <http:request method="GET" doc:name="Request" config-ref="HTTP_Request_configuration" path="/users/1"/>
+</flow>
+----
+
+=== JSON Response
+
+The JSON response, in this example, has the following structure:
+
+[source,json,linenums]
+----
+{
+  "userId": 1,
+  "id": 3,
+  "title": "fugiat veniam minus",
+  "completed": false
+}
+----
+
+You can transform the data in the advance tab of the http request operation. You can also define the target variable, which by default is the Payload. 
+
+If this API has an associated RAML file, you can reference it in the configuration element of the connector. With that in place, after you select the verb and asset to call, Studio exposes the metadata corresponding to the output. Integration with other elements in a flow is simplified.
+
+== Configuring Dynamic Requests with DW Expressions
+
+In the previous example, the request was hardcoded in the URL:
+
+----
+https://jsonplaceholder.typicode.com/users/1
+----
+
+Most use cases require that the call to the API change dynamically based on some data in the message. For example, in the following GET request example, the call instructs Mule runtime to extract the user id from the payload of the message.
+
+----
+https://jsonplaceholder.typicode.com/users/#[payload.user_id]
+----
+
+=== Configuring Dynamic Requests in the Anypoint Studio Visual Editor
+
+To do this, from the configuration explained above, just modify the path configuration with the desired expresion. In this case `#['/users/' ++ payload.user_id]`.
+
+image::consuming-a-rest-api-configuration-3.png[]
+
+This can also be done for the query or URI parameters, or HTTP method.
+You can also use xref:configuring-properties.adoc[Configuration Properties] to set any of these.  
+
+=== Configuring Dynamic Requests in Standlone XML
+
+[source,xml,linenums]
+----
+  <http:request-config name="HTTP_Request_configuration">
+    <http:request-connection host="jsonplaceholder.typicode.com" />
+  </http:request-config>
+  <flow name="basic_tutorialFlow1">
+    <...>
+    <set-payload value='#[{user_id: "10"}]'/>
+    <http:request method="GET" config-ref="HTTP_Request_configuration" path="#['/users/' ++ payload.user_id]"/>
+  </flow>
+----
+
+== Handling HTTP Content-Type and Encoding
+
+When you send a POST request, Mule runtime adheres to the following rules regarding Content-Type and encoding of the body.
+
+=== Sending
+
+[cols="2*"]
+|===
+|*For a String, char[], Reader, or similar* a|
+* If the endpoint has explicitly-set encoding, Mule runtime uses this encoding.
+* If the endpoint does not have explicitly-set encoding, Mule runtime determines the encoding from the message property `Content-Type`.
+* If the `Content-Type` message property is not set, Mule runtime uses the Mule Context default configuration.
+* For `Content-Type`, Mule runtime sends the message property `Content-Type`, but with the actual encoding set.
+
+|*For binary content* a|
+Encoding is not relevant. Mule runtime sets `Content-Type` as follows:
+
+* If the `Content-Type` property is set on the message, Mule runtime uses the defined content-type.
+* If the `Content-Type` property is not set on the message, Mule runtime sets "application/octet-stream" as `Content-Type`.
+
+|===
+
+== Working with Custom Headers
+
+Some APIs require that you pass custom headers along with your requests, such as your developer key. Just like with the query parameters, you can also add headers to your request on the HTTP connector. For example, if the API you are consuming requires that you register for a developer key, then pass that key as a header on your requests using the header name `accessKey`, you can add a property to set this header, as shown below.
+
+=== Custom Headers in Studio
+
+In the HTTP request operation's properties editor select the *Headers* tab, then the add button, this creates a few new fields that correspond to a new header. You can define the Header Name and its value. Both can be defined also using expressions or properties placeholders.
+
+image::consuming-a-rest-api-configuration-4.png[]
+
+
+== Working with Security Requirements
+
+If you work with complex authentication protocols such as OAuth, you can build your own Connector to consume the API.
+
+=== HTTPS
+
+If the REST API you are consuming requires incoming requests arrive via HTTPS, you can configure a global HTTPS connector in your Mule application, then reference the connector in your request operation. In this example, you create a Java keystore file (JKS) and xref:tls-configuration.adoc[configure TLS].
+
+Configure the HTTP connector for HTTPS:
+
+image::consuming-a-rest-api-configuration-5.png[]
+
+Create a keystore file to certify the communication. This can be done using the Java keytool in the bin directory of the Java installation. Navigate to this directory on your machine using the command line, then execute the following command to create a keystore file:
+
+----
+keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
+----
+
+You are prompted to create two passwords; _remember the passwords_. The command creates a `jks` file in the local directory called `keystore.jks`.
+
+* If you are using Studio, drag `keystore.jks` into the  `appname/src/main/resources` directory in Studio Package Explorer.
+
+* If you use a standalone XML in Mule Runtime, place this in the `MULE_HOME/conf` directory if to be used across multiple applications, or in the `yourappname/src/main/resources` directory if you are using this just within this application.
+
+Now, you can reference this keystore in a global HTTPS connector, which, in turn, is referenced by the HTTP outbound endpoint within your flow.
+
+==== HTTPS in Studio
+
+. Go to Global Elements view. Select Create, and search for TLS Context.
+. 
+Open the *Properties Editor* of the *HTTP connector* that you have configured to use HTTPS, and click image:consuming-a-rest-api-3467e.png[] next to the connector configuration field.
+. In Key Store Configuration, select a type of key store configuration from the drop-down. For example, select JKS (Java Key Store).
++
+The default type is JKS (Java Key Store).
++
+. Enter the passwords you created when creating your keystore file in *Path*, *Key Password*, and *Password*, then click *OK*.
++
+If you placed your keystore in the  `appname/src/main/resources` directory, specify the name of the keystore as the value of the path. Otherwise, if the keystore is located in the MULE_HOME/conf directory, specify `"/keystore.jks"` as the path.
++
+image::consuming-a-rest-api-configuration-6.png[]
++
+. Go to the HTTP Request configuration. In TLS Configuration, select Global Reference, and select the TLS context created before. You can also create the TLS context inline. 
+
+=== Basic Authentication
+
+If the REST API that you are consuming requires that you pass basic authentication credentials, you can provide them within the outbound HTTP endpoint configuration.
+
+==== Basic Authentication in Studio
+
+. Go to the HTTP Request configuration. 
+. Go to Authentication and select Basic Authentication
+. Type your username and password. These can also be set as properties placeholders. 
++
+image::consuming-a-rest-api-configuration-7.png[]
+
+
+
+
+
