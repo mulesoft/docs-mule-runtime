@@ -15,61 +15,23 @@ the binary payload of that file to JSON, and then uses the `filter` function
 to return a JSON file that only contains records of the bugs assigned to
 `Fred M`.
 
-.XML Configuration in Studio:
-[source,XML, linenums]
+The following DataWeave script uses `classpath:ourBugs.xlsx` in the
+`readUrl` function to reads in the XLSX  file from the Studio project
+directory (`src/main/resources`) and return the filtered from it.
+
+.DataWeave Script:
+[source,dataweave, linenums]
 ----
-<file:config name="File_Read_Config" doc:name="File Read Config" />
-<file:config name="File_Write_Config" doc:name="File Write Config" />
-<flow name="xlsx-lookup" >
-  <scheduler doc:name="Scheduler" >
-    <scheduling-strategy >
-      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
-    </scheduling-strategy>
-  </scheduler>
-  <file:read doc:name="Read XLSX"
-             path="${app.home}/ourBugs.xlsx"
-             config-ref="File_Read_Config"
-             outputMimeType="application/xlsx"/>
-  <ee:transform doc:name="Transform Message" >
-    <ee:message >
-      <ee:set-payload ><![CDATA[%dw 2.0
+%dw 2.0
+var myVar = readUrl("classpath://ourBugs.xlsx", "application/xlsx")
 output application/json
 ---
-payload]]></ee:set-payload>
-    </ee:message>
-  </ee:transform>
-  <file:write doc:name="Write JSON"
-              path="/path/to/fredBugs.json"
-              config-ref="File_Write_Config">
-    <file:content ><![CDATA[#[payload."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")]]]></file:content>
-  </file:write>
-</flow>
+myVar."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")
 ----
 
-* The Scheduler (`scheduler`) triggers the next component (a Read operation)
-to execute.
-* The Read operation (`file:read`) from the File connector reads an XLSX file
-(`ourBugs.xlsx`) that is stored in the Studio project directory
-`src/main/resources`, which is the location of `${app.home}`.
-+
-Also notice that the `outputMimeType` attribute is set to `application/xlsx`
-to identify the MIME type to the reader.
-+
-* The Transform Message component (`ee:transform`) transforms the binary
-XLSX data to JSON.
-* The Write operation (`file:write`) from the File connector provides a
-DataWeave script that selects the `Data` sheet from the XLSX content,
-then filters out all records except the ones where the `Assignee` column
-contains the value `Fred M`. The operation writes the JSON output to a file
-called `fredBugs.json`.
-+
-.DataWeave Script from the Read Operation:
-[source,DataWeave, linenums]
-----
-payload."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")
-----
-
-The JSON output within `fredBugs.json` lists Fred M's bugs in an array.
+The script selects a sheet named `Data` from the XLSX file, then filters out
+all records except the ones where the `Assignee` column contains the value
+`Fred M`. It returns the results in an array of JSON objects, for example:
 
 .Sample Output:
 [source,JSON,linenums]
@@ -116,6 +78,48 @@ The JSON output within `fredBugs.json` lists Fred M's bugs in an array.
   }
 ]
 ----
+
+The next example writes the results of the same `filter` expression to a file,
+`fredBugs.json`. The example is a configuration XML from a Mule project
+in Studio.
+
+.XML Configuration in Studio:
+[source,XML, linenums]
+----
+<file:config name="File_Read_Config" doc:name="File Read Config" />
+<file:config name="File_Write_Config" doc:name="File Write Config" />
+<flow name="xlsx-lookup" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read XLSX"
+             path="${app.home}/ourBugs.xlsx"
+             config-ref="File_Read_Config"
+             outputMimeType="application/xlsx"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write JSON"
+              path="/path/to/fredBugs.json"
+              config-ref="File_Write_Config">
+</flow>
+----
+
+* The Scheduler (`scheduler`) triggers the next component (a Read operation)
+to execute.
+* The Transform Message component (`ee:transform`) provides a DataWeave
+script to return all records from the the `"Data"` sheet where the
+`Assignee` column contains the value `Fred M`, and it transforms the
+binary XLSX input to JSON output.
+* The Write operation (`file:write`) from the File connector receives the JSON
+payload from `ee:transform` and writes it to a file called `fredBugs.json`.
 
 == See Also
 
