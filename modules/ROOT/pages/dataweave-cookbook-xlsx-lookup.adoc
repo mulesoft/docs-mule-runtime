@@ -1,0 +1,122 @@
+= Look Up Data in an Excel (XLSX) File
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This DataWeave example uses the `filter` function to return only the
+records in an Excel (XLSX) input file that contain a specified value.
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+Assume an XLSX spreadsheet that contains data on bugs assigned to all the
+members of a team, including an assignee named `Fred M`. The following flow
+shows an XML configuration from Studio that reads the XLSX file, transforms
+the binary payload of that file to JSON, and then uses the `filter` function
+to return a JSON file that only contains records of the bugs assigned to
+`Fred M`.
+
+.Flow XML:
+[source,XML, linenums]
+----
+<file:config name="File_Read_Config" doc:name="File Read Config" />
+<file:config name="File_Write_Config" doc:name="File Write Config" />
+<flow name="xlsx-lookup" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read XLSX"
+             path="${app.home}/ourBugs.xlsx"
+             config-ref="File_Read_Config"
+             outputMimeType="application/xlsx"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write JSON"
+              path="/path/to/fredBugs.json"
+              config-ref="File_Write_Config">
+    <file:content ><![CDATA[#[payload."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")]]]></file:content>
+  </file:write>
+</flow>
+----
+
+* The Scheduler (`scheduler`) triggers the next component (a Read operation)
+to execute.
+* The Read operation (`file:read`) from the File connector reads an XLSX file
+(`ourBugs.xlsx`) that is stored in the Studio project directory
+`src/main/resources`, which is the location of `${app.home}`.
++
+Also notice that the `outputMimeType` attribute is set to `application/xlsx`
+to identify the MIME type to the reader.
++
+* The Transform Message component (`ee:transform`) transforms the binary
+XLSX data to JSON.
+* The Write operation (`file:write`) from the File connector provides a
+DataWeave script that selects the `Data` sheet from the XLSX content,
+then filters out all records except the ones where the `Assignee` column
+contains the value `Fred M`. The operation writes the JSON output to a file
+called `fredBugs.json`.
++
+.DataWeave Script:
+[source,DataWeave, linenums]
+----
+payload."Data" filter ((entry, index) -> entry."Assignee" == "Fred M"
+----
+
+The JSON output within `fredBugs.json` lists Fred M's bugs.
+
+.Sample Output:
+[source,JSON,linenums]
+----
+[
+  {
+    "Issue Key": "BUG-11708",
+    "Issue Type": "Bug",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Natalie C",
+    "Priority": "To be reviewed",
+    "Status": "Closed",
+    "Resolution": "Done",
+    "Created": "2019-04-29T03:57:00",
+    "Updated": "2019-05-06T10:40:00",
+    "Due Date": ""
+  },
+  {
+    "Issue Key": "BUG-4903",
+    "Issue Type": "Story",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Fred M",
+    "Priority": "To be reviewed",
+    "Status": "In Progress",
+    "Resolution": "",
+    "Created": "2019-05-07T11:22:00",
+    "Updated": "2019-05-08T10:16:00",
+    "Due Date": ""
+  },
+  {
+    "Issue Key": "BUG-4840",
+    "Issue Type": "Story",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Pablo C",
+    "Priority": "To be reviewed",
+    "Status": "In Validation",
+    "Resolution": "",
+    "Created": "2019-04-30T07:11:00",
+    "Updated": "2019-05-08T10:16:00",
+    "Due Date": ""
+  }
+]
+----
+
+== See Also
+
+* xref:dataweave-formats.adoc[DataWeave Output Formats and Writer Properties]
