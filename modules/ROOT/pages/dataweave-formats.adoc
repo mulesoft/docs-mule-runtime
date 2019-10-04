@@ -469,12 +469,109 @@ contains header field names. . Valid options: `true` or `false`
 | `separator` | Char | `,` a| Character that separates one record from another.
 | `streaming` | Boolean | `false` a| Used for streaming input CSV.
 Valid options: `true` or `false` (Use only if entries are accessed sequentially.)
+See the <<stream_csv, streaming example>>, and see
+xref:dataweave-language-introduction.adoc#dw_readers_writers[DataWeave Readers and Writers].
 |===
 
 * When `header=true` you can then access the fields within the input anywhere
 by name, for example: `payload.userName`.
 * When `header=false` you must access the fields by index, referencing first
 the entry and then the field, for example: `payload[107][2]`
+
+[[stream_csv]]
+.Streaming Example:
+
+By default, the CSV reader stores input data from an entire file in-memory 
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance 
+of the reader by setting a `streaming` property to `true`. To demonstrate the use of
+this property, the next example streams a CSV file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<flow name="dw-streamingFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read
+     path="${app.home}/input.csv"
+     config-ref="File_Config"
+     outputMimeType="application/csv; streaming=true; header=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((row) -> {
+zipcode: row.zip
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    config-ref="File_Config1"
+    path="/path/to/output/file/output.json"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The example configures the HTTP listener to stream the CSV input
+by setting `outputMimeType="application/csv; streaming=true"`.
+In the Studio UI, you can set the *MIME Type* on the listener to `application/csv`
+and the *Parameters* for the MIME Type to *Key* `streaming` with *Value* `true`.
+The example also sets `header=true` for illustration purposes, though this setting is the
+default.
+* The DataWeave script uses the `map` function in the *Transform Message*
+component to iterate over each row in the CSV payload and select the value
+of each field in the `zip` column.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+Note that the example indicates that the input file is located in Studio project
+directory `src/main/resources`, which is the location of `${app.home}`.
+
+The structure of the CSV input looks something like the following.
+
+.CSV File Input for Streaming Example (truncated):
+[source,csv,linenums]
+----
+street,city,zip,state,beds,baths,sale_date
+3526 HIGH ST,SACRAMENTO,95838,CA,2,1,Wed May 21 00:00:00 EDT 2018
+51 OMAHA CT,SACRAMENTO,95823,CA,3,1,Wed May 21 00:00:00 EDT 2018
+2796 BRANCH ST,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+2805 JANETTE WAY,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+6001 MCMAHON DR,SACRAMENTO,95824,CA,2,1,,Wed May 21 00:00:00 EDT 2018
+5828 PEPPERMILL CT,SACRAMENTO,95841,CA,3,1,Wed May 21 00:00:00 EDT 2018
+----
+
+Note that a streamed file is typically much longer.
+
+.Output for Streaming Example:
+[source,json,linenums]
+----
+[
+  {
+    "zipcode": "95838"
+  },
+  {
+    "zipcode": "95823"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95824"
+  },
+  {
+    "zipcode": "95841"
+  }
+]
+----
 
 [[writer_properties_csv]]
 === Writer Properties (for CSV)
@@ -507,8 +604,6 @@ Valid options: `true` or `false`
 | `quoteValues` | Boolean | `false` a| Indicates if every value should be quoted
 (even if it contains special characters within).
 | `separator` | String | `,` a| Character that separates records from another.
-| `streaming` | Boolean | `false` a| Used for streaming input.
-Valid options: `true` or `false` (Only use if entries are accessed sequentially.)
 |===
 
 All of these parameters are optional.
@@ -1187,8 +1282,113 @@ the following property.
 |===
 | Parameter | Type | Default | Description
 | `streaming` | Boolean | `false` a| Used for streaming input. Use only if
-entries are accessed sequentially. Valid options: `true` or `false`
+entries are accessed sequentially. Valid options: `true` or `false`.
+The input must be a top-level array. For more on streaming in DataWeave, see
+xref:dataweave-language-introduction.adoc#dw_readers_writers[DataWeave Readers and Writers].
 |===
+
+To demonstrate streaming, the following example streams a JSON file by reading
+each element in an array one at a time.
+
+.Streaming Example:
+[source,xml,linenums]
+----
+<file:config name="File_Config" doc:name="File Config" />
+<flow name="dw-streaming-jsonFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read"
+     config-ref="File_Config"
+     path="${app.home}/myjsonarray.json"
+     outputMimeType="application/json; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.myJsonExample map ((element) -> {
+returnedElement : element.zipcode
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    path="/path/to/output/file/output.json"
+    config-ref="File_Config1"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The streaming example configures the HTTP listener to stream the JSON input
+by setting `outputMimeType="application/json; streaming=true"`.
+In the Studio UI, you can set the *MIME Type* on the listener to `application/json`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* The DataWeave script in the *Transform Message* component iterates over the
+array in the input payload and selects its `zipcode` values.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+The JSON input payload looks like the following.
+
+.JSON Input for Streaming Example (truncated):
+[source,json,linenums]
+----
+{ "myJsonExample" : [
+    {
+      "name" : "Shoki",
+      "zipcode": "95838"
+    },
+    {
+      "name" : "Leandro",
+      "zipcode": "95823"
+    },
+    {
+      "name" : "Mariano",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Cristian",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Kevin",
+      "zipcode": "95824"
+    },
+    {
+      "name" : "Stanley",
+      "zipcode": "95841"
+    }
+  ]
+}
+----
+
+.Output for JSON Streaming Example:
+[source,json,linenums]
+----
+[
+  {
+    "returnedElement": "95838"
+  },
+  {
+    "returnedElement": "95823"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95824"
+  },
+  {
+    "returnedElement": "95841"
+  }
+]
+----
 
 [[skip_on_null]]
 ==== Skip Null On (for JSON)

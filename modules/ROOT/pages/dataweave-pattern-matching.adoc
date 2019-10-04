@@ -56,7 +56,7 @@ value match {
 As this example shows, the expression returns the results of the first matching
 `case` statement:
 
-.Match Statement Example
+.match Statement Example
 [source,dataweave,linenums]
 ----
 %dw 2.0
@@ -84,9 +84,12 @@ parameter name `$`, an unnamed parameter.
 To name the input expression in the `else` statement, you can
 replace the `else` statement with a `case` statement that is always `true`:
 
-.Match Statement Example
+.match Statement Example
 [source,dataweave,linenums]
 ----
+%dw 2.0
+output application/json
+---
 "hello world" match {
 	case word matches  /(hello)\s\w+/ ->  word[1] ++ " was matched"
 	case literalMatch: "hello world" -> upper(literalMatch)
@@ -94,7 +97,7 @@ replace the `else` statement with a `case` statement that is always `true`:
 }
 ----
 
-For use cases where you need a Boolean result based on whether a value
+For use cases where you need a boolean result based on whether a value
 matches or not, you can use the `matches` function instead of using pattern
 matching.
 
@@ -103,33 +106,28 @@ matching.
 
 Matches when the evaluated value equals a simple literal value.
 
-In this example, the first field matches the value in `payload.string` and
-returns a Boolean. The second field performs the same match, but returns an
+In this example, the first field matches the value in `myInput.string` and
+returns a boolean. The second field performs the same match, but it returns an
 object that contains both a boolean and a reference to the validated value.
 
-.Transform
+.DataWeave Script
 [source,dataweave,linenums]
 ----
 %dw 2.0
+var myInput = {
+  "string": "Emiliano"
+}
 output application/json
 ---
 {
-  a: payload.string match {
+  a: myInput.string match {
     case "Emiliano" -> true
     case "Mariano" -> false
   },
-  b: payload.string match {
+  b: myInput.string match {
     case str: "Emiliano" -> { "matches": true, value: str }
     case str: "Mariano" -> { "matches": false, value: str }
   }
-}
-----
-
-.Input
-[source,json,linenums]
-----
-{
-  "string": "Emiliano"
 }
 ----
 
@@ -150,23 +148,27 @@ output application/json
 
 Matches when a given expression returns `true`.
 
-In this example, the first field matches the value of `payload.string` against
+In this example, the first field matches the value of `myInput.string` against
 two alternatives and conditionally appends a different string to it. The second
-field evaluates if the value in `payload.number` is "greater", "less than", or
-"equal" to 3 and returns the corresponding string.
+field evaluates if the value in `myInput.number` is greater than (`>`),
+less than (`<`), or equal to (`==`) 3 and returns the corresponding string.
 
-.Transform
+.DataWeave Script
 [source,dataweave,linenums]
 ----
 %dw 2.0
+var myInput = {
+  "string": "Emiliano",
+  "number": 3.14
+}
 output application/json
 ---
 {
-  a: payload.string match {
+  a: myInput.string match {
     case str if str == "Mariano" -> str ++ " de Achaval"
     case str if str == "Emiliano" -> str ++ " Lesende"
   },
-  b: payload.number match {
+  b: myInput.number match {
     case num if num == 3 -> "equal"
     case num if num > 3 -> "greater than"
     case num if num < 3 -> "less than"
@@ -174,24 +176,13 @@ output application/json
 }
 ----
 
-.Input
-[source,json,linenums]
-----
-{
-  "string": "Emiliano",
-  "number": 3.14
-}
-----
-
 .Output
 [source,json,linenums]
 ----
-[
-  {
-    "a": "Emiliano Lesende",
-    "b": "greater than"
-  }
-]
+{
+  "a": "Emiliano Lesende",
+  "b": "greater than"
+}
 ----
 
 [[pattern_match_data_types]]
@@ -199,18 +190,23 @@ output application/json
 
 Matches when the evaluated value is the specified data type.
 
-In this example, the first field evaluates the type of `payload.a` and returns
+In this example, the first field evaluates the data type of `myInput.a` and returns
 a string with the corresponding type name. The second field is similar but also
-returns the value of the `payload.b`.
+returns the value of the `myInput.b`.
 
-.Transform
+.DataWeave Script
 [source,dataweave,linenums]
 ----
 %dw 2.0
+var myInput =
+{
+  "a": "Emiliano",
+  "b": 3.14
+}
 output application/json
 ---
 {
-  a: payload.a match {
+  a: myInput.a match {
     case is Object -> 'OBJECT'
     case is String -> 'STRING'
     case is Number -> 'NUMBER'
@@ -219,24 +215,15 @@ output application/json
     case is Null -> 'NULL'
     else -> 'ANOTHER TYPE'
   },
-  b: payload.b match {
+  b: myInput.b match {
     case y is Object -> { 'Type': { 'OBJECT' : y} }
     case y is String -> { 'Type': { 'STRING' : y} }
     case y is Number -> { 'Type': { 'NUMBER' : y} }
     case y is Boolean -> { 'Type': { 'BOOLEAN' : y} }
     case y is Array -> { 'Type': { 'ARRAY' : y} }
     case y is Null -> { 'Type': { 'NULL' : y} }
-    else -> { 'Type': { 'ANOTHER TYPE' : payload.b} }
+    else -> { 'Type': { 'ANOTHER TYPE' : myInput.b} }
   }
-}
-----
-
-.Input
-[source,json,linenums]
-----
-{
-  "a": "Emiliano",
-  "b": 3.14
 }
 ----
 
@@ -256,34 +243,33 @@ output application/json
 [[pattern_match_regex]]
 == Pattern Matching on Regular Expressions
 
-Matches when the evaluated value fits a given regular expression (regex), specifically a regex "flavor" supported by Java. In this example, the input payload includes an array of strings. The script uses the `map` function to iterate through the array. It evaluates each element against a Java regex and outputs an object based on matches to the input.
+Matches when the evaluated value fits a given regular expression (regex),
+specifically a regex "flavor" supported by Java. In this example, the input
+variable (`myInput`) includes an array of strings. The script uses the `map` function
+to iterate through the array. It evaluates each element against a Java regex
+and outputs an object based on matches to the input.
 
-.Transform
+.DataWeave Script
 [source,dataweave,linenums]
 ----
 %dw 2.0
-output application/json
----
-{
-  a: payload.phones map ($ match {
-     case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1]}
-     case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
-   }),
- b: payload.phones map ($ match {
-   case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1], area: phone[2], number: phone[3] }
-   case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
- })
-}
-----
-
-.Input
-[source,json,linenums]
-----
-{
+var myInput = {
   "phones": [
     "+1 (415) 229-2009",
     "(647) 456-7008"
   ]
+}
+output application/json
+---
+{
+  a: myInput.phones map ($ match {
+     case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1]}
+     case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+   }),
+ b: myInput.phones map ($ match {
+   case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1], area: phone[2], number: phone[3] }
+   case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+ })
 }
 ----
 
@@ -318,3 +304,4 @@ output application/json
 
 * xref:dataweave-types.adoc[DataWeave Types]
 * xref:dataweave-selectors.adoc[DataWeave Selectors]
+* xref:dataweave-quickstart.adoc[DataWeave Quickstart]
