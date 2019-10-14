@@ -1,0 +1,125 @@
+= Look Up Data in an Excel (XLSX) File
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+This DataWeave example uses the `filter` function to return only the
+rows in an Excel (XLSX) input file that contain a specified value.
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+NOTE: By default, files over 1.5 MB are stored on disk. Smaller
+files are stored in memory.
+
+The following DataWeave script reads an XLSX file and returns filtered data
+from it. It assumes that a spreadsheet named `ourBugs.xlsx` contains data
+on bugs assigned to all the members of a team, including an assignee named
+`Fred M`.
+
+.DataWeave Script:
+[source,dataweave, linenums]
+----
+%dw 2.0
+var myInput = readUrl("classpath://ourBugs.xlsx", "application/xlsx")
+output application/json
+---
+myInput."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")
+----
+
+* The script passes `classpath:ourBugs.xlsx` to the `readUrl` function to read
+the file from a Studio project directory (`src/main/resources`). It stores the
+results in the variable `myInput`.
+
+* The script selects a sheet named `Data` from the XLSX file, then filters out
+all records except the ones where the `Assignee` column contains the value
+`Fred M`. It returns the results in an array of JSON objects, for example:
++
+.Sample Output:
+[source,JSON,linenums]
+----
+[
+  {
+    "Issue Key": "BUG-11708",
+    "Issue Type": "Bug",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Natalie C",
+    "Priority": "To be reviewed",
+    "Status": "Closed",
+    "Resolution": "Done",
+    "Created": "2019-04-29T03:57:00",
+    "Updated": "2019-05-06T10:40:00",
+    "Due Date": ""
+  },
+  {
+    "Issue Key": "BUG-4903",
+    "Issue Type": "Story",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Fred M",
+    "Priority": "To be reviewed",
+    "Status": "In Progress",
+    "Resolution": "",
+    "Created": "2019-05-07T11:22:00",
+    "Updated": "2019-05-08T10:16:00",
+    "Due Date": ""
+  },
+  {
+    "Issue Key": "BUG-4840",
+    "Issue Type": "Story",
+    "Summary": "Some Description of the Bug",
+    "Assignee": "Fred M",
+    "Reporter": "Pablo C",
+    "Priority": "To be reviewed",
+    "Status": "In Validation",
+    "Resolution": "",
+    "Created": "2019-04-30T07:11:00",
+    "Updated": "2019-05-08T10:16:00",
+    "Due Date": ""
+  }
+]
+----
+
+Using the same DataWeave script as in the previous example, the next example writes the results of
+the `filter` expression to a file, `fredBugs.json`. The example is a
+configuration XML from a Mule project in Studio.
+
+.XML Configuration in Studio:
+[source,XML, linenums]
+----
+<file:config name="File_Read_Config" doc:name="File Read Config" />
+<file:config name="File_Write_Config" doc:name="File Write Config" />
+<flow name="xlsx-lookup" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+var myInput = readUrl("classpath://ourBugs.xlsx", "application/xlsx")
+output application/json
+---
+myInput."Data" filter ((entry, index) -> entry."Assignee" == "Fred M")]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write JSON"
+              path="/path/to/fredBugs.json"
+              config-ref="File_Write_Config">
+</flow>
+----
+
+* The Scheduler (`scheduler`) triggers the flow to execute the next
+component, Transform Message.
+* The Transform Message component (`ee:transform`) provides a DataWeave
+script to return all records from the `"Data"` sheet for which the
+`Assignee` column contains the value `Fred M`, and it transforms the
+binary XLSX input to JSON output.
+* The Write operation (`file:write`) from the File connector receives the JSON
+payload from `ee:transform` and writes it to a file called `fredBugs.json`.
+
+== See Also
+
+* xref:dw-core-functions-filter.adoc[filter Function]
+* xref:dataweave-formats.adoc[DataWeave Output Formats and Writer Properties]
