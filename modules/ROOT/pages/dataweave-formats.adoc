@@ -83,6 +83,7 @@ of the file that is getting read. DataWeave supports streaming for a few
 formats:
 ** <<format_csv, CSV>>
 ** <<format_json, JSON>>
+** <<format_excel, XLSX>> (starting in Mule 4.2.2)
 
 [[reader_writer_properties]]
 === Using Reader and Writer Properties
@@ -771,11 +772,65 @@ the following property.
 headers. Valid options: `true` or `false`
 | `ignoreEmptyLine` | Boolean | `true` a| Indicates whether to ignore empty
 line. Valid options: `true` or `false`
+| `streaming` | Boolean | `false` a| Introduced in Mule 4.2.2: Indicates whether
+to read the input Excel file as a stream of data. Streaming is intended for
+processing a large file. When streaming is enabled, the reader accesses each row
+sequentially, keeping one row in memory at a time, instead of making all data
+available at once. Streaming does not permit random access to rows in the file.
 | `tableOffset` | String | None a| The position of the first cell in the
 table (`<Column><Row> example A1`).
 | `zipBombCheck` | Boolean | `true` a| If set to `false`, the zip bomb check is
 turned off. Valid options: `true` or `false`
 |===
+
+[[stream_csv]]
+.Streaming Example:
+By default, the Excel reader stores input data from an entire file in-memory
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance
+of the reader by setting a `streaming` property to `true`. To demonstrate the use of
+this property, the next example streams a XLSX file and transforms it to JSON.
+
+The following example streams an Excel file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<http:listener-config
+    name="HTTP_Listener_config"
+    doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="streaming_flow" >
+  <http:listener
+    doc:name="Listener"
+    config-ref="HTTP_Listener_config"
+    path="/"
+    outputMimeType="application/xlsx; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Sheet Name" map ((row) -> {
+    foo: row.a,
+    bar: row.b
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+The example:
+
+* Configures the HTTP listener to stream the XLSX input
+by setting `outputMimeType="application/xlsx; streaming=true"`.
+In the Studio UI, you can use the *MIME Type* on the listener to `application/xlsx`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* Uses a DataWeave script in the *Transform Message* component to iterate
+over each row in the XLSX payload (an XLSX sheet called `"Sheet Name"`) and
+select the values of each cell in the row (using `row.a`, `row.b`). It assumes
+columns named `a` and `b` and maps the values from each row in those columns
+into `foo` and `bar`, respectively.
 
 === Writer Properties (for Excel)
 
