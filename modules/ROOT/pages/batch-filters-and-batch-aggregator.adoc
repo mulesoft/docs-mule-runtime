@@ -14,7 +14,7 @@ This document outlines how and when to use batch filters and the batch commit.
 
 You can apply one or more filters as attributes to any number of batch steps. +
 Imagine a batch job whose first batch step checks if a Salesforce contact exists for a record, and a second batch step that updates each existing Salesforce contact with new information. You can apply a filter to the second batch step to ensure it only processes records that didn't fail during the first batch step. +
-By having batch steps accept only some records for processing, you streamline the batch job so the runtime can focus only on the relevant data for a particular batch step.
+By having batch steps accept only some records for processing, you streamline the batch job so the Mule runtime engine can focus only on the relevant data for a particular batch step.
 
 A batch step uses two attributes to filter records:
 
@@ -190,25 +190,36 @@ Using random access, you can change a record's payload at any given index positi
 
 ==== Considerations for Defining a Block Size
 
-On a traditional on-line processing model, each request is usually mapped to a worker thread. Regardless of the processing type (either synchronous, asynchronous, one-way, request-response or even if the requests are temporarily buffered before being processed), servers usually end up in a 1:1 relationship between a request and a running thread. +
+In a traditional online processing model, each request is usually mapped to a worker thread. Regardless of the processing type (either synchronous, asynchronous, one-way, request-response or even if the requests are temporarily buffered before being processed), servers usually end up in a 1:1 relationship between a request and a running thread. +
 When it comes to a batch job, all records are first stored in a persistent queue before the Process phase begins, so that the traditional threading model wouldn't apply.
 
-To improve performance, the runtime queues and schedules batch records in blocks of 100 records. This lessens the amount of I/O requests and improves an operation's load. +
-The default threading profile of the runtime is 16 threads per job. Therefore, in a default configured batch job each of the 16 threads processes a block of 100 records. +
-Each thread iterates through that block processing each record, and then each block is queued back, and the process continues.
+To improve performance, the runtime queues and schedules batch records in blocks
+of up to 100 records per thread. This behavior lessens the amount of I/O requests
+and improves an operation's load. Batch jobs use the Mule runtime engine's thread pools, so
+there is no default for the job. Each thread iterates through that block to
+process each record, and then each block is queued back, and the process continues.
 
-Consider having 1 million records to place in a queue for a 3 step batch job. At least three million I/O operations occur as the runtime takes and requests each record as they move through the job's phases. +
-Performance requires having enough available memory to process the 16 threads in parallel, which means moving 1600 records from persistent storage into RAM. The larger your records and their quantity, the more available memory you need for batch processing.
+Consider having 1 million records to place in a queue for a 3-step batch job. At least three million I/O operations occur as the Mule runtime engine takes and requests each record as they move through the job's phases. +
+Performance requires having enough available memory to process the threads in parallel, which means moving the records from persistent storage into RAM. The larger your records and their quantity, the more available memory you need for batch processing.
 
-Although, the standard model of 16 threads, with 100 records per batch job works for most use cases, consider three use cases where you might need to increase or decrease the block size:
+Although the standard model of up to 100 records per thread in the batch job works for most use cases, consider three use cases where you need to increase or decrease the block size:
 
 * Assume you have 200 records to process through a batch job. With the default 100-record block size, Mule can only process two records in parallel at a time. If you request fewer than 101 records, then your processing becomes sequential. If you need to process heavy payloads, then queueing a hundred records demands a large amount of working memory.
-* Consider a batch job that needs to process images, and an average image size of 3 MB. You then have 100 blocks with payloads of 3 MB, being processed in 16 threads. Hence your default threading-profile setting would require around 4.6 GB of working memory just to keep the blocks in the queue. You should set a lower block size to distribute each payload through more jobs and lessen the load on your available memory.
-* Suppose having 5 million records with payloads so small that you can fit blocks of 500 records in your memory without problems. Setting a larger block size improves your batch job time without sacrificing working memory load.
+* Consider a batch job that needs to process images, and an average image size of 3 MB. In this case, Mule processes 100-record blocks with payloads of 3 MB in each thread. Hence, your default threading-profile setting would require a large amount of working memory just to keep the blocks in the queue. In this case, set a lower block size to distribute each payload through more jobs and lessen the load on your available memory.
+* Suppose you have 5 million records with payloads so small that you can fit blocks of 500 records in your memory without problems. Setting a larger block size improves your batch job time without sacrificing working memory load.
 
-To take full advantage of this feature, you need to understand how the block sizes affect your batch job. Running comparative tests with different values and testing performance helps you find an optimum block size before moving this change into production.
+To take full advantage of this feature, you must understand how the block sizes affect your batch job. Running comparative tests with different values and testing performance helps you find an optimum block size before moving this change into production.
 
 Remember that modifying the batch block size is optional. If you apply no changes, the default value is 100 records per block.
+
+You set the size through the Batch Aggregator component, for example:
+
+[source,xml,linenums]
+----
+<batch:aggregator size="100">
+ ...
+</batch:aggregator>
+----
 
 === Streaming Records in a Batch Aggregator
 
@@ -289,4 +300,3 @@ Such a transaction must start and end within the step's boundaries.
 
 * xref:batch-processing-concept.adoc[Batch Processing]
 * xref:batch-job-instance-id.adoc[Batch Job Instance ID]
-
