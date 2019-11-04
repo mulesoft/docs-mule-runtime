@@ -441,7 +441,7 @@ Once this flow is executed, it calculates a key from the current event using the
 </flow>
 ----
 
-== Example: Cache Scope Usage
+== Example Cache Scope Usage
 
 The example that follows demonstrates the power of the cache scope with a Fibonacci function. The Fibonacci sequence is a series of numbers in which the next number in the series is always the sum of the two numbers preceding it.
 
@@ -451,31 +451,53 @@ In this example, the Mule flow receives and performs two tasks for each request:
 `F(n) = F(n-1) + F(n-2) with F(0) = 0 and F(1) = 1`
 +
 . Records and returns the cost of the calculation, where each individual invocation of a calculation task adds 1 to the cost; that is, add two numbers in the sequence.
-+
+
+=== Example in Anypoint Studio
+Review the flow example in Studio:
+
 image::cache-flow-2.png[cache+flow+2]
 
-=== View the XML
+==== Create a New Project in Studio
+. In Anypoint Studio, click *File > New > Mule Project*.
+. In the New Mule Project window add a *Project Name*, for example: `cachescopesample`.
+. Click *Finish*.
 
-Note: This project requires link:{attachmentsdir}/FibonacciResponseGenerator.java[FibonacciResponseGenerator.java]
+==== Add Fibonacci Response Generator Java Class
+This example project requires `FibonacciResponseGenerator.java` To create a java class follow these steps:
+
+. In the `src/main/app` folder of the example project, do right click *> New > Package*.
+. In the Package window, write `com.mulesoft.mule.cache` for *Name*.
+. Click *Finish*
+. In the `com.mulesoft.mule.cache` package file of your project, do right click *> New > Class*.
+. In the Java Class window, write `FibonacciResponseGenerator.java` for *Name*.
+. Click *Finish*
+. Copy the code from {attachmentsdir}/FibonacciResponseGenerator.java[FibonacciResponseGenerator.java] and paste it in the `FibonacciResponseGenerator.java` file of your example project.
+
+==== Example in XML
+After you create your Mule project and add the Fibonacci Response Generator Java class, review and add the example XML code in your Studio project:
+
+. Copy and paste the following XML code into your `cachescopesample.xml` file of your example project.
+. Save all your changes and run the application.
+
 
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:spring="http://www.springframework.org/schema/beans"
       xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
-      xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
-          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-          http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
-          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
 
-    <configuration>
+    <configuration doc:name="Configuration">
         <expression-language>
             <global-functions>
                 def fibonacciRequest(n, cached)
@@ -496,37 +518,39 @@ Note: This project requires link:{attachmentsdir}/FibonacciResponseGenerator.jav
             </global-functions>
         </expression-language>
     </configuration>
+    <spring:beans>
+        <spring:bean id="responseGenerator" class="com.mulesoft.mule.cache.FibonacciResponseGenerator"/>
+    </spring:beans>
 
-    <spring:bean id="responseGenerator" class="com.mulesoft.mule.cache.FibonacciResponseGenerator"/>
+    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties.'http.query.params'.['n']]" responseGenerator-ref="responseGenerator"/>
 
-    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties['n']]" responseGenerator-ref="responseGenerator"/>
-
-    <vm:connector name="vmConnector">
+    <vm:connector name="vmConnector" doc:name="VM">
         <dispatcher-threading-profile maxThreadsActive="200"/>
     </vm:connector>
 
-    <http:listener-config name="listener-config" host="localhost" port="8081"/>
-    <flow name="cache-exampleFlow1" doc:name="cache-exampleFlow1">
+    <http:listener-config name="listener-config" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="cache-exampleFlow1" >
         <http:listener config-ref="listener-config" path="fibonacci" doc:name="HTTP Connector"/>
         <expression-filter expression="#[message.inboundProperties.'http.request.path' != '/favicon.ico']" doc:name="Expression"/>
+        <logger message="#[message.inboundProperties.'http.query.params'.['n']]" level="INFO" doc:name="Logger"/>
  <choice doc:name="Choice">
-            <when expression="message.inboundProperties['n'] &lt; 20">
-                <flow-ref name="calculateFibonacci"/>
- <expression-component>payload= "Fibonacci(" + message.inboundProperties['n'] + ") = " + payload +"\nCOST: " + message.outboundProperties['cost']</expression-component>
+            <when expression="message.inboundProperties.'http.query.params'.['n'] &lt; 20 ">
+                <flow-ref name="calculateFibonacci" doc:name="Flow Reference"/>
+ <expression-component doc:name="Expression"><![CDATA[payload= "Fibonacci(" + message.inboundProperties['n'] + ") = " + payload +"\nCOST: " + message.outboundProperties['cost']]]></expression-component>
             </when>
             <otherwise>
-                <expression-component>payload= "ERROR: n must be less than 20"</expression-component>
+                <expression-component doc:name="Expression"><![CDATA[payload= "ERROR: n must be less than 20"]]></expression-component>
             </otherwise>
         </choice>
     </flow>
 
     <flow name="calculateFibonacci">
-        <vm:inbound-endpoint path="fibonacci" exchange-pattern="request-response"/>
+        <vm:inbound-endpoint path="fibonacci" exchange-pattern="request-response" doc:name="VM"/>
  <ee:cache cachingStrategy-ref="Caching_Strategy"
      filterExpression="#[groovy:message.getInboundProperty('nocache') == null]"
         doc:name="Cache">
-            <logger level="INFO" message="#[payload]"/>
-            <expression-component><![CDATA[
+            <logger level="INFO" message="#[payload]" doc:name="Logger"/>
+            <expression-component doc:name="Expression"><![CDATA[
                 n = message.inboundProperties['n'];
                 if (n < 2)
                 {
@@ -545,7 +569,10 @@ Note: This project requires link:{attachmentsdir}/FibonacciResponseGenerator.jav
         </ee:cache>
     </flow>
 </mule>
+
 ----
+
+==== Test the Example
 
 If a call to the Fibonacci function has already been calculated and cached, the flow returns both the cached response and the cost of retrieving the cached response, which is 0. To demonstrate the number of invocations the cache spares the function, this example includes the ability to force the flow to perform the full calculation by adding a `nocache` parameter to the request URL.
 
