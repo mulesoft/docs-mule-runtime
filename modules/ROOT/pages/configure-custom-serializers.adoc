@@ -1,0 +1,171 @@
+= Configure Custom Serializers
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+You can change the serialization mechanism to improve functionality and performance when Mule runtime engine executes any of the following processes:
+
+* Read from or write to a persistent ObjectStore
+* Read from or write to a persistent VM or JMS queue
+* An object distributes through a Mule cluster
+* Read from or write to an object from a file
+
+== Compatibility
+
+If you are running Mule runtime engine (Enterprise Edition), you can configure the Kryo serializer to improve performance.
+
+If you are using Mule Kernel(Community Edition), you can create a custom serializer using the Serialization API.
+
+== Configure the Kryo Serializer
+
+Mule provides an implementation of `ObjectSerializer` which relies on the Kryo framework. Using Kryo provides the following benefits:
+
+* Better performance +
+Kryo is much faster than Java serialization
+* Support for a wider range on Java types +
+Kryo is not bounded by most of the limitations that Java serialization imposes like requiring to implement the `Serializable` interface, having a default constructor, etc.
+* Support for compression +
+You can use either Deflate or GZip compression algorithms.
+
+The Kryo namespace enables you to configure this serializer inside your Mule application, without defining a custom Spring bean. The following configuration example sets the default serializer to a Kryo based one:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:kryo="http://www.mulesoft.org/schema/mule/kryo"
+       xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/kryo http://www.mulesoft.org/schema/mule/kryo/current/mule-kryo.xsd">
+
+    <kryo:serializer name="kryo" />
+    <configuration defaultObjectSerializer-ref="kryo" />
+
+</mule>
+----
+
+Additionally, you can also include the `compressionMode` XML attribute to configure compression:
+
+[source,xml,linenums]
+----
+<kryo:serializer name="noCompression" compressionMode="NONE" /> <!-- NONE is the default value -->
+<kryo:serializer name="deflate" compressionMode="DEFLATE" />
+<kryo:serializer name="gzip" compressionMode="GZIP" />
+----
+
+== Serialization API
+
+The open source Serialization API provides the `ObjectSerializer.java` which enables you to serialize or deserialize objects into a byte array. See https://github.com/mulesoft/mule-api/blob/master/src/main/java/org/mule/runtime/api/serialization/ObjectSerializer.java[ObjectSerializer.java in GitHub].
+
+The Serialization API has the following features:
+
+* Is thread-safe
+* Passes an OutputStream when serializing and streaming
+* Allows an InputStream as an input source
+
+In addition, if you are going to serialize and deserialize in Mule, then you must define the `getInternalProtocol()` method.
+If you are going to use the serialized object in a external system, define that in the `getExternalProtocol()` method. +
+A https://github.com/mulesoft/mule-api/blob/master/src/main/java/org/mule/runtime/api/serialization/SerializationProtocol.java[Serialization Protocol] is the Object used to serialize and deserialize.
+
+== Configure a Custom Serializer
+
+Configure the default `ObjectSerializer` for your Mule application using the Mule `<configuration>` tag:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+
+  <spring:config name="Spring_Config" files="serializer.xml" />
+  <configuration defaultObjectSerializer-ref="customSerializer" />
+
+</mule>
+----
+
+Then, configure the bean in the `serializer.xml` file:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="utf-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.3.xsd">
+	<bean id="customSerializer" name="customSerializer"
+		class="com.my.CustomSerializer" scope="singleton">
+		<!-- ... -->
+	</bean>
+</beans>
+----
+
+If `defaultObjectSerializer` is not configured, then the default implementation uses plain old Java serialization. This means that from a user perspective, there’s no behavioral change unless you specifically set a different serializer.
+
+The Batch module is the only component that does not have its behavior affected, because this module always uses serialization.
+
+== Obtain a Configured ObjectSerializer
+
+There are different ways to obtain an `ObjectSerializer` inside Java code. Generally, the recommended approach is through dependency injection. The following code example shows you how to get the currently configured `ObjectSerializer`:
+
+[source,java,linenums]
+----
+public class MyClass {
+   @Inject
+   private  ObjectSerializer objectSerializer;
+}
+----
+
+If you want a specific named serializer (whether it's the default or not), you can access the serializer by name:
+
+[source,java,linenums]
+----
+public class MyClass {
+  @Inject
+  @Named ("mySerializer")
+  private ObjectSerializer objectSerializer;
+}
+----
+
+== Performance Improvements with Kryo
+
+Using Kryo provides particular performance improvements over plain old Java serialization when you are using these components:
+
+* Persistent  or clustered object stores
+* Persistent or distributed VM queues
+* JMS connector
+
+=== Compression
+
+The Kryo serializer without compression is significantly faster than the plain old Java serializer in all cases. However, the compression mode only provides an actual improvement on the high availability (HA) cases.
+
+For the compression to be worthy, the amount of time the CPU spends compressing and decompressing has to be significantly lower than the amount of I/O time saved by reducing the payload size. Because network operations are typically slower than disk operations and because HA clustering requires node replication, which translates to more traffic, only in the HA case the compression paid off.
+
+This is not a universal constant. You might be running Mule on machines with slower disks or higher I/O demands in which compression might be worthy on any case. Also, these tests were performed with 1 MB payloads, but the larger the data stream, the more worthy becomes the compression.
+
+== Limitations and Considerations
+
+Ensure that you are aware of the following limitations and considerations when using serializers.
+
+=== Changing Serializers Requires a Clean Slate
+Serializers are not interoperable nor interchangeable. That means that if you decide to change the serializer your application uses, you need to make sure that all messages in VM and JMS queues have been consumed and that those queues are empty by the time the new serializer kicks in. This is because Kryo serializer won’t be able to read datagrams written by the Java serializer and vice-versa. The same thing applies to persistent ObjectStores. If you try to read an entry generated with a different serializer, you can't read the entry.
+
+=== Serialization in a Shared VM Connector
+Domains provide a way to share resources between applications. For example, you can define a VM connector on a domain to allow inter-app communication through VM message queues. However, serializers can only be configured at an application level, they cannot be configured at a domain. If applications A and B communicate with each other through a VM connector defined on a domain to which both belong, but A serializes using Java and B using Kryo, it just works. Whenever either app tries to write to an endpoint which uses the shared connector, that particular message is not serialized with the application’s serializer but the one the VM connector uses. This is good from the point of view of the plug and play experience, but you won’t be able to tell that shared VM connector to use Kryo and get a performance improvement out of it.
+
+=== Less Improvement for a Local Persistent ObjectStore
+Unlike the other cases, the local persistent ObjectStore doesn’t show much improvement because of high contention on the ObjectStore implementation which pretty much absorbs all the gain.
+
+=== No JMS Improvement Chart
+Per the JMS API, the queues don’t work with raw payload objects. Instead, you have to provide an instance of the javax.jms.Message class. The broker client is then responsible for serializing it, not Mule. Therefore, the impact of Kryo in such an scenario is minimum. The only performance gain of using Kryo with JMS is that Mule serializes the MuleSession and puts it as a header in Base64 format. Serializing the MuleSession with Kryo can give you up to 10% performance speed, but we don’t consider it as an example use case since the big part of the serialization is up to the JMS broker instead of Mule.
+
+=== Problematic Types
+Although Kryo is capable is serializing objects that don’t implement the Serializable interface, setting Kryo as the default serializer doesn’t mean that components such as the VM connector, ObjectSerializer, or Cluster are able to handle objects which don’t implement such an interface. That’s because even though Kryo can deal with those objects, the Java APIs for those components still expect instances of Serializable in their method signatures. +
+Plain old Java serialization fails with an object that implements the Serializable interface. However if serialization contains another object which doesn’t implement the Serializable interface, Kryo is likely (but not guaranteed) to succeed. A typical case is a POJO containing an `org.apache.xerces.jaxp.datatype.XMLGregorianCalendarImpl,` which is in use in the https://www.anypoint.mulesoft.com/exchange/?search=netsuite[NetSuite] or https://www.anypoint.mulesoft.com/exchange/?search=Microsoft+Dynamics+CRM&type=connector[Microsoft Dynamics CRM] connectors.
+
+== See Also
+
+* https://github.com/EsotericSoftware/kryo[Kryo information]
