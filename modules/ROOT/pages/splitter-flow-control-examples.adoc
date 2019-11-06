@@ -3,13 +3,10 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-== Example Splitting and Aggregating with Asynchronous Flows
+== Example: Splitting and Aggregating with Asynchronous Flows
 
 This example builds upon the xref:splitter-flow-control-reference.adoc#basic-splitter-example[Splitter basic example]. Follow the steps below to run message fragments in asynchronous flows and then aggregate them back into a single message.
 
-[.ex]
-=====
-[discrete.view]
 === Studio Visual Editor
 
 . Drag a *VM connector* to the end of the flow.
@@ -17,11 +14,11 @@ This example builds upon the xref:splitter-flow-control-reference.adoc#basic-spl
 . Drag a second VM connector outside the existing flow, below it. This creates a new flow.
 . Drag the existing aggregator and logger you had in the first flow to the new second flow, after the VM connector.
 +
-image::splitter-flow-3.png[splitter+flow+3]
+image::mruntime-splitter-example-flow-1.png[splitter-example-flow-1]
 +
 . Configure the two VM connectors. Change both their *Queue Path* to `step2`.
 +
-image::vm4.png[]
+image::mruntime-vm-config.png[]
 +
 After you configure both VMs with the same *Queue Path*, they are linked. Messages that arrive to the first VM continue their path out of the second VM.
 +
@@ -32,7 +29,6 @@ You should see four messages logged into the console: the first three should be 
 * Although the aggregator was triggered three times, once for every fraction of the message that reached it, it produced one single output message, only when all of the fractions were in place
 * The aggregator assembles the message in the order in which fractions have arrived; the final message may be shuffled. If maintaining the original sequence is important to you, take a look at the Advanced Example 2 in this page.
 
-[discrete.view]
 === XML Editor
 
 . Add a second flow to your project.
@@ -84,13 +80,10 @@ Provide these same attributes for both VM connectors:
 After both VMs share the same *Queue Path*, they are linked. Messages that arrive to the first VM continue their path out of the second VM.
 What you have at this point appears to work identically to what you built in the first example. There is, however, one key difference: each fraction of the message processes simultaneously rather than in sequence. If you deploy your app to a cluster of servers this has a big effect on performance.
 +
-----
-
 You should see four messages logged into the console: the first three should be short, one for every "actor" XML element (notice the ID attribute in each message). After these first three messages there should be a fourth, longer message, which is logged after the aggregator has run. Notice two things:
-
++
 * Although the aggregator was triggered three times, once for every fraction of the message that reached it, it produced one single output message, only when all of the fractions were in place.
 * The aggregator assembles the message in the order in which fractions have arrived; the final message may be shuffled. If maintaining the original sequence is important to you, take a look at the Advanced Example 2 in this page.
-=====
 
 === Full Example Code
 
@@ -139,14 +132,11 @@ Follow the steps below to:
 * Arrange them back into the original sequence.
 * Aggregate them back into a single message that follows the original sequence.
 
-[.ex]
-=====
-[discrete.view]
 === Studio Visual Editor
 
 . Add a *Resequencer* Flow Control before the aggregator
 +
-image::splitter-flow-5.png[splitter+flow+5]
+image::mruntime-splitter-reorder.png[splitter-reorder-example]
 +
 The Resequencer waits for all of the messages in the group to arrive (keeping track of MULE_CORRELATION_ID and MULE_CORRELATION_GROUP_SIZE) and then reorder them according to their MULE_CORRELATION_SEQUENCE index.
 +
@@ -164,7 +154,7 @@ The following is not an implementable solution but rather a proof of concept tha
 
 . Add a *Groovy component* in the second flow, between the VM and the logger.
 +
-image::splitter-flow-6.png[splitter+flow+6]
+image::mruntime-splitter-groovy.png[splitter+flow+6]
 +
 . Copy the following code into the Groovy Component:
 +
@@ -178,7 +168,6 @@ return payload
 +
 This snippet of code simply introduces a random delay of up to 10 seconds. As each message is running asynchronously, this delay can potentially alter the order in which messages move on to the next step, simulating what could happen in a real implementation with parallel servers processing each fraction of the message.
 
-[discrete.view]
 === XML Editor
 
 . Add a *Resequencer* Flow Control before the aggregator.
@@ -221,9 +210,7 @@ The following is not an implementable solution but rather a proof of concept tha
 ----
 +
 This snippet of code simply introduces a random delay of up to 10 seconds. As each message is running asynchronously, this delay can potentially alter the order in which messages move on to the next step, simulating what could happen in a real implementation with parallel servers processing each fraction of the message.
-=====
-
-Run the project.
+. Run the project.
 
 You should now see three messages logged into the console, one for every "actor" XML element. These likely not have their MULE_CORRELATION_SEQUENCE indexes in order due to the random delays caused by the Groovy code.
 
@@ -280,5 +267,101 @@ http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mul
   <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
   <logger message="#[payload]" level="INFO" doc:name="Logger"/>
 </flow>
+</mule>
+----
+
+[[example-nested-splitters]]
+== Example: Nested Splitters
+
+The following example project sets the payload to `[[1,2,3,4], [5,6,7,8], [9,10,11,12]]`, then uses nested splitters to process each element in the payload. The example also shows how to store message properties when using nested splitters so the original message can be assembled:
+
+image::mruntime-nested-splitter-flow.png[nested-splitter-flow]
+
+. The Splitter splits the payload into fragments.
+. This Flow Reference calls the `setSplitterVariables` sub-flow, which stores the values of the `correlationId`, `correlationGroupSize`, and `correlationGroupSize` properties into different variables.
+. This is where the logic for the first Splitter is implemented. In this case, it outputs the content of the payload using a Logger component.
+. This Flow Reference calls `nestedSplitterSubflow`, which executes a new Splitter, a Logger component that outputs the content of the payload, and a Collection Aggregator that assembles the messages split in this sub-flow.
+. This Flow Reference calls the `setSplitterProperties` sub-flow, which sets the `correlationId`, `correlationGroupSize`, and `correlationGroupSize` properties using the values from the variables created in `setSplitterVariables`.
+. The Collection Aggregator assembles the original message using the message properties set in the `setSplitterProperties` sub-flow.
+
+When this project runs, it shows the following output through the console:
+
+----
+SPLITTER 1: PROCESSING ITEM [1, 2, 3, 4]
+SPLITTER 2: PROCESSING ITEM 1
+SPLITTER 2: PROCESSING ITEM 2
+SPLITTER 2: PROCESSING ITEM 3
+SPLITTER 2: PROCESSING ITEM 4
+SPLITTER 1: PROCESSING ITEM [5, 6, 7, 8]
+SPLITTER 2: PROCESSING ITEM 5
+SPLITTER 2: PROCESSING ITEM 6
+SPLITTER 2: PROCESSING ITEM 7
+SPLITTER 2: PROCESSING ITEM 8
+SPLITTER 1: PROCESSING ITEM [9, 10, 11, 12]
+SPLITTER 2: PROCESSING ITEM 9
+SPLITTER 2: PROCESSING ITEM 10
+SPLITTER 2: PROCESSING ITEM 11
+SPLITTER 2: PROCESSING ITEM 12
+----
+
+The Logs where shortened to improve readability.
+
+=== Full Example Code
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="splittersAggregatorsNestedFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/splitters/nested" doc:name="HTTP"/>
+
+        <set-payload value="#[ [[1,2,3,4], [5,6,7,8], [9,10,11,12]] ]" doc:name="Set Payload"/>
+
+        <splitter expression="#[payload]" doc:name="Splitter" />
+        <flow-ref name="setSplitterVariables" doc:name="Set splitter variables"/>
+
+        <logger message="SPLITTER 1: PROCESSING ITEM #[payload]" level="INFO" doc:name="Logger"/>
+
+        <flow-ref name="nestedSplitterSubflow" doc:name="Nested splitter subflow"/>
+        <flow-ref name="setSplitterProperties" doc:name="Set splitter properties"/>
+
+
+        <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator">
+            <expression-message-info-mapping messageIdExpression="#[message.id]" correlationIdExpression="#[flowVars.correlationId]"/>
+        </collection-aggregator>
+
+        <json:object-to-json-transformer mimeType="application/json" doc:name="Object to JSON"/>
+    </flow>
+    <sub-flow name="setSplitterVariables">
+        <set-variable variableName="correlationId" value="#[message.correlationId]" doc:name="correlationId"/>
+        <set-variable variableName="correlationGroupSize" value="#[message.correlationGroupSize]" doc:name="correlationGroupSize"/>
+        <set-variable variableName="correlationSequence" value="#[message.correlationSequence]" doc:name="correlationSequence"/>
+    </sub-flow>
+    <sub-flow name="nestedSplitterSubflow">
+        <splitter  expression="#[payload]" doc:name="Splitter" enableCorrelation="ALWAYS">
+            <expression-message-info-mapping messageIdExpression="#[message.id]" correlationIdExpression="#[message.correlationId + message.correlationSequence]"/>
+        </splitter>
+        <logger message="SPLITTER 2: PROCESSING ITEM #[payload]" level="INFO" doc:name="Logger"/>
+
+        <collection-aggregator failOnTimeout="false" doc:name="Collection Aggregator">
+            <expression-message-info-mapping messageIdExpression="#[message.id]" correlationIdExpression="#[message.correlationId]"/>
+        </collection-aggregator>
+    </sub-flow>
+    <sub-flow name="setSplitterProperties">
+        <set-property propertyName="#['MULE_CORRELATION_GROUP_SIZE']" value="#[flowVars.correlationGroupSize]" doc:name="correlationGroupSize"/>
+        <set-property propertyName="#['MULE_CORRELATION_SEQUENCE']" value="#[flowVars.correlationSequence]" doc:name="Property"/>
+        <set-property propertyName="#['MULE_CORRELATION_ID']" value="#[flowVars.correlationId]" doc:name="Property"/>
+    </sub-flow>
 </mule>
 ----
