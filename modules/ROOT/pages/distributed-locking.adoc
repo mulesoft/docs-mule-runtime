@@ -11,24 +11,23 @@ Any locks you create with Mule's lock factory work seamlessly on deployment mode
 == Creating a Lock
 
 To create a lock, follow these steps:
-. First, gain access to a `LockFactory` through the Mule `Registry`. +
-If you are building an extension with the Java SDK and need locking for one of your  operations, you need to inject the registry into your class. +
-. Use the registry to obtain the `LockFactory` and start creating locks. +
+. First, gain access to a `LockFactory` through injection. +
+If you are building an extension with the Java SDK and need locking for one of your  operations, you need to inject the `LockFactory` into your class. +
+. Use the `LockFactory` to start creating locks. +
 Refer to the following sample code which declares an extension operation that manages code access through Mule locks and thus prevents synchronization issues when the operation is executing in parallel (like in a scatter gather scope or in different cluster nodes). +
 . Use an identifier for the lock you create. +
 The identifier allows you to access the same lock from different threads without having to explicitly share the same lock instance between them. +
 This lock implements the `java.util.concurrent.Lock` interface, so calling the method `lock` will make the thread wait until it acquires the lock. +
-After obtaining the lock, the critical code section can be executed and, no matter the result is, we want to release the obtained lock (to prevent deadlocks on other threads waiting for this lock), so we wrap the `lock.unlock` call in a `finally` block.
+After obtaining the lock, the critical code section can be executed and, no matter what the result is, we want to release the obtained lock (to prevent deadlocks on other threads waiting for this lock), so we wrap the `lock.unlock` call in a `finally` block.
 
 [source,java,linenums]
 ----
-public class clusterOperations {
+public class ClusterOperations {
 
   @Inject
-  private Registry registry;
+  private LockFactory lockFactory;
 
   public void sharedResourceOperation() {
-      LockFactory lockFactory = (LockFactory) registry.lookupByName("_muleLockFactory").get();
       Lock lock = lockFactory.createLock("sharedResourceId");
       lock.lock();
       try {
@@ -40,7 +39,7 @@ public class clusterOperations {
 }
 ----
 
-If you are using the scripting extension, you can also access the registry and create locks through scripting code. The following example uses Groovy to achieve the same result as the previous example: obtain the  `LockFactory` through the `Registry`, create a new `Lock`
+If you are using the scripting extension, you must first access the registry to obtain the `LockFactory` and then create locks through scripting code. The following example uses Groovy to achieve the same result as the previous example: obtain the  `LockFactory` (this time through the `Registry`), create a new `Lock`
 for the given ID, wait until obtaining the lock to execute critical code and after that release the lock.
 
 [source,groovy,linenums]
@@ -64,13 +63,12 @@ using the same lock ID.
 
 [source,java,linenums]
 ----
-public class clusterOperations {
+public class ClusterOperations {
 
   @Inject
-  private Registry registry;
+  private LockFactory lockFactory;
 
   public void sharedResourceOperationA() {
-      LockFactory lockFactory = (LockFactory) registry.lookupByName("_muleLockFactory").get();
       Lock lock = lockFactory.createLock("sharedResourceId");
       lock.lock();
       try {
@@ -81,7 +79,6 @@ public class clusterOperations {
   }
 
     public void sharedResourceOperationB() {
-      LockFactory lockFactory = (LockFactory) registry.lookupByName("_muleLockFactory").get();
       Lock lock = lockFactory.createLock("sharedResourceId");
       lock.lock();
       try {
