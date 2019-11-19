@@ -483,7 +483,7 @@ After you create your Mule project and add the Fibonacci Response Generator Java
 [source,xml,linenums]
 ----
 <?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:spring="http://www.springframework.org/schema/beans"
@@ -494,8 +494,7 @@ After you create your Mule project and add the Fibonacci Response Generator Java
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
 
     <configuration doc:name="Configuration">
         <expression-language>
@@ -522,7 +521,7 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
         <spring:bean id="responseGenerator" class="com.mulesoft.mule.cache.FibonacciResponseGenerator"/>
     </spring:beans>
 
-    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties.'http.query.params'.['n']]" responseGenerator-ref="responseGenerator"/>
+    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties['n']]" responseGenerator-ref="responseGenerator"/>
 
     <vm:connector name="vmConnector" doc:name="VM">
         <dispatcher-threading-profile maxThreadsActive="200"/>
@@ -532,11 +531,14 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
     <flow name="cache-exampleFlow1" >
         <http:listener config-ref="listener-config" path="fibonacci" doc:name="HTTP Connector"/>
         <expression-filter expression="#[message.inboundProperties.'http.request.path' != '/favicon.ico']" doc:name="Expression"/>
-        <logger message="#[message.inboundProperties.'http.query.params'.['n']]" level="INFO" doc:name="Logger"/>
  <choice doc:name="Choice">
-            <when expression="message.inboundProperties.'http.query.params'.['n'] &lt; 20 ">
-                <flow-ref name="calculateFibonacci" doc:name="Flow Reference"/>
- <expression-component doc:name="Expression"><![CDATA[payload= "Fibonacci(" + message.inboundProperties['n'] + ") = " + payload +"\nCOST: " + message.outboundProperties['cost']]]></expression-component>
+            <when expression="message.inboundProperties.'http.query.params'.['n'] &lt; 20">
+                <message-properties-transformer doc:name="Message Properties">
+                    <add-message-property key="n" value="#[message.inboundProperties.'http.query.params'.['n']]"/>
+                    <add-message-property key="originalN" value="#[message.inboundProperties.'http.query.params'.['n']]"/>
+                </message-properties-transformer>
+                <vm:outbound-endpoint exchange-pattern="request-response" path="fibonacci" connector-ref="vmConnector" doc:name="VM"/>
+                <expression-component doc:name="Expression"><![CDATA[payload= "Fibonacci(" + message.inboundProperties['originalN'] + ") = " + payload +"\nCOST: " + message.inboundProperties['cost']]]></expression-component>
             </when>
             <otherwise>
                 <expression-component doc:name="Expression"><![CDATA[payload= "ERROR: n must be less than 20"]]></expression-component>
@@ -549,9 +551,9 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
  <ee:cache cachingStrategy-ref="Caching_Strategy"
      filterExpression="#[groovy:message.getInboundProperty('nocache') == null]"
         doc:name="Cache">
-            <logger level="INFO" message="#[payload]" doc:name="Logger"/>
             <expression-component doc:name="Expression"><![CDATA[
                 n = message.inboundProperties['n'];
+			    message.outboundProperties["originalN"]   =  message.inboundProperties["originalN"];
                 if (n < 2)
                 {
                     payload = n;
