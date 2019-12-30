@@ -34,10 +34,9 @@ xref:dataweave-cookbook-extract-data#[Extract Data].
 | Key present | `keyName?`, `keyName.@type?` | Boolean (`true` if the
   selected key of an object or XML attribute is present, `false` if not)
 | Assert present | `keyName!` | String: Exception message if the key is not present
-| Filter |`keyName[?(boolean_expression)]` | Array or object
+| Filter |`[?(boolean_expression)]` | Array or object
   containing key-value pairs _if_ the DataWeave expression returns `true`. Otherwise,
   returns `null`.
-
 | Metadata | `.^someMetadata` a|
 Returns the value of specified metadata for a Mule payload, variable, or
 attribute. The selector can return the value of class (`.^class`),
@@ -47,6 +46,402 @@ content length (`.^contentLength`), encoding
 xref:dataweave-cookbook-extract-data#selector_metadata[Extract Data].
 
 |===
+
+== Rules for matching 
+
+All selectors that uses a `name` to select are composed of a `Namespace` and a `Local Part`. When using namespace it is only going to match a `Key` with that `Namespace` and that `Local Part`. If the `name` only has a `Local Part` it is going to match all the `Key` whoes `Local Part` are equal dispaite it has `Namespace` or not.
+
+
+
+== Dynamic Selector
+
+The way to do dynamic selection is by using the `[``]` way of selecting. 
+
+- Single Value: `payload[(nameExpression)]`
+- Multi Value: `payload[*(nameExpression)]`
+- Attribute: `payload[@(nameExpression)]`
+- Key Value: `payload[&(nameExpression)]`
+
+The `nameExpression` should return a `String` type expression.
+
+
+== Single Value Selector
+
+Selects the value of the first key value pair whoes key matches the given selector name. It can be applied to an Object or to an Array. When it is applied to an Array it will execute the selector to all the Object values that are inside and ignoring the ones that are not Object. If no key was matched it return `null`
+
+=== Example
+
+This example shows how selector works in a simple json object
+
+==== Input
+
+[source,json, linenums]
+----
+{
+    "name": "Data Weave"
+}
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.name
+----
+
+==== Output
+
+[source,json, linenums]
+----
+"Data Weave"
+----
+
+=== Example
+
+When selector is applied to an Array it will apply the selection to every element.
+
+==== Input
+
+[source,json, linenums]
+----
+[{
+    "name": "Arg"
+},
+{
+    "name": "Japan"
+}
+]
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.name
+----
+
+==== Output
+
+[source,json, linenums]
+----
+["Arg", "Japan"]
+----
+
+
+=== Example
+
+Shows how to select an xml with namespace or directly with local name
+
+==== Input
+
+[source,xml, linenums]
+----
+<root>
+
+<h:table xmlns:h="http://www.w3.org/TR/html4/">
+  <h:tr>
+    <h:td>Apples</h:td>
+    <h:td>Bananas</h:td>
+  </h:tr>
+</h:table>
+
+<f:table xmlns:f="https://www.w3schools.com/furniture">
+  <f:name>African Coffee Table</f:name>
+  <f:width>80</f:width>
+  <f:length>120</f:length>
+</f:table>
+
+</root>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+ns html http://www.w3.org/TR/html4/
+ns furniture https://www.w3schools.com/furniture
+---
+root: {
+     a: payload.root.html#table,
+     b: payload.root.furniture#table
+ }    
+----
+
+==== Output
+
+[source,xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+  <a>
+    <h:tr xmlns:h="http://www.w3.org/TR/html4/">
+      <h:td>Apples</h:td>
+      <h:td>Bananas</h:td>
+    </h:tr>
+  </a>
+  <b>
+    <f:name xmlns:f="https://www.w3schools.com/furniture">African Coffee Table</f:name>
+    <f:width xmlns:f="https://www.w3schools.com/furniture">80</f:width>
+    <f:length xmlns:f="https://www.w3schools.com/furniture">120</f:length>
+  </b>
+</root>
+----
+
+=== Example
+
+Shows how to select an xml with local name, matching an element with namespace
+
+==== Input
+
+[source,xml, linenums]
+----
+<root>
+
+<h:table xmlns:h="http://www.w3.org/TR/html4/">
+  <h:tr>
+    <h:td>Apples</h:td>
+    <h:td>Bananas</h:td>
+  </h:tr>
+</h:table>
+
+
+</root>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+ns html http://www.w3.org/TR/html4/
+ns furniture https://www.w3schools.com/furniture
+---
+root: {
+     a: payload.root.table
+ }    
+----
+
+==== Output
+
+[source,xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+  <a>
+    <h:tr xmlns:h="http://www.w3.org/TR/html4/">
+      <h:td>Apples</h:td>
+      <h:td>Bananas</h:td>
+    </h:tr>
+  </a>  
+</root>
+----
+
+== Attribute Selector
+
+The attribute selector returns the first Attribute value that matches the selected name expression. If no key was matched it return `null`
+
+=== Example
+
+Shows how to select an xml attribute
+
+==== Input
+
+[source,xml, linenums]
+----
+<user name="Weave"/>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.user.@name   
+----
+
+==== Output
+
+[source,json,linenums]
+----
+"Weave"
+----
+
+
+== Multi Value Selector
+
+Returns an Array of all the matched keys value. If no key was matched it return `null`
+
+=== Example
+
+Shows how to select multiple values
+
+==== Input
+
+[source,xml, linenums]
+----
+<users>
+    <user>Weave</user>
+    <user>BAT</user>
+    <user>TF</user>
+</users>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.users.*user
+----
+
+==== Output
+
+[source,json,linenums]
+----
+[
+  "Weave",
+  "BAT",
+  "TF"
+]
+----
+
+
+== Descendant Selector
+
+Returns the list of all children. This selector can be chained with any other selector directly without requiering any `.`. For example
+`payload..` returns all the child values and the value of its children and recursively. But it can also be chained with `payload..name` where it will select the name to all its descendants, or `payload..*name` where it will select all the names each descendant may have.
+
+=== Example
+
+Shows how to select all descendants
+
+==== Input
+
+[source,xml, linenums]
+----
+
+<users>
+    <user>
+        <name>Weave</name>
+        <user>
+            <name>BAT</name>
+            <user>
+                <name>BDD</name>
+            </user>
+        </user>
+    </user>
+</users>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload..
+----
+
+==== Output
+
+[source,json,linenums]
+----
+[
+  {
+    "user": {
+      "name": "Weave",
+      "user": {
+        "name": "BAT",
+        "user": {
+          "name": "BDD"
+        }
+      }
+    }
+  },
+  {
+    "name": "Weave",
+    "user": {
+      "name": "BAT",
+      "user": {
+        "name": "BDD"
+      }
+    }
+  },
+  "Weave",
+  {
+    "name": "BAT",
+    "user": {
+      "name": "BDD"
+    }
+  },
+  "BAT",
+  {
+    "name": "BDD"
+  },
+  "BDD"
+]
+----
+
+
+=== Example
+
+Shows how to select only descendants names
+
+==== Input
+
+[source,xml, linenums]
+----
+
+<users>
+    <user>
+        <name>Weave</name>
+        <user>
+            <name>BAT</name>
+            <user>
+                <name>BDD</name>
+            </user>
+        </user>
+    </user>
+</users>
+----
+
+==== Source
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload..name
+----
+
+==== Output
+
+[source,json,linenums]
+----
+[
+  "Weave",
+  "BAT",
+  "BDD"
+]
+----
+
+
+
 
 [[selectors_variables]]
 == Use of Selectors on Content Stored in Variables
