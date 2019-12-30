@@ -1,0 +1,77 @@
+= Troubleshooting
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+== How to troublshoot a failing script
+
+One of the problem of reproducing an error is having the exact inputs the script was executed with, specially in production environents where inputs can changed unexpectedlly.
+Since 4.2.1 Data Weave introduce a new experimental feature that allows to dump the input context and the failing script in a given folder. Whith this information the user can easily track what script is failing and what is the data that is making the script fail.
+
+To enable this feature set the system property `-M-Dcom.mulesoft.dw.dump_files=true` and to control where the dump files are being generated use `-M-Dcom.mulesoft.dw.dump_folder=<path_to_folder>` if not specified system tmp directory is going to be used.
+
+
+== org.mule.weave.v2.exception.UnsupportedTypeCoercionException
+
+This exception is being thrown when a function is being called with the incorrect arguments kind. The most common case is when one of the arguments is `Null` and the function doesn't accept `Null` as a possible argument type. In this cases a message similar to this is going to be shown
+
+[source,weave, linenums]
+----
+You called the function '++' with these arguments: 
+  1: Null (null)
+  2: String (" A text")
+
+But it expects one of these combinations:
+  (Array, Array)
+  (Date, Time)
+  (Date, LocalTime)
+  (Date, TimeZone)
+  (LocalDateTime, TimeZone)
+  (LocalTime, Date)
+  (LocalTime, TimeZone)
+  (Object, Object)
+  (String, String)
+  (Time, Date)
+  (TimeZone, LocalDateTime)
+  (TimeZone, Date)
+  (TimeZone, LocalTime)
+
+4| payload.message ++ " A text"
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Trace:
+  at main::++ (line: 4, column: 1)
+  at main::main (line: 4, column: 17)
+----
+
+A way to resolve this problem is by using the `default` operator. For example 
+
+`payload.message default "" ++ " A text"` so in this case when the message is null an empty text is goint to be appended.
+
+Another option may be that the MimeType is not being set. In this cases a message similar to this is going to be printed
+
+[source,weave, linenums]
+----
+You called the function 'Value Selector' with these arguments: 
+  1: String ("{message: 123}")
+  2: Name ("message")
+
+But it expects one of these combinations:
+  (Array, Name)
+  (Array, String)
+  (Date, Name)
+  (DateTime, Name)
+  (LocalDateTime, Name)
+  (LocalTime, Name)
+  (Object, Name)
+  (Object, String)
+  (Period, Name)
+  (Time, Name)
+
+4| payload.message
+   ^^^^^^^^^^^^^^^
+Trace:
+  at main::main (line: 4, column: 1)
+---- 
+
+The reason is that as no MimeType is being set to the `payload` it defaults to `application/java` and then the content is being handled as `String` instead of a Json Object.
