@@ -373,9 +373,96 @@ When there are network connection problems, you can direct the source components
 
 === Eventual Send Operation Timed Out
 
-When there are micro-cuts in the network connection, asynchronous message-sending flows might experience exceptions and message losses.
+When there are micro-cuts in the network connection, asynchronous message-sending flows might experience exceptions and message losses. This happens because Azure TimeoutException exceptions (`com.microsoft.azure.servicebus.primitives.TimeoutException`) are not affected by connector reconnection strategies. Therefore, if an exception is generated within a thread pool that executes calls asynchronously, the exception does not use a catch exception strategy. To implement this strategy, you must use XML to program a solution in the Mule app flow.
 
-This happens because Azure TimeoutException exceptions (`com.microsoft.azure.servicebus.primitives.TimeoutException`) are not affected by connector reconnection strategies. Therefore, if an exception is generated within a thread pool that executes calls asynchronously, the exception does not use a catch exception strategy. To implement this strategy, you must use XML to program a solution in the Mule app flow.
+The following example shows one way of handling send operation timeouts. In this example:
+
+* The app assumes that a topic is used as a destination and that you have permission to add a redundant subscription to the topic.
+* The app uses Anypoint Connector for MongoDB (MongoDB Connector) to collect unsent messages.
+* Every 15 minutes, the cron job (Poll scope) sends messages held for more than an hour in the MongoDB collection of unsent messages back to the Azure Service Bus.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:microsoft-azure-service-bus="http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus" xmlns:mongo="http://www.mulesoft.org/schema/mule/mongo" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/mongo http://www.mulesoft.org/schema/mule/mongo/current/mule-mongo.xsd
+http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus http://www.mulesoft.org/schema/mule/microsoft-azure-service-bus/current/mule-microsoft-azure-service-bus.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <mongo:config name="Mongo_DB__Configuration" username="${mongodb.config.username}" password="${mongodb.config.password}" database="${mongodb.config.database}" host="${mongodb.config.server}" authenticationDatabase="${mongodb.config.database.auth}" doc:name="Mongo DB: Configuration"/>
+    <microsoft-azure-service-bus:basic-authentication-config name="Microsoft_Azure_Service_Bus__Basic_authentication" sharedAccessKeyName="${azure.config.key.name}" sharedAccessKey="${azure.config.shared.access.key}" namespace="${azure.config.service.namespace}" doc:name="Microsoft Azure Service Bus: Basic authentication"/>
+    <flow name="Flow_Send_Async">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/send-async" doc:name="HTTP"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <set-variable variableName="azure_message" value="#[payload]" doc:name="Set Payload in Variable"/>
+        <dw:transform-message doc:name="Format Document - Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	message : flowVars.azure_message,
+	timestamp: now as :string
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <mongo:insert-document config-ref="Mongo_DB__Configuration" collection="${mongodb.collection}" doc:name="Insert Document - Mongo DB"/>
+        <microsoft-azure-service-bus:publish config-ref="Microsoft_Azure_Service_Bus__Basic_authentication" destination="TOPIC||${azure.topic}" body="#[flowVars.azure_message]" doc:name="Microsoft Azure Service Bus"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	id_azure: payload,
+	message_azure: flowVars.azure_message
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+    <!-- Messages sent successfully are removed from the mongodb. Only messages not received by azure should remain, to retry later. -->
+    <flow name="Flow_Remove_Sent_Messages">
+        <microsoft-azure-service-bus:subscription-listener config-ref="Microsoft_Azure_Service_Bus__Basic_authentication" topic="${azure.topic}" subscription="${azure.topic.suscription.redundant}" doc:name="Microsoft Azure Service Bus (Streaming)"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	message : payload
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <mongo:remove-documents config-ref="Mongo_DB__Configuration" collection="${mongodb.collection}" doc:name="Mongo DB"/>
+        <logger message="#[&quot;Document sent successfully. The mongo document is removed (from retry collection):&quot; + payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <!-- Messages that are in the mongodb and are still alive after 1 hour are sent again (a time is expected to avoid a race condition with the removal process). -->
+    <flow name="Flow_Retry_Send_Message">
+        <poll doc:name="Poll - Retry">
+            <fixed-frequency-scheduler frequency="15" timeUnit="MINUTES"/>
+            <dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+}]]></dw:set-payload>
+            </dw:transform-message>
+        </poll>
+        <mongo:find-documents config-ref="Mongo_DB__Configuration" collection="${mongodb.collection}" doc:name="Mongo DB"/>
+        <foreach collection="#[payload]" doc:name="For Each">
+            <choice doc:name="Choice">
+	            <when expression="#[new org.mule.el.datetime.DateTime(payload.timestamp).plusHours(1).isBefore(server.dateTime)]">
+	                <microsoft-azure-service-bus:publish config-ref="Microsoft_Azure_Service_Bus__Basic_authentication" destination="TOPIC||${azure.topic}" body="#[payload.message]" doc:name="Microsoft Azure Service Bus"/>
+	            </when>
+	            <otherwise>
+	                <logger message="#[&quot;The message shouldn't be resent yet: &quot; + payload]" level="INFO" doc:name="Logger"/>
+	            </otherwise>
+	        </choice>
+        </foreach>
+    </flow>
+</mule>
+----
 
 == Connector Namespace and Schema
 
