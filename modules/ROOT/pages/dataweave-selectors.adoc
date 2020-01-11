@@ -47,24 +47,25 @@ The examples below use these selectors. For additional examples, see
 xref:dataweave-cookbook-extract-data#[Extract Data].
 ====
 
-////
-
 == Rules for Matching
 
-Selectors that use a name to select data are composed of a namespace and
-a local part. When relying on the namespace, the selector only matches a key with
-that namespace and that local part. However, if the name only has a local part, the
-selector matches all keys with the same local part regardless of whether
-the name has namespace or not.
+In DataWeave, a name that matches the key of an object (such as the key
+`"someName"` in the JSON object `{ "someName" : "Data Weave" }`) can select
+data from that object. For a simple example, see <<single_value_selector>>.
+
+
+
+
 
 ////
+POSTPONED PUBLICATION OF THIS SECTION PENDING BUG FIX:
+== Dynamic Selector
+
 SHOKI CHECKED:
 DYNAMIC SELECTION ON THE NAMESPACE ISN'T WORKING
 WE'LL REMOVE THIS SECTION UNTIL THAT IS FIXED,
 MAYBE MULE 4.2.3.
-NOTE THAT IT DOES WORK ON THE LOCAL PART. 
-
-== Dynamic Selector
+NOTE THAT IT DOES WORK ON THE LOCAL PART.
 
 You perform dynamic selection with a `nameExpression` within
 square brackets (`[``]`) that returns a `String` type.
@@ -74,9 +75,32 @@ square brackets (`[``]`) that returns a `String` type.
 * Attribute: `payload[@(nameExpression)]`
 * Key Value: `payload[&(nameExpression)]`
 
-//TODO: NEED EXAMPLES. TEXTED Shoki about it on 01/07/2020. MDA on PTO.
+//TODO: EXAMPLES. ONCE BUG FIXED, can use variants of this for some dynamic
+selection examples.
+
+TODO script:
+---
+%dw 2.0
+output application/dw
+ns http some_url
+ns foo other_url
+var name = "listener"
+---
+payload.flow[*(name)]
+----
+
+TODO payload:
+----
+<flow name="myFlow" xmlns:http="some_url" xmlns:foo="other_url">
+    <http:listener>1111111</http:listener>
+    <foo:listener>22222222</foo:listener>
+    <listener>3333333</listener>
+    <something>4444</something>
+</flow>
+----
 ////
 
+[[single_value_selector]]
 == Single-Value Selector
 
 This selector matches the value of the first key-value pair where the key
@@ -168,16 +192,31 @@ with the key "name": "Arg" and "Japan".
 ["Arg", "Japan"]
 ----
 
+[[namespace_example1]]
+== Namespace Selector
+
+The DataWeave namespace selector supports the use of a name that matches a
+namespace or a local part. To match a namespace, the name must match the
+namespace and the local part. If the name only matches the local part, the
+selector will match all namespaces with that local part, regardless of the
+namespace.
+
+Note that XML namespaces and their prefixes are defined in the `xmlns` attribute
+of an XML element. For example, the element
+`<h:table xmlns:h="http://www.w3.org/TR/html4/"/>` defines a namespace that
+assigns the prefix `h` to the namespace  `http://www.w3.org/TR/html4/`.
+All elements in that namespace contain the `h` prefix. For example, in the
+element `<h:table/>`, `h` is the prefix for the namespace, and `table` is the
+local part.
+
 === Example
 
-This example selects values from XML elements with different namespaces.
+This example selects values from XML elements using the namespace and local part.
 
 ==== Input
 
-The input payload contains XML with two `table` elements under the
-`root` element. One `table` element contains the namespace
-`"http://www.w3.org/TR/html4/"`. The other contains the namespace
-`"https://www.w3schools.com/furniture"`.
+The input payload contains XML elements, `h:table` and `f:table`, that have
+different namespaces but the same local names (`table`).
 
 [source,xml, linenums]
 ----
@@ -191,9 +230,11 @@ The input payload contains XML with two `table` elements under the
   </h:table>
 
   <f:table xmlns:f="https://www.w3schools.com/furniture">
-    <f:name>African Coffee Table</f:name>
-    <f:width>80</f:width>
-    <f:length>120</f:length>
+    <f:tr>
+      <f:name>African Coffee Table</f:name>
+      <f:width>80</f:width>
+      <f:length>120</f:length>
+    </f:tr>
   </f:table>
 
 </root>
@@ -202,14 +243,12 @@ The input payload contains XML with two `table` elements under the
 [[namespace_variable]]
 ==== Source
 
-The header of the following DataWeave script creates variables (`html` and
-`furniture`) to store values that match the namespaces in the `table` elements
-of the input payload. The body of the script uses those variables to select values
-from the `table` element with the specified namespace. Using these namespace
-selectors makes it possible to return values from both `table` elements. Note
-that without the namespace selectors (for example, `payload.root.table` instead
-of `payload.root.furniture#table`), the script would only return values from the
-first `table` element, not the second.
+The DataWeave script selects XML content from specified namespaces. The
+script's header creates namespace (`ns`) variables `html` and `furniture`
+to store namespaces from the input payload. To select the children of `h:table`
+into element `a` and the children of `f:table` elements into element `b`, the
+script uses the `html` and `furniture` namespace variables with a
+namespace selector (`#`) and local part (`table`).
 
 [source,DataWeave, linenums]
 ----
@@ -226,7 +265,8 @@ root: {
 
 ==== Output
 
-The script outputs values from `table` elements with both namespaces.
+The script outputs children of the `h:table` element under element `a` and
+the children of the `f:table` under element `b`.
 
 [source,xml, linenums]
 ----
@@ -239,18 +279,19 @@ The script outputs values from `table` elements with both namespaces.
     </h:tr>
   </a>
   <b>
-    <f:name xmlns:f="https://www.w3schools.com/furniture">African Coffee Table</f:name>
-    <f:width xmlns:f="https://www.w3schools.com/furniture">80</f:width>
-    <f:length xmlns:f="https://www.w3schools.com/furniture">120</f:length>
+    <f:tr xmlns:f="https://www.w3schools.com/furniture">
+      <f:name>African Coffee Table</f:name>
+      <f:width>80</f:width>
+      <f:length>120</f:length>
+    </f:tr>
   </b>
 </root>
 ----
 
 === Example
 
-This example selects XML values using a local name (`payload.root.table`
-instead of `payload.root.furniture#table` in the
-<<namespace_variable, previous example>>).
+This example selects XML values using a local name `table` from the `h:table`
+element.
 
 ==== Input
 
@@ -300,6 +341,7 @@ The script outputs XML that contains the values of children in the
 </root>
 ----
 
+[[attribute_selector]]
 == Attribute Selector
 
 The attribute selector returns the first attribute value that matches the
@@ -341,13 +383,14 @@ The DataWeave script outputs the value of `name` attribute.
 "Weave"
 ----
 
+[[multi_value_selector]]
 == Multi-Value Selector
 
-Instead of returning the value of the first matching key in an array 
-of objects, the multi-value selector (`*`) returns an array containing 
-values to the matching key (for example, `*user` where `user` is 
-the key). The selector does not return the values of descendants, 
-only those at the specified level. If no key matches, the selection 
+Instead of returning the value of the first matching key in an array
+of objects, the multi-value selector (`*`) returns an array containing
+values to the matching key (for example, `*user` where `user` is
+the key). The selector does not return the values of descendants,
+only those at the specified level. If no key matches, the selection
 returns the value `null`.
 
 === Input
@@ -389,6 +432,7 @@ The script outputs an array of `user` values.
 ]
 ----
 
+[[descendant_selector]]
 == Descendant Selector
 
 The descendant selector returns a list of all children. You can directly chain
