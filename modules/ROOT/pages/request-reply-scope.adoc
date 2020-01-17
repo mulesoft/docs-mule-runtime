@@ -1,11 +1,11 @@
-= About the Request-Reply Scope
+= Request-Reply Scope
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: request reply, asynchronous
 
 The Request-Reply Scope enables you to embed a pocket of asynchronous processing within a Mule flow. This functionality enables you to receive a response from an asynchronous flow without hardcoding the destination of the response. +
-For example, you can use request-reply to convert a one-way VM or JMS connector flow to a request-response flow without having to change it's configuration. In other words, the request-reply converts part of a synchronous process into an asynchronous one.
+For example, you can use request-reply to convert a one-way VM or JMS connector flow to a request-response flow without having to change it's configuration. The request-reply converts part of a synchronous process into an asynchronous one.
 
 == Basic Anatomy
 
@@ -17,17 +17,17 @@ It wraps an outbound connector that submits an asynchronous request to another f
 It wraps an inbound connector that receives an asynchronous response from another flow or an external resource
 
 When the message reaches the processor inside the request section of the Request-Reply scope, Mule sends an asynchronous request to the outbound endpoint's path, triggering the process of the remote resource. +
-Only after that processing is complete, Mule sends the response back to the path defined in the processor's inbound endpoint in the reply section of the scope.
+After that processing is complete, Mule sends the response back to the path defined in the processor's inbound endpoint in the reply section of the scope.
 
 image::request-reply-scope-1.png[]
 
-Consider a very simple application:
+Consider the following application:
 
 [source,xml,linenums]
 ----
 <flow name="sampleFlow">
 
-  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/start"/>
 
   <request-reply doc:name="Request-Reply">
    <vm:outbound-endpoint exchange-pattern="one-way" path="request"/> //<1>
@@ -41,41 +41,53 @@ Consider a very simple application:
   <logger message="#[payload]" level="INFO"/>
 </flow>
 ----
-<1> After receiving an HTTP request, the VM outbound-endpoint processor sends the message to the /request path.
-<1> The VM inbound-endpoint processor with the /request path configured receives the message triggering the requestFlow processing.
-<1> Only after requestFlow finish processing, Mule automatically sends the message back to VM inbound-endpoint in the reply section of the Request-Reply scope.
+<1> After receiving an HTTP request, the VM outbound-endpoint processor sends the message to the `/request` path.
+<1> The VM inbound-endpoint processor with the `/request` path configured receives the message, triggering the requestFlow processing.
+<1> After `requestFlow` finishes processing, Mule automatically sends the message back to VM inbound-endpoint in the reply section of the Request-Reply scope.
 
-This is possible because Mule implicitly sets a MULE_REPLYTO message property to point to the processor in the reply section of the scope. +
-In this case, the VM inbound-endpoint processor in requestFlow's source receives the message with the MULE_REPLYTO_REQUESTOR property set to "reply", so Mule sends the resulting message (or messages) back to the requester. +
-This is important to note because if the requested flow would have another VM outbound endpoint at the end pointing to a different flow, the VM processor inside the reply scope would still receive the message (or messages) from the triggered flow. +
-You can choose to disable this behavior by setting a MULE_REPLYTO variable:
+To achieve this behavior, Mule implicitly sets a `MULE_REPLYTO` message property to point to the processor in the reply section of the scope. +
+In this case, the VM inbound-endpoint processor in requestFlow's source receives the message with the `MULE_REPLYTO_REQUESTOR` property set to `"reply"`, so Mule sends the resulting message (or messages) back to the requester.
+
+== Using VM Connectors in the Requested Flow
+
+Consider a scenario where you have a Request-Reply scope and the requested flow has a VM outbound endpoint at the end pointing to a different flow.
+In this case, the VM processor inside the reply scope still receives the message (or messages) from the triggered flow.
+
+To disable this behavior, you must set the `MULE_REPLYTO_STOP` variable to `true`:
 
 [source,xml,linenums]
 ----
 <flow name="sampleFlow">
-  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/start"/>
   <request-reply doc:name="Request-Reply">
-   <vm:outbound-endpoint exchange-pattern="one-way" path="request"/>
-   <vm:inbound-endpoint exchange-pattern="one-way" path="reply" />
+   <vm:outbound-endpoint exchange-pattern="one-way" path="slice"/>
+   <vm:inbound-endpoint exchange-pattern="one-way" path="complete" />
   </request-reply>
 </flow>
 
-<flow name="requestFlow">
-  <vm:inbound-endpoint exchange-pattern="one-way" path="request"/>
-  <set-variable variableName="MULE_REPLYTO_STOP" value="true"/> //<1>
-  <logger message="#[payload]" level="INFO"/>
+<flow name="slicerFlow">
+  <vm:inbound-endpoint exchange-pattern="one-way" path="slice" />
+  <!-- Set Variable MULE_REPLYTO_STOP = true -->
+  <set-variable variableName="MULE_REPLYTO_STOP" value="true" /> //<1>
+  <collection-splitter />
+  <vm:outbound-endpoint exchange-pattern="one-way" path="enhance" />
+</flow>
+
+<flow name="enhancerFlow">
+  <vm:inbound-endpoint exchange-pattern="one-way" path="enhance" />
+  <collection-aggregator failOnTimeout="true" />
+  <vm:outbound-endpoint exchange-pattern="one-way" path="complete" />
 </flow>
 ----
 
-<1> Setting MULE_REPLYTO_STOP to true, tell Mule to not configure the  MULE_REPLYTO_REQUESTOR property in the received message.
+<1> Setting `MULE_REPLYTO_STOP` to `true`, prevents Mule from configuring the `MULE_REPLYTO_REQUESTOR` property in the received message.
 
+== Limitations
 
-[IMPORTANT]
-You can't use transactions in VM and JMS connectors inside a request-reply scope.
+You can't use transactions in VM and JMS connectors inside a request-reply scope. Transactions are not compatible with the way the request-reply scope works.
 
-Transactions are not compatible with how the request-reply scope works. +
 The request-reply scope does not send a request until a transaction is committed, and a transaction in turn is not committed until the entire flow executes, including the execution of the request-reply scope. This leads to a situation where both processes block each other. +
-The runtime can't fully execute the flow because it's still waiting for the reply on the request-reply scope, but this reply never arrives because the request is not sent until the transaction is committed.
+Mule cannot execute the complete flow because it's still waiting for the reply on the request-reply scope, but this reply never arrives because the request is not sent until the transaction is committed.
 
 == See Also
 
