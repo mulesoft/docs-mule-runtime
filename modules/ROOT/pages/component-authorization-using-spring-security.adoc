@@ -1,0 +1,67 @@
+= Component Authorization Using Spring Security
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: authorization, spring, spring security
+
+This page describes how you can configure authorization over mule components using Spring Security so that users with different roles can only invoke certain operations.
+
+== Authentication Manager
+
+To secure calls to flow components, you must add a properly configured Authentication Manager to the application context.
+
+[source,xml,linenums]
+----
+  <ss:authentication-manager alias="authenticationManager">
+    <ss:authentication-provider>
+      <ss:user-service id="userService">
+        <ss:user name="admin" password="admin" authorities="ROLE_ADMIN" />
+        <ss:user name="joe" password="secret" authorities="ROLE_ADMIN" />
+        <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+        <ss:user name="user" password="password" authorities="ROLE_ANON" />
+        <ss:user name="ross" password="ross" authorities="ROLE_ANON" />
+        <ss:user name="marie" password="marie" authorities="ROLE_ANON" />
+      </ss:user-service>
+    </ss:authentication-provider>
+  </ss:authentication-manager>
+----
+
+This configuration defines the roles that can be specified to access protected processors, if they are specified in the `requiredAuthorities` field in that specific component. In the following example, we will reference the authenticationManager defined above to only allow users with ROLE_ADMIN roles to access the operation.
+
+[source,xml,linenums]
+----
+	<spring:security-manager>
+		<spring:delegate-security-provider name="memory-provider" delegate-ref="authenticationManager" />
+	</spring:security-manager>
+
+	<flow name="protectedFlow">
+		<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/" />
+		<http:basic-security-filter doc:name="Basic security filter" realm="mule" />
+		<spring:authorization-filter requiredAuthorities="ROLE_ADMIN" />
+
+		<ee:transform doc:name="Transform Message">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+				output application/json
+				---
+				{
+					"status": "ok"
+				}]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+----
+
+== Securing Components in Asynchronous Systems
+
+The use of Spring Security strategies is particularly useful for asynchronous systems, since we have to add a property on the security provider for the authentication to be set on more than one thread. In this case, we would use MODE_GLOBAL as shown in the following example:
+
+[source,xml,linenums]
+----
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager">
+            <mule-ss:security-property name="securityMode" value="MODE_GLOBAL"/>
+        </mule-ss:delegate-security-provider>
+    </mule-ss:security-manager>
+----
