@@ -14,6 +14,9 @@ change unexpectedly.
 In Mule 4.2.1, DataWeave introduced an experimental feature that enables you
 to dump the input context and the failing script into a folder so that you
 can track the failing script along with the data that makes the script fail.
+This is particularly useful to check that the input data received is valid, as
+often a correct script will fail because of an upstream component generating
+invalid data.
 
 To use this feature:
 
@@ -26,7 +29,6 @@ To use this feature:
 `-M-Dcom.mulesoft.dw.dump_folder=<path_to_folder>`
 +
 The default directory is `/tmp`.
-
 
 == DataWeave Exceptions
 
@@ -109,3 +111,63 @@ Trace:
 When no MIME type is set on the payload, the MIME type defaults to
 `application/java`, and the content is handled as a `String` instead of a
 JSON object.
+
+== Output Mismatch When Undefined
+
+Unlike transformations, DataWeave expressions do not require defining an output. However, this just means the output will be inferred based on the expression and the variables used. Occasionally, this will create a mismatch between the inferred type and the expected type. To solve this issue, the output should be made explicit. Common examples of this situation occur when:
+
+* <<xml_extraction>>
+* <<multipart_handling>>
+* <<manipulating_text>>
+
+[[xml_extraction]]
+=== Extracting Data from an XML
+
+When extracting a String, for example, out of an XML payload with the expression `payload.order.product.model` DataWeave will infer an XML output considering the payload format. In those cases an error similar to the following one will be seen:
+
+[source,weave, linenums]
+----
+"Trying to output non-whitespace characters outside main element tree (in prolog or epilog), while writing Xml at ." evaluating expression: "payload.order.product.model".
+----
+
+As mentioned, the output in this case needs to be made explicit: `output text/plain --- payload.order.product.model`.
+
+[[multipart_handling]]
+=== Handling Multipart Entries
+
+Another usual error happens while dealing with multipart data, which has a very specific structure. Consider a multipart payload and the expression `dw::core::Objects::keySet(payload.parts)`, without an output DataWeave can only infer, based on the payload type, that multipart content is desired. An error similar to this will be thrown in that case:
+
+[source,weave, linenums]
+----
+"Expecting type is {
+  preamble?: String,
+  parts: {
+    _*: {
+      headers: Object,
+      content: Any
+    }
+  }
+} but got Array, while writing MultiPart.
+Trace:
+  at main (Unknown)" evaluating expression: "dw::core::Objects::keySet(payload.parts)".
+----
+
+To solve this, a proper output should be defined, for example: `output application/json --- dw::core::Objects::keySet(payload.parts)`
+
+[[manipulating_text]]
+=== Manipulating Text Data
+
+In this case, text data is used to create a more complex object. However, because we only have a text payload and no output, DataWeave will infer text should be used as well. The expression `payload splitBy ' '`, for example, will fail with an error similar to:
+
+[source,weave, linenums]
+----
+"Text plain writer is unable to write Array.
+Reason:
+Cannot coerce Array (org.mule.weave.v2.model.values.ArrayValue$ArraySeqArrayValue@21bec687) to String
+Trace:
+  at main (Unknown), while writing TextPlain.
+Trace:
+  at main (Unknown)" evaluating expression: "payload splitBy ' '".
+----
+
+Making the output explicit solves the issue: `output application/java --- payload splitBy ''`
