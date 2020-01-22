@@ -4,12 +4,12 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: request reply, asynchronous
 
-The Request-Reply Scope enables you to embed a pocket of asynchronous processing within a flow. This functionality enables you to receive a response from an asynchronous flow without hardcoding the destination of the response. +
-For example, you can use request-reply to convert a one-way VM or JMS connector flow to a request-response flow without having to change it's configuration. The request-reply converts part of a synchronous process into an asynchronous one.
+The Request-Reply scope enables you to embed a pocket of asynchronous processing within a flow, so that you can receive a response from an asynchronous flow without hardcoding the destination of the response. +
+For example, you can use request-reply to convert a one-way VM or JMS connector flow to a request-response flow without having to change its configuration. The request-reply converts part of a synchronous process into an asynchronous one.
 
-== Basic Anatomy
+== Architecture
 
-Request-reply consists of two parts:
+Request-Reply consists of two parts:
 
 * The *request* section. +
 It wraps an outbound connector that submits an asynchronous request to another flow or an external resource.
@@ -17,7 +17,7 @@ It wraps an outbound connector that submits an asynchronous request to another f
 It wraps an inbound connector that receives an asynchronous response from another flow or an external resource
 
 When the message reaches the processor inside the request section of the Request-Reply scope, Mule runtime engine (Mule) sends an asynchronous request to the outbound endpoint's path, triggering the process of the remote resource. +
-After that processing is complete, Mule sends the response back to the path defined in the processor's inbound endpoint in the reply section of the scope.
+After that processing is complete, Mule returns the response to the path defined in the processor's inbound endpoint in the reply section of the scope.
 
 image::request-reply-scope-1.png[]
 
@@ -41,19 +41,20 @@ Consider the following application:
   <logger message="#[payload]" level="INFO"/>
 </flow>
 ----
-<1> After receiving an HTTP request, the VM outbound-endpoint processor sends the message to the `/request` path.
-<1> The VM inbound-endpoint processor with the `/request` path configured receives the message, triggering the requestFlow processing.
-<1> After `requestFlow` finishes processing, Mule automatically sends the message back to VM inbound-endpoint in the reply section of the Request-Reply scope.
+<1> After receiving an HTTP request, the `<vm:outbound-endpoint>` processor sends the message to the `/request` path.
+<2> The `<vm:inbound-endpoint>` processor with the `/request` path configured receives the message, triggering the requestFlow processing.
+<3> After `requestFlow` finishes processing, Mule automatically returns the message to the `<vm:inbound-endpoint>` processor in the reply section of the Request-Reply scope.
 
 To achieve this behavior, Mule implicitly sets a `MULE_REPLYTO` message property to point to the processor in the reply section of the scope. +
-In this case, the VM inbound-endpoint processor in requestFlow's source receives the message with the `MULE_REPLYTO_REQUESTOR` property set to `"reply"`, so Mule sends the resulting message (or messages) back to the requester.
+In this case, the `<vm:inbound-endpoint>` processor in the requestFlow source receives the message with the `MULE_REPLYTO_REQUESTOR` property set to `"reply"`, so Mule returns the resulting message (or messages) to the requester.
 
 == Using VM Connectors in the Requested Flow
 
-Consider a scenario where you have a Request-Reply scope and the requested flow has a VM outbound endpoint at the end pointing to a different flow.
-In this case, the VM processor inside the reply scope still receives the message (or messages) from the triggered flow.
+Consider a scenario in which you have a Request-Reply scope and the requested flow has a VM outbound endpoint at the end, pointing to a different flow.
 
-To disable this behavior, you must set the `MULE_REPLYTO_STOP` variable to `true`:
+In this case, the `<vm:inbound-endpoint>` processor inside the Request-Reply scope still receives the message or messages from the triggered flow.
+
+To disable this behavior, set the `MULE_REPLYTO_STOP` variable to `true`:
 
 [source,xml,linenums]
 ----
@@ -80,14 +81,14 @@ To disable this behavior, you must set the `MULE_REPLYTO_STOP` variable to `true
 </flow>
 ----
 
-<1> Setting `MULE_REPLYTO_STOP` to `true`, prevents Mule from configuring the `MULE_REPLYTO_REQUESTOR` property in the received message.
+<1> Setting `MULE_REPLYTO_STOP` to `true` prevents Mule from configuring the `MULE_REPLYTO_REQUESTOR` property in the received message.
 
 == Limitations
 
-You can't use transactions in VM and JMS connectors inside a request-reply scope. Transactions are not compatible with the way the request-reply scope works.
+You can't use transactions in VM and JMS connectors inside a Request-Reply scope. Transactions are not compatible with the way the Request-Reply scope works.
 
-The request-reply scope does not send a request until a transaction is committed, and a transaction in turn is not committed until the entire flow executes, including the execution of the request-reply scope. This leads to a situation where both processes block each other. +
-Mule cannot execute the complete flow because it's still waiting for the reply on the request-reply scope, but this reply never arrives because the request is not sent until the transaction is committed.
+The Request-Reply scope does not send a request until a transaction is committed, and a transaction in turn is not committed until the entire flow executes, including the execution of the Request-Reply scope. This leads to a situation where both processes block each other. +
+Mule cannot execute the complete flow because it's still waiting for the reply on the Request-reply scope, but this reply never arrives because the request is not sent until the transaction is committed.
 
 == See Also
 
