@@ -4,30 +4,11 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: anypoint studio, filters, conditional, gates, idempotent
 
-Ensures that only unique messages continue through a flow's execution by checking the unique ID of the incoming message.
-
-== Idempotent Message Validator
-
-The Idempotent Message Validator ensures that only unique messages are passed on. It does this by checking the unique ID of the incoming message. To compute the unique ID, you can use a DataWeave expression, including the DataWeave `Crypto` functions that can compute hashes(SHA, MD5) from the data.
-
-=== Parameters
-
-[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
-|===
-| Name | Type | Description | Default Value | Required
-| ID Expression | Expression | The expression to use when extracting the ID from the message. | #[correlationId] | {nbsp}
-| Value Expression | Expression | The expression to use when extracting the value from the message. The result is what will be stored in the object store in case the Id is unique. | #[correlationId] | {nbsp}
-| Object Store | Object Store | Either a name to reference a global object store or a definition of a private object store where the processed message IDs will be stored. | Object Store created by the Object Store Manager. Not persistent, with an entry TTL of 5 MINUTES and an expiration interval of 6 SECONDS. | {nbsp}
-| Store Prefix | String | Defines the prefix of the object store names. This will only be used for the internally built object store. | _configFileName_._flowName_.IdempotentMessageValidator | {nbsp}
-|===
-
-==== Throws
-
-* `MULE:DUPLICATE_MESSAGE`
+The Idempotent Message Validator ensures that only unique messages continue through a flow's execution by checking the unique ID of the incoming message. You can use any incoming attribute of the Mule message as an ID, or you can compute the ID by configuring a DataWeave expression. You can also use the DataWeave `Crypto` functions to compute hashes (SHA, MD5) from the data.
 
 == Message Hashing
 
-DataWeave allows you to import a `Crypto` library that has some hashing functions defined. This can be useful when you want to compute a unique ID for the message by calculating a hash over it. For example, if you want to get an MD5 hash from the message and use it as the ID, the parameter *'ID Expression* should be:
+DataWeave enables you to import the `Crypto` library to execute hashing functions. Calculating a hash can be useful when you want to compute a unique ID for the Mule message. For example, if you want to get an MD5 hash from the payload and use it as the ID, open the Idempotent Message Validator properties in Anypoint Studio and set *ID Expression* (`idExpression` in XML) to the following DataWeave expression:
 
 ----
 #[
@@ -35,9 +16,56 @@ DataWeave allows you to import a `Crypto` library that has some hashing function
     output text/plain
     import dw::Crypto
     ---
-    Crypto::hashWith(message,'MD5')
+    Crypto::hashWith(payload,'MD5')
 ]
 ----
+
+== Examples
+
+* The following example shows an Idempotent Message Validator configured to extract the URL parameter `id` from the HTTP request and use that value as a unique identifier to filter the message:
++
+[source,xml,linenums]
+----
+<flow name="myFlow">
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/"/>
+  ...
+  <idempotent-message-validator doc:name="Idempotent Message Validator" idExpression="#[attributes.queryParams.id]"/>
+  ...
+</flow>
+----
+
+* The next example shows an Idempotent Message Validator configured to hash the payload using a DataWeave expression and use the result of this operation as the unique identifier to filter the message:
++
+[source,xml,linenums]
+----
+<flow name="myFlow">
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/"/>
+  ...
+  <idempotent-message-validator doc:name="Idempotent Message Validator" idExpression="
+    #[%dw 2.0
+      output text/plain
+      import dw::Crypto
+      ---
+      Crypto::hashWith(payload,'MD5')]"/>
+  ...
+</flow>
+----
+
+== Parameter Reference
+
+[%header%autowidth.spread,cols="a,a,a,a,a"]
+|===
+| Name | Type | Description | Default Value | Required
+| ID Expression | Expression | The expression Mule uses to generate the ID. You can use a DataWeave function to calculate the ID, or you can extract the ID from any existing value of the Mule message.
+| `#[correlationId]` | No
+| Value Expression | Expression | This parameter is not used. Setting a value has no effect. | `#[correlationId]` | No
+| Object Store | Object Store | Either a name to reference a global object store or a definition of a private object store where the component stores the processed message IDs. | Object Store created by the Object Store Manager. Not persistent, with an entry TTL of 5 MINUTES and an expiration interval of 6 SECONDS. | No
+| Store Prefix | String | Defines the prefix of the object store names. This value is used only for the internally built object store. | _configFileName_._flowName_.IdempotentMessageValidator | No
+|===
+
+=== Throws
+
+* `MULE:DUPLICATE_MESSAGE`
 
 == See Also
 
