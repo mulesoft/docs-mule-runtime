@@ -3,7 +3,11 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-The Scatter-Gather component is a routing event processor that processes a Mule event through different parallel processing routes that contain one or more event processors. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each of these routes uses a separate thread and creates a new Mule event with its own payload, attributes, and variables. The Scatter-Gather component then combines the Mule events returned by each processing route into a new Mule event that is passed to the next event processor only after every route completes successfully.
+The Scatter-Gather component is a routing event processor that processes a Mule event through different parallel processing routes that contain one or more event processors. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each of these routes uses a separate thread to execute the event processors, and the resulting Mule event varies according to the following:
+* If the processors in the route apply any modification to the Mule event received, the processors create a new Mule event with with its own payload, attributes, and variables. When the route completes, it returns the new Mule event.
+* If the processors in the route execute read-only (void) operations, the route returns the same Mule event that was received.
+
+The Scatter-Gather component then combines the Mule events returned by each processing route into a new Mule event that is passed to the next event processor only after every route completes successfully.
 
 The Scatter-Gather component executes each route in parallel, not sequentially. Parallel execution of routes can greatly increase the efficiency of your Mule application and may provide more information than sequential processing.
 
@@ -12,7 +16,7 @@ The following diagram details the behavior of the Scatter-Gather component:
 image::mruntime-scatter-gather.png[Diagram of Scatter-Gather Component]
 
 <1> The Scatter-Gather component receives a Mule event and sends a reference of this Mule event to each processing route.
-<2> Each of the processing routes start executing in parallel. Once all processors inside a route finish processing, the route generates a new Mule event as a result.
+<2> Each of the processing routes start executing in parallel. Once all processors inside a route finish processing, the route returns the Mule event, which can be either the same Mule event without modifications, or a new Mule event created by the processors in the route as a result of the modifications applied.
 <3> After all processing routes have finished execution, the Scatter-Gather component creates a new Mule event that combines all resulting Mule events from each route, and then passes the new Mule event to the next component in the flow.
 
 WARNING: A Scatter-Gather component cannot be configured with only one route. A Mule application with this configuration throws an exception and does not start, at least two routes are necessary in a Scatter-Gather configuration to be valid.
@@ -23,9 +27,9 @@ You can use a Try scope in each route of a Scatter-Gather component to handle an
 
 To illustrate how this works, consider the following two cases:
 
-* The routes in a Scatter-Gather component each contain a Try scope. One of the routes generates an error that is successfully handled by that route’s Try scope, so the route is still able to generate a Mule event. The Scatter-Gather component consolidates the Mule events from all routes into a new Mule event, as usual, and passes the consolidated event to the next event processor.
+* The routes in a Scatter-Gather component each contain a Try scope. One of the routes generates an error that is successfully handled by that route’s Try scope through an `on-error-continue`, so the route is still able to generate a Mule event. The Scatter-Gather component consolidates the Mule events from all routes into a new Mule event and passes the consolidated event to the next event processor.
 
-* An error occurs in a route. This route either does not contain a Try scope or the error is of a type that the Try scope cannot handle. Although all the other routes complete processing, the failed route causes the Scatter-Gather component to throw a `MULE.COMPOSITE ERROR` error, which the flow passes to the Error Handler component that you have configured for your flow. The error-handling event processors are able to process the Mule events from the completed routes.
+* An error occurs in a route. This route either does not contain a Try scope or the error is of a type that the Try scope cannot handle. Although all the other routes complete processing, the failed route causes the Scatter-Gather component to throw a `MULE:COMPOSITE_ROUTING` error, which the flow passes to the Error Handler component that you have configured for your flow. The error-handling event processors are able to process the Mule events from the completed routes.
 
 Example of handling these errors:
 [source,xml,linenums]
@@ -84,7 +88,7 @@ After aggregation, the variables are:
 
 == Handle Timeout Errors in a Scatter-Gather
 
-You can configure a timeout for a Scatter-Gather component. If a route does not complete processing before the period of time set in the timeout expires, the route throws a `MULE:TIMEOUT` error. This error is then handled the same way as any other error generated from a route: after each route completes (either by completing its last event processor or by throwing a `MULE:TIMEOUT` error), the successful results and errors are collected together and thrown by the Scatter-Gather component as a `MULE:COMPOSITE` error, which can then be processed in an error handler.
+You can configure a timeout for a Scatter-Gather component. If a route does not complete processing before the period of time set in the timeout expires, the route throws a `MULE:TIMEOUT` error. This error is then handled the same way as any other error generated from a route: after each route completes (either by completing its last event processor or by throwing a `MULE:TIMEOUT` error), the successful results and errors are collected together and thrown by the Scatter-Gather component as a `MULE:COMPOSITE_ROUTING` error, which can then be processed in an error handler.
 
 == Example
 In Anypoint Studio, you can download and open the example project _Scatter-Gather Flow Control_ from Anypoint Exchange to learn more about how to use the Scatter-Gather component. This example shows the usage of the scatter-gather control flow to aggregate data in parallel and return the result in JSON.
