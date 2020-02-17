@@ -3,32 +3,90 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: email, connector, send, retrieve, manage, match, matcher, smtp, pop3, imap
-:toc:
-:toc-title:
-
-toc::[]
 
 //Anypoint Studio, Design Center connector
 [[short_description]]
-Flow Ref routes the Mule event to another flow or sub-flow and back within a same Mule application. This lets you treat the entire referenced flow like a single component in your current flow.
-
-Flow Ref breaks up the Mule app into discrete and potentially reusable units. For example, a flow that lists files on a regular basis might reference another flow that processes the output of the List operation. Instead of appending all the processing steps, you can append a Flow Ref that points to the processing flow.
-
-In this example, the Flow Ref component points to a sub-flow called ProcessFiles.
-
-image::component-flowref-example.png[Flow Ref Configuration Example]
-
-The diagram below shows the order of processing when one flow references another. When the main flow is triggered, the Mule event travels through and executes the flow until the event reaches Flow Ref. The event then travels through and executes the referenced flow from beginning to end, and returns to the main flow.
+Flow Reference routes the Mule event to another flow or subflow, executes all processors in the referenced flow, and then routes the event back within the same Mule application. The following diagram shows the order of processing when one flow references another:
 
 image::flowref-about-8b5d1.png[]
 
-== Enriching Content through the Flow Ref component
+When the main flow is triggered, the Mule event travels through and executes the flow until the event reaches the Flow Reference. The event then travels through and executes the referenced flow from beginning to end, and then returns to the main flow.
 
-The Flow Ref component can specify a Target variable, which allows you to define a variable to hold the output of the referenced flow. You can then access that output through the `vars` keyword.
+This process enables you to treat the entire referenced flow like a single component in your current flow.
 
-For example, if a Flow Ref in your main flow points to a flow that produces the value of a certain field that is unavailable in the main flow, you can configure the Target variable (such as `myVar`) in the Flow Ref component to store the value of that field so that you can use that value in your main flow using `vars.myVar`.
+Flow Reference breaks the Mule application into discrete and reusable units. For example, a flow that lists files on a regular basis might reference another flow that processes the output of the List operation. Instead of appending all the processing steps to the flow that lists the files, you can append a Flow Reference that points to the processing flow.
+
+[[configure-flow-ref]]
+== Configure a Flow Reference
+
+To configure a Flow Reference component, follow these steps in Anypoint Studio:
+
+. Drag the Flow Reference component from *Mule Palette* to the point in your flow where you want to create the call to the referenced flow:
++
+image:mruntime-flow-ref-create.png[flow-ref-create]
+. Open the Flow Reference properties and specify the flow you want to reference in *Flow name*:
++
+image:mruntime-flow-ref-config.png[flow-ref-config]
+
+== Enrich Content with a Flow Reference Target Variable
+
+Sometimes you need to execute a flow that uses the current payload and variables, but you want the Mule message to remain unchanged after such process. In this case, you can use a target variable to store the results of the referenced flow processing without changing the original message.
+
+You can store the result of a Flow Reference call in a target variable by configuring the following fields in your Flow Reference properties:
+
+* *Target*: Name of the variable that the Flow Reference creates to store the result of the processed message.
+* *Target Value*: An expression that evaluates against the operation's output. The result of this evaluation is stored in the defined target variable.
+
+=== Considerations when Using a Target Variable
+
+Setting the `target` variable in a Flow Reference component causes the original message to remain unchanged. This means that any modification to the payload or to the variables that occur in the referenced flow revert after the referenced flow finishes executing its processors, returning the payload and variables to their original values.
+
+Alternatively, if you do not define a `target` variable, any modification that occurs to the payload or to the variables in the referenced flow persist after the referenced flow finishes its execution, changing the original value of the payload or variables.
+
+=== XML Example of Flow Reference
+
+The following XML code represents the project created in <<configure-flow-ref, Configure a Flow Reference>>, adding the target variable `flowReferenceVar,` which stores the result of the secondary flow called by the Flow Reference component. This variable is then used in the main flow by logging `vars.flowReferenceVar`:
+
+[source, xml, linenums]
+----
+<!-- Main flow -->
+<flow name="mainFlow" >
+  <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="test"/>
+  <set-payload value="Original payload" doc:name="Set Payload"  />
+  <set-variable value="1" doc:name="Set myVar=1" variableName="myVar"/>
+  <!-- Flow Reference component with target variable flowReferenceVar -->
+  <flow-ref doc:name="secondaryFlow" name="secondaryFlow" target="flowReferenceVar"/>
+  <logger level="INFO" doc:name="Log payload" message='#["Payload = " ++ payload]'/>
+  <logger level="INFO" doc:name="Log myVar" message='#["myVar = " ++ vars.myVar]'/>
+  <logger level="INFO" doc:name="Log flowReferenceVar" message='#["flowReferenceVar = " ++ vars.flowReferenceVar]'/>
+</flow>
+<!-- Secondary flow that is referenced from Main flow-->
+<flow name="secondaryFlow" doc:id="044ece19-aa71-4fc9-ad34-8df655dd59a8" >
+  <set-payload value="Modified payload" doc:name="Update Payload" />
+  <set-variable value="2" doc:name="Update myVar=2" variableName="myVar"/>
+</flow>
+----
+
+The following log represents the output of the example application after its execution:
+
+----
+INFO  LoggerMessageProcessor: Payload = Original payload
+INFO  LoggerMessageProcessor: myVar =  1
+INFO  LoggerMessageProcessor: flowReferenceVar =  Modified payload
+----
+
+If you remove `target="flowReferenceVar"` from the Flow Reference component, the application returns the following output:
+
+----
+INFO  LoggerMessageProcessor: Payload = Modified payload
+INFO  LoggerMessageProcessor: myVar = 2
+INFO  LoggerMessageProcessor: flowReferenceVar = null
+----
+
+The logs are shortened to improve readability.
 
 == See Also
 
 * xref:about-mule-event.adoc[Mule Events]
 * xref:target-variables.adoc[Enrich Data with Target Variables]
+* xref:transaction-management.adoc#tx_scopes_routers[How Transactions Affect Scopes and Routers]

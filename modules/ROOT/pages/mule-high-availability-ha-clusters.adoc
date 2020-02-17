@@ -4,7 +4,12 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: esb, deploy, configuration, cluster, ha, high availability, downtime
 
-A *cluster* is a set of Mule runtimes that acts as a unit. In other words, a cluster is a virtual server composed of multiple nodes. The nodes (Mule runtimes) in a cluster communicate and share information through a distributed shared memory grid. This means that the data is replicated across memory in different physical machines.
+[IMPORTANT]
+Clustering is not available in CloudHub, see xref:runtime-manager::cloudhub-fabric.adoc[CloudHub Fabric] for details on how workers can be shared or doubled to scale your application and provide high availability.
+
+Mule Enterprise Edition supports scalable clustering to provide high availability (HA) for applications.
+
+A cluster is a set of Mule runtime engines that acts as a unit. In other words, a cluster is a virtual server composed of multiple nodes (Mule runtime engines). The nodes in a cluster communicate and share information through a distributed shared memory grid. This means that the data is replicated across memory in different machines.
 
 image::cluster.png[]
 
@@ -13,7 +18,7 @@ Contact your customer service representative about pricing for this feature.
 
 == The Benefits of Clustering
 
-By default, clustering Mule runtimes ensures high system availability. (If you wish to use clusters for high performance instead, see <<Clustering for High Performance>> below.) If a Mule runtime node becomes unavailable due to failure or planned downtime, another node in the cluster can assume the workload and continue to process existing events and messages. The following figure illustrates the processing of incoming messages by a cluster of two nodes. Notice that the processing load is balanced across nodes – Node 1 processes message 1 while Node 2 simultaneously processes message 2.
+By default, clustering Mule runtime engines ensures high system availability. If a Mule runtime engine node becomes unavailable due to failure or planned downtime, another node in the cluster can assume the workload and continue to process existing events and messages. The following figure illustrates the processing of incoming messages by a cluster of two nodes. Notice that the processing load is balanced across nodes: Node 1 processes message 1 while Node 2 simultaneously processes message 2.
 
 image::failovernofail.png[FailoverNoFail]
 
@@ -21,117 +26,166 @@ If one node fails, the other available nodes pick up the work of the failing nod
 
 image::failovernode2fail.png[FailoverNode2Fail]
 
-Because all nodes in a cluster of Mule runtimes process messages simultaneously, clusters can also improve performance and scalability. Compared to a single node instance, clusters can support more users or improve application performance by sharing the workload across multiple nodes or by adding nodes to the cluster.
+Because all nodes in a cluster of Mule runtime engines process messages simultaneously, clusters can also improve performance and scalability. Compared to a single node instance, clusters can support more users or improve application performance by sharing the workload across multiple nodes or by adding nodes to the cluster.
 
 The following figure illustrates workload sharing in more detail. Both nodes process messages related to order fulfillment. However, when one node is heavily loaded, it can move the processing for one or more steps in the process to another node. Here, processing of the Process order discount step is moved to Node 1, and processing of the Fulfill order step is moved to Node 2.
 
 image::cluster-diagram.png[]
 
-Beyond benefits such as high availability through automatic failover, improved performance, and enhanced scalability, clustering Mule runtimes offers the following benefits:
+Beyond benefits such as high availability through automatic failover, improved performance, and enhanced scalability, clustering Mule runtime engines offers the following benefits:
 
-* Automatic coordination of access to resources such as files, databases, and FTP sources. The Mule runtime cluster automatically manages which node (Mule runtime) will handle communication from a data source.
-* Automatic load balancing of processing within a cluster. If you divide your flows into a series of steps and connect these steps with a transport such as VM, each step is put in a queue, making it cluster enabled. The cluster of Mule runtimes can then process each step in any node, and so better balance the load across nodes.
-* Raised alerts. You can set up an alert to appear when a node goes down and when a node comes back up.
+* Automatic coordination of access to resources, such as files, databases, and FTP sources. +
+The Mule runtime engine cluster automatically manages which node (Mule runtime engine) will handle communication from a data source.
+* Automatic load balancing of processing within a cluster. +
+If you divide your flows into a series of steps and connect these steps with a connector such as VM, each step is put in a queue, making it cluster-enabled. The cluster of Mule runtime engines can then process each step in any node to better balance the load across nodes.
+* Raised alerts. +
+You can set up an alert to appear when a node goes down and when a node comes back up.
 
 [NOTE]
-All Mule runtimes in a cluster actively process messages. Note that each Mule runtime is also internally scalable – a single Mule runtime can scale easily by taking advantage of multiple cores. Even when a Mule runtime takes advantage of multiple cores, it still operates as a single node (Mule runtime) in a cluster.
+All Mule runtime engines in a cluster actively process messages. Note that each Mule node is also internally scalable – a single node can scale by taking advantage of multiple cores. Mule operates as a single node in a cluster, even when it uses multiple cores.
 
 === Concurrency Issues Solved by Clusters
 
-The following problems may exist when you have a server group composed of multiple servers that *aren't binded as a cluster*. You don't have to worry about any of them if you group your servers as a cluster:
+The following problems might exist when you have a server group composed of multiple servers that aren't bound as a cluster. You don't have to worry about any of them if you group your servers as a cluster:
 
-* *File based transports*: All Mule instances access the same mule file folders concurrently, which can lead to duplicate file processing and even possible failures if a file is deleted or modified by the Mule application
+* File based connectors. +
+All Mule instances access the same Mule file folders concurrently, which can lead to duplicate file processing and possible failures if a file is deleted or modified by the Mule application.
 
-* *Multicast transport*: All mule instances get the same TCP requests and then process duplicate messages
+* Multicast connector. +
+All Mule instances get the same TCP requests and then process duplicate messages.
 
-* *JMS Topics*: All mule instances connect to the same JMS topic, which may lead to repeated processing of messages when scaling the non clustered Mule instance horizontally
+* JMS topics. +
+All Mule instances connect to the same JMS topic, which might lead to the repeated processing of messages when scaling the non-clustered Mule instance horizontally.
 
-* *JMS request-reply/request-response*: All Mule instances are listening for messages in the same response queue, this implies that a Mule instance might obtain a response that isn't correlated to the request it sent. This can result in incorrect responses or make a flow fail with timeout.
+* JMS request-reply/request-response. +
+All Mule instances are listening for messages in the same response queue. This implies that a Mule instance might obtain a response that isn't correlated to the request it sent and might result in incorrect responses or make a flow fail with timeout.
 
-* *Idempotent-redelivery-policy*: Idempotency doesn’t work if the same request is received by different Mule instances. Duplicated messages aren’t possible
+* Idempotent Redelivery Policy. +
+Idempotency doesn’t work if the same request is received by different Mule instances. Duplicated messages aren’t possible.
 
-* *Salesforce streaming API*: if multiple instances of the same application are deployed, they will fail since the API only supports a single consumer. No failover support in case the instance connected is stopped or crashes
+* Salesforce streaming API. +
+If multiple instances of the same application are deployed, they will fail because the API only supports a single consumer. There is no failover support if the instance connected is stopped or crashes.
 
+== Prerequisites
 
+* You must have at least two Mule runtime engines in a cluster, each one running on different machines.
+* Mule high availability (HA) requires a reliable network connection between servers to maintain synchronization between the nodes in the cluster.
+* You must keep the following ports open to set up a Mule cluster: port `5701` and port `54327`.
+* If you configure your cluster to use multicast, you need to enable the multicast IP address: `224.2.2.3`. Multicast is used to discover new cluster members.
 
-== About Clustering
+== High Availability
 
-With out of the box configurations, it is recommended that you scale a cluster to no more than eight Mule runtimes. All the Mule runtimes in a cluster group together to form a single unit. Thus, you can deploy, monitor, or stop all the Mule runtimes in a cluster as if they were a single Mule runtime. If you need more nodes than eight, contact https://www.mulesoft.com/support-and-services/mule-esb-support-license-subscription[MuleSoft Support].
+High Availability is a method of designing a computer system to prevent any downtime for the applications that run on it. Some systems use multiple servers so that if one server experiences downtime, the application can continue to run smoothly on the others, without interrupting service for the application’s end users.
 
-All the Mule runtimes in a cluster share memory, as illustrated below:
+== Cluster Design and Management
+
+The Mule Management Console and Runtime Manager are two interfaces that enable you to set up a cluster of Mule instances, then deploy an application to run on the cluster. You can also monitor the status information for clusters and individual nodes. When clustered, you can easily manage several servers as one.
+
+[NOTE]
+For more detailed information about cluster management, see xref:runtime-manager::managing-servers.adoc[Managing Servers] in Runtime Manager.
+
+A Mule Cluster consists of two or more Mule runtime engines, or nodes, grouped together and treated as a single unit. With the initial configuration, MuleSoft recommends that you scale a cluster to no more than eight Mule runtime engines.
+
+With Anypoint Runtime Manager, you can deploy, monitor, or stop all the Mule runtime engines in a cluster as if they were a single Mule runtime engine.
+
+All the nodes in a cluster share memory as illustrated below:
 
 image::topology-4-cluster.png[topology_4-cluster]
 
-Mule uses an *active-active* model to cluster Mule runtimes, rather than an *active-passive* model.
+Mule uses an active-active model to cluster Mule runtime engines. The benefit of this model over an active-passive approach is that your application runs in all nodes, splitting message processing with the other nodes in your cluster, which expedites processing.
 
-In an *active-passive* model, one node in a cluster acts as the *primary*, or active node, while the others are *secondary*, or passive nodes. The application in such a model runs on the primary node, and only ever runs on the secondary node if the first one fails. In this model, the processing power of the secondary node(s) is mostly wasted in passive waiting for the primary node to fail.
+=== Primary Node Difference
 
-In an *active-active* model, no one node in the cluster acts as the primary node; all nodes in the cluster support the application. This application in this model runs on all the nodes, even splitting apart message processing between nodes to expedite processing across nodes.
+In an active-active model, there is no primary node. However, one of the nodes acts as the primary polling node. This means that sources can be configured to only be used by the primary polling node so that no other node reads messages from that source.
 
-== About Queues
+This feature works differently depending on the source type:
 
-You can set up a *VM queue* explicitly to *load balance* across Mule runtimes (nodes). Thus, if your entire application flow contains a sequence of child flows, the cluster can assign each successive child flow to whichever Mule runtime (node) happens to be available at the time. Potentially, the cluster can process a single message on multiple nodes as it passes through the VM endpoints in the application flow, as illustrated below:
+* Scheduler source: only runs in the primary polling node.
+* Any other source: defined by the `primaryNodeOnly` attribute. Check each connector's documentation to know which is the default value for `primaryNodeOnly` in that connector.
++
+.Example configuration for JMS:
+[source,xml,linenums]
+----
+<flow name="jmsListener">
+    <jms:listener config-ref="config" destination="listen-queue" primaryNodeOnly="true"/>
+    <logger message="#[payload]"/>
+</flow>
+----
+
+== Queues
+
+You can set up a VM queue explicitly to load balance across Mule runtime engines (nodes). Thus, if your entire application flow contains a sequence of child flows, the cluster can assign each successive child flow to whichever Mule runtime engine happens to be available at the time. The cluster can potentially process a single message on multiple nodes as it passes through the VM endpoints in the application flow, as illustrated below:
 
 image::load-balancing.png[load_balancing]
 
-== About High-Reliability Applications
+== High-Reliability Applications
 
-A *high-reliability* application must meet the following requirements:
+A high-reliability application must meet the following requirements:
 
 . Zero tolerance for message loss
-. A reliable underlying enterprise service bus (Mule)
+. A reliable integration engine (Mule)
 . Highly reliable individual connections
 
-The feature known as *transactionality* tracks application event sequences to ensure that each message-processing step gets completed successfully, and therefore, no messages get lost or processed incorrectly. If a step fails, for some reason, the transactional mechanism rolls back all previous processing events, then restarts the message processing sequence again.
+The feature known as transactionality tracks application event sequences to ensure that each message-processing step completes successfully, and therefore, no messages get lost or processed incorrectly. If a step fails for some reason, the transactional mechanism rolls back all previous processing events, then restarts the message-processing sequence.
 
-Transports such as JMS, VM, and JDBC provide built-in transactional support, thus ensuring that messages get processed reliably. For example, you can configure a transaction on an inbound JMS connection endpoint to remove messages from the JMS server only after the transaction has been committed. This ensures that the original message remains available for reprocessing if an error occurs during the processing flow.
+Connectors such as JMS, VM, and JDBC provide built-in transactional support, thus ensuring that messages get processed reliably. For example, you can configure a transaction on an inbound JMS connection endpoint to remove messages from the JMS server only after the transaction has been committed. This practice ensures that the original message remains available for reprocessing if an error occurs during the processing flow.
 
-You must use *XA transactions* to move messages between dissimilar transports that support transactions. This ensures that the Mule runtime commits associated transactions from all the dissimilar transports as a single unit. See xref:transaction-management.adoc[Transaction Management] for more information on XA and other types of transactions supported by Mule runtimes.
+You must use XA transactions to move messages between dissimilar connectors that support transactions. This ensures that the Mule runtime engine commits associated transactions from all the dissimilar connectors as a single unit.
 
-== Cluster Support for Transports
+== Cluster Support for Connectors
 
-All Mule transports are supported within a cluster. Because of differences in the way different transports access inbound traffic, the details of this support vary. In general, outbound traffic acts the same way inside and outside a cluster – the differences are highlighted below.
+All Mule connectors are supported within a cluster. Because of differences in the way different connectors access inbound traffic, the details of this support vary. In general, outbound traffic acts the same way inside and outside a cluster. Mule runtimes support three basic types of connectors:
 
-Mule runtimes support three basic types of transports:
+=== Socket-based Connectors
+Socket-based connectors read input sent to network sockets that Mule owns. Examples include TCP, UDP, and HTTP[S].
 
-* Socket-based transports read input sent to network sockets that Mule owns. Examples include TCP, UDP, and HTTP[S].
-* listener-based transports read data using a protocol that fully supports concurrent multiple accessors. Examples include JMS and VM.
-* resource-based transports read data from a resource that allows multiple concurrent accessors, but does not natively coordinate their use of the resource. For instance, suppose multiple programs are processing files in the same shared directory by reading, processing, and then deleting the files. These programs must use an explicit, application-level locking strategy to prevent the same file from being processed more than once. Examples of resource-based transports include File, FTP, SFTP, E-mail, and JDBC.
+Socket-based connectors are supported in clusters as described below:
 
-All three basic types of transports are supported in clusters in different ways, as described below.
+* Since each clustered Mule runtime runs on a different network node, each instance receives only the socket-based traffic sent to its node. Incoming socket-based traffic should be <<Clustering and Load Balancing>> to distribute it among the clustered instances.
+* Output to socket-based connectors is written to a specific host/port combination. If the host/port combination is an external host, no special considerations apply. If it is a port on the local host, consider using that port on the load balancer instead to better distribute traffic among the cluster.
 
-* Socket-based
-** Since each clustered Mule runtime runs on a different network node, each instance receives only the socket-based traffic sent to its node. Incoming socket-based traffic should be <<Clustering and Load Balancing>> to distribute it among the clustered instances.
-** Output to socket-based transports is written to a specific host/port combination. If the host/port combination is an external host, no special considerations apply. If it is a port on the local host, consider using that port on the load balancer instead to better distribute traffic among the cluster.
-* Listener-based
-** Listener-based transports fully support multiple readers and writers. No special considerations apply either to input or to output.
-** Note that, in a cluster, VM transport queues are a shared, cluster-wide resource. The cluster will automatically synchronize access to the VM transport queues. Because of this, a message written to a VM queue can be processed by any cluster node. This makes VM ideal for sharing work among cluster nodes.
-* Resource-based
-** Mule HA Clustering automatically coordinates access to each resource, ensuring that only one clustered instance accesses each resource at a time. Because of this, it is generally a good idea to immediately write messages read from a resource-based transport to VM queues. This allows the other cluster nodes to take part in processing the messages.
-** There are no special considerations in writing to resource-based clustered transports:
-*** When writing to file-based transports (File, FTP, SFTP), Mule will generate unique file names.
-*** When writing to JDBC, Mule can generate unique keys.
-*** Writing e-mail is effectively listener-based rather than resource-based.
+=== Listener-based Connectors
+Listener-based connectors read data using a protocol that fully supports concurrent multiple accessors. Examples include JMS and VM.
 
-// TODO: PLG, OK TO hide or remove "Clustering and Reliable Applications" until we update it and incorporate reliability-patterns into the doc set?
-////
-HIDING SECTION FOR NOW:
+Listener-based connectors are supported in clusters as described below:
+
+* Listener-based connectors fully support multiple readers and writers. No special considerations apply either to input or to output.
+* Note that, in a cluster, VM connector queues are a shared, cluster-wide resource. The cluster will automatically synchronize access to the VM connector queues. Because of this, any cluster node can process a message written to a VM queue. This makes VM ideal for sharing work among cluster nodes.
+
+=== Resource-based Connectors
+Resource-based connectors read data from a resource that allows multiple concurrent accessors, but does not natively coordinate their use of the resource. Examples of resource-based connectors include File, FTP, SFTP, E-mail, and JDBC.
+
+Resource-based connectors are supported in clusters as described below:
+
+* Mule HA Clustering automatically coordinates access to each resource only for nodes within the cluster, ensuring that only one clustered instance accesses each resource at a time. Because of this, it is generally a good idea to immediately write messages read from a resource-based connector to VM queues. This allows the other cluster nodes to take part in processing the messages.
++
+[NOTE]
+====
+If you run other applications (either Mule applications outside the cluster or non-Mule applications) that access the same resources as the nodes in the cluster, you must implement logic to lock those resources.
+
+For example, if multiple programs are processing files in the same shared directory by reading, modifying, and then deleting the files. These programs must use an explicit, application-level locking strategy to prevent the same file from being processed more than once.
+====
+
+* There are no special considerations in writing to resource-based clustered connectors:
+** When writing to file-based connectors (File, FTP, SFTP), Mule will generate unique file names.
+** When writing to JDBC, Mule can generate unique keys.
+** Writing e-mail is effectively listener-based rather than resource-based.
+
 == Clustering and Reliable Applications
 
-High-reliability applications (ones that have zero tolerance for message loss) not only require the underlying Mule to be reliable, but that reliability needs to extend to individual connections. xref:reliability-patterns.adoc[Reliability Patterns] give you the tools to build fully reliable applications in your clusters.
+High-reliability applications must have zero tolerance for message loss. This means that both the underlying Mule and its individual connections need to be reliable. You can find tools to build fully reliable applications in your clusters in xref:reliability-patterns.adoc[Reliability Patterns].
 
-Current Mule documentation provides xref:reliability-patterns.adoc[code examples] that show how you can implement a reliability pattern for a number of different non-transactional transports, including HTTP, FTP, File, and IMAP. If your application uses a non-transactional transport, follow the reliability pattern. These patterns ensure that a message is accepted and successfully processed or that it generates an "unsuccessful" response allowing the client to retry.
+If your application uses a non-transactional connector, follow the reliability pattern. These patterns ensure that a message is accepted and successfully processed or that it generates an "unsuccessful" response, allowing the client to retry.
 
-If your application uses transactional transports, such as JMS, VM, and JDBC, use transactions. Mule's built-in support for transactional transports enables reliable messaging for applications that use these transports.
+If your application uses transactional connectors, such as JMS, VM, and JDBC, use transactions. Mule's built-in support for transactional connectors enables reliable messaging for applications that use these connectors.
 
 These actions can also apply to non-clustered applications.
-////
 
 == Clustering and Networking
 
 === Single Data-center Clustering
 
-To ensure reliable connectivity between cluster nodes, all nodes of a cluster should be located on the same LAN. Implementing a cluster with nodes across geographically separated locations, such as different data centers that are connected through a VPN, is possible but not recommended.
+To ensure reliable connectivity between cluster nodes, all nodes of a cluster must be located on the same LAN. Implementing a cluster with nodes across geographically separated locations, such as different data centers that are connected through a VPN, is possible but not recommended.
 
 Ensuring that all cluster nodes reside on the same LAN is the best practice to lower the possibility of network interruptions and unintended consequences, such as duplicated messages.
 
@@ -145,49 +199,47 @@ To prevent this behavior, it is necessary to enable the Quorum Protocol. This pr
 
 IMPORTANT: A cluster partition that does not have enough nodes to function will continue reacting to external system calls, but all operations over the object stores will fail, preventing data generation.
 
-.Limitations
+==== Limitations
 
 * Quorum is only supported in Object Store-related operations.
 * Distributed locking is not supported, which affects:
-  - File/FTP transport polling for files concurrent
+  - File/FTP connector polling for files concurrent
   - Idempotent Redelivery Policy component
   - Idempotent Message Filter component
-* In-memory messaging is not suported, which affects:
-  - VM transport
-  - SEDA queues
+* In-memory messaging is not supported, which affects:
+  - VM connector
 * The Quorum feature can only be configured manually.
-
-xref:creating-and-managing-a-cluster-manually.adoc[Create and Manage a Cluster Manually]
-
 
 == Clustering and Load Balancing
 
 When Mule clusters are used to serve TCP requests (where TCP includes SSL/TLS, UDP, Multicast, HTTP, and HTTPS), some load balancing is needed to distribute the requests among the clustered instances. There are various software load balancers available, two of them are:
 
-* Nginx, an open-source HTTP server and reverse proxy. You can use nginx's http://wiki.nginx.org/HttpUpstreamModule[HttpUpstreamModule] for HTTP(S) load balancing. You can find further information in the Linode Library entry http://library.linode.com/web-servers/nginx/configuration/front-end-proxy-and-software-load-balancing[Use Nginx for Proxy Services and Software Load Balancing].
+* NGINX, an open-source HTTP server and reverse proxy. You can use NGINX's `HttpUpstreamModule` for HTTP(S) load balancing.
 * The Apache web server, which can also be used as an HTTP(S) load balancer.
 
-There are also many hardware load balancers that can route both TCP and HTTP(S) traffic.
+Many hardware load balancers can also route both TCP and HTTP or HTTPS traffic
 
+[[cluster-high-performance]]
 == Clustering for High Performance
 
-Note that high performance is implemented differently on xref:runtime-manager::index.adoc[CloudHub] and xref:runtime-manager::deploying-to-pcf.adoc[Pivotal Cloud Foundry], so this section applies only for xref:runtime-manager::deploying-to-your-own-servers.adoc[on-premises deployments].
+This section applies only for on-premises deployments. High performance is implemented differently on CloudHub and Pivotal Cloud Foundry.  +
+See xref:runtime-manager::deployment-strategies.adoc[Deployment Strategies] for more information about each of these deployments.
 
-If high performance is your primary goal (rather than reliability), you can configure a Mule cluster or an individual application for maximum performance using a *performance profile*. By implementing the performance profile for specific applications within a cluster, you can maximize the scalability of your deployments while deploying applications with different performance and reliability requirements in the same cluster. By implementing the performance profile at the container level, you apply it to all applications within that container. Application-level configuration overrides container-level configuration.
+If high performance is your primary goal (rather than reliability), you can configure a Mule cluster or an individual application for maximum performance using a performance profile. By implementing the performance profile for specific applications within a cluster, you can maximize the scalability of your deployments while deploying applications with different performance and reliability requirements in the same cluster. Performance profiles that you configure at the container level apply to all applications within the container. Application-level configuration overrides container-level configuration.
 
 Setting the performance profile has two effects:
 
 * It disables distributed queues, using local queues instead to prevent data serialization/deserialization and distribution in the shared data grid.
 * It implements the object store without backups, to avoid replication.
 
-To configure the performance profile at the _container_ level, add to *`mule-cluster.properties`* or to the system properties from the command line or wrapper.conf:
+To configure the performance profile at the _container_ level, add the following to `mule-cluster.properties`, to the system properties (from the command line), or to `wrapper.conf`:
 
 `mule.cluster.storeprofile=performance`
 
 To configure the performance profile at the _individual application_ level, add the profile inside a configuration wrapper, as shown below.
 
-*Performance Store Profile*
-
+* Performance Store Profile
++
 [source,xml,linenums]
 ----
 <mule>
@@ -199,10 +251,10 @@ To configure the performance profile at the _individual application_ level, add 
 </mule>
 ----
 
-Remember that application-level configuration overrides container-level configuration. If you would like to configure the container for high performance but make one ore more individual applications within that container prioritize reliability, include the following code in those applications:
+Remember that an application-level configuration overrides a container-level configuration. If you want to configure the container for high performance but make one or more individual applications within that container prioritize reliability, include the following code in those applications:
 
-*Reliable Store Profile*
-
+* Reliable Store Profile
++
 [source,xml,linenums]
 ----
 <mule>
@@ -215,70 +267,42 @@ Remember that application-level configuration overrides container-level configur
 ----
 
 [WARNING]
-In cases of high load with endpoints that do not support load balancing, applying the performance profile may degrade performance. If you are using a File-based transport with an asynchronous processing strategy, JMS topics, multicasting, or HTTP connectors without a load balancer, the high volume of messages entering a single node can cause bottlenecks, and thus it can be better for performance to turn off the performance profile for these applications.
+====
+In cases of high load with endpoints that do not support load balancing, applying the performance profile might degrade performance. If you are using a File-based connector with an asynchronous processing strategy, JMS topics, multicasting, or HTTP connectors without a load balancer, the high volume of messages entering a single node can cause bottlenecks, and thus it can be better for performance to turn off the performance profile for these applications.
+====
 
-You can also choose to define a minimum number of machines required in a cluster for it to remain in an operational state. This grants you a consistency improvement. See  xref:creating-and-managing-a-cluster-manually.adoc#quorum-management[Quorum Management].
+You can also choose to define the minimum number of machines that a cluster requires to remain in an operational state. This configuration grants you a consistency improvement in the overall performance.
 
-////
-TODO: PLG, ok to HIDE or remove HA Cluster Demo UNTIL evaluating-mule-high-availability-clusters-demo is added to the 4.1 doc set, assuming that happens
-== HA Cluster Demo
+[[cluster_fips]]
+== Clustering in FIPS mode
 
-//TODO: UPDATE
-TODO: CHK/FIX LINKS /mule-user-guide/v/3.9/evaluating-mule-high-availability-clusters-demo?
-To evaluate Mule's HA clustering capabilities first-hand, continue on to the xref:3.9@mule-runtime::evaluating-mule-high-availability-clusters-demo.adoc[Mule HA Demo]. Designed to help new users evaluate the capabilities of Mule High Availability Clusters, the Mule HA Demo Bundle teaches you how to use the Mule Management Console to create a cluster of Mule runtimes, then deploy an application to run on the cluster. Further, this demo simulates two processing scenarios that illustrate the cluster’s ability to automatically balance normal processing load, and its ability to reliably remain active in a failover situation.
-////
+To enable clustering in FIPS mode, Mule Runtime must run in FIPS mode. See xref:fips-140-2-compliance-support.adoc[FIPS Compliant support] for more information about this.
+
+If you are running in FIPS mode, then a key for the cluster must be defined. You can define the key by setting the `mule.cluster.network.encryption.key` property (`wrapper.conf` or system property). If you are using a clustered environment in FIPS mode and not setting the encryption key, the application will fail to deploy with a message `Cluster key must be defined in FIPS mode.`. It is not necessary to run in FIPS mode to define the encryption key and encrypt all communications. But if the runtime is running in FIPS mode, then the encryption key must be defined.
+
+With the encryption key defined, all communications between cluster nodes will be encrypted using an AES encryption algorithm, with the defined key.
+
+=== Warnings
+
+* The encryption key for all the clustered nodes must be the same for this feature to work.
+* Take into account that the use of a clustered environment in FIPS mode downgrades performance because all the communications between nodes will be encrypted (and decrypted).
 
 == Best Practices
 
 There are a number of recommended practices related to clustering. These include:
 
 * As much as possible, organize your application into a series of steps where each step moves the message from one transactional store to another.
-+
-////
-TODO: CHK/FIX LINKS
-TODO: PLG, OK to hide or remove the next bullet until we UPDATE /mule-user-guide/v/3.9/reliability-patterns and incorporate into the doc 4.1 docs
-* If your application processes messages from a non-transactional transport, use a xref:3.9@mule-runtime::reliability-patterns.adoc[reliability pattern] to move them to a transactional store such as a VM or JMS store.
-////
-+
-* Use transactions to process messages from a transactional transport. This ensures that if an error is encountered, the message reprocesses.
-* Use distributed stores such as those used with the VM or JMS transport – these stores are available to an entire cluster. This is preferable to the non-distributed stores used with transports such as File, FTP, and JDBC – these stores are read by a single node at a time.
-* Use the VM transport to get optimal performance. Use the JMS transport for applications where data needs to be saved after the entire cluster exits.
-* Create the number of nodes within a cluster that best meets your needs.
+* If your application processes messages from a non-transactional connector, use a xref:reliability-patterns.adoc[reliability pattern] to move them to a transactional store such as a VM or JMS store.
+* Use transactions to process messages from a transactional connector. This ensures that if an error is encountered, the message reprocesses.
+* Use distributed stores such as those used with the VM or JMS connector – these stores are available to an entire cluster. This is preferable to the non-distributed stores used with connectors such as File, FTP, and JDBC – these stores are read by a single node at a time.
+* Use the VM connector to get optimal performance. Use the JMS connector for applications where data needs to be saved after the entire cluster exits.
 * Implement reliability patterns to create high reliability applications.
-
-== Prerequisites and Limitations
-
-* With out of box configurations it is recommended that you scale a cluster to no more than eight Mule nodes.
-// COMBAK: Comenting this out per JIRA SE-6162.
-// If you need more nodes than eight, contact https://www.mulesoft.com/support-and-services/mule-esb-support-license-subscription[MuleSoft Support].
-* You must have at least two Mule runtimes in a cluster, each of which should run on different physical (or virtual) machines.
-* To maintain synchronization between the nodes in the cluster, Mule HA requires a reliable network connection between servers.
-* You must keep the following ports open in order to set up a Mule cluster: port 5701 and port 54327.
-* Because new cluster member discovery is performed using multicast, you need to enable the multicast IP: 224.2.2.3
-* To serve TCP requests, some load balancing across a Mule cluster is needed. See <<Clustering and Load Balancing>> for more information about third-party load balancers that you can use. You can also load balance the processing within a cluster by separating your flows into a series of steps and connecting each step with a transport such as VM. This cluster enables each step, allowing Mule to better balance the load across nodes.
-+
-////
-TODO: CHK/FIX LINKS
-TODO: PLG, OK TO REMOVE this bullet? Or how to update it for 4.1. endpoint-configuration-reference is no longer part of 4.1 docs
-* If your xref:endpoint-configuration-reference.adoc[custom message source] does not use a message receiver to define node polling. Then you must configure your message source to implement a `ClusterizableMessageSource` interface. `ClusterizableMessageSource` dictates that only one application node inside a cluster contains the active (that is, started) instance of the message source; this is the ACTIVE node. If the active node falters, the `ClusterizableMessageSource` selects a new active node, then starts the message source in that node.
-////
-
-[[cluster_fips]]
-== Clustering in FIPS mode
-
-To enable clustering in FIPS mode, Mule Runtime must run in FIPS mode. See xref:fips-140-2-compliance-support.adoc[FIPS Compliant support] for more information about this. 
-
-If you are running in FIPS mode, then a key for the cluster must be defined. You can define the key by setting the `mule.cluster.network.encryption.key` property (`wrapper.conf` or system property). If you are using a clustered environment in FIPS mode and not setting the encryption key, the application will fail to deploy with a message `Cluster key must be defined in FIPS mode.`. It is not necessary to run in FIPS mode to define the encryption key and encrypt all communications. But if the runtime is running in FIPS mode, then the encryption key must be defined. 
-
-With the encryption key defined, all communications between cluster nodes will be encrypted using an AES encryption algorithm, with the defined key. 
-
-=== Warnings
-
-* To make this feature to work, the encryption key for all the clustered nodes **must be the same**. 
-* Take into account that the use of a clustered environment in FIPS mode downgrades performance because all the communications between nodes will be encrypted (and decrypted). 
-
 
 == See Also
 
 * xref:installing-an-enterprise-license.adoc[Install an Enterprise License]
 * xref:runtime-manager::managing-servers.adoc#create-a-cluster[Managing Servers]
+* xref:runtime-manager::cloudhub-hadr.adoc[CloudHub High Availability and Disaster Recovery]
+* xref:creating-and-managing-a-cluster-manually.adoc[Create and Manage a Cluster Manually]
+* xref:transaction-management.adoc[Transaction Management]
+* xref:creating-and-managing-a-cluster-manually.adoc#quorum-management[Quorum Management]

@@ -4,47 +4,59 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: mule, threading, scheduler, non-blocking
 
-The Mule execution engine is implemented on top of 
-Project Reactor, providing the foundation for the 
-non-blocking runtime. This implementation is a task-oriented execution model, 
-where each operation inside a flow is a task that provides metadata about its 
-execution, and the engine makes tuning decisions based on that metadata.
+The Mule execution engine is implemented on top of Project Reactor, which
+provides the foundation for the non-blocking runtime. Its task-oriented
+execution model enables you to take advantage of non-blocking IO calls
+and to make tuning configurations in a simple way. Each operation inside
+a Mule flow is a task that provides metadata about its execution,
+and the engine makes tuning  decisions based on that metadata.
+
+In Mule applications, a flow always functions synchronously. If you need to
+achieve asynchronous patterns, such as Fire-and-Forget, you can use the
+xref:async-scope-reference.adoc[Async (`<async>`)] component.
+
+Mule Event processors indicate to the runtime whether they are CPU intensive,
+CPU light, or IO intensive operations. These workload types help the runtime tune
+for different workloads, removing the need for you to manage thread pools manually
+to achieve optimum performance. Instead, the runtime introspects the available
+resources (such as memory and CPU cores) in the system to tune thread pools
+automatically.
 
 [[processing_types]]
 == Processing Types
 
-Mule Event processors indicate to the runtime what kind of work they do, which 
+Mule Event processors indicate to the runtime what kind of work they do, which
 can be one of:
 
-* CPU Light: For quick operations, or Non-Blocking IO, for example, a Logger (`logger`) or HTTP Request operation (`http:request`).
-* Blocking IO: For IO that blocks the calling thread, for example, a Database Select operation (`db:select`).
-* CPU Intensive: For CPU-bound computations, for example, through the Transform Message component (`ee:transform`).
+* CPU Light: For quick operations, or Non-Blocking IO, for example, a Logger (`logger`) or HTTP Request operation (`http:request`). The applicable strings in the logs are `CPU_LIGHT` and `CPU_LIGHT_ASYNC`.
+* Blocking IO: For IO that blocks the calling thread, for example, a Database Select operation (`db:select`). Applicable strings in the logs are `BLOCKING` and `IO`.
+* CPU Intensive: For CPU-bound computations, for example, through the Transform Message component (`ee:transform`). The applicable string in the logs is `CPU_INTENSIVE`.
 
-See specific component or module documentation to learn the processing type it supports. If none is specified, the default is *CPU Light*.
+See specific component or module documentation to learn the processing type it supports. If none is specified, the default is CPU Light.
 
 // link to https://docs.mulesoft.com/mule-sdk/1.1/non-blocking-operations#execution-types
-For connectors created with the Mule SDK, the SDK determines the most 
-appropriate processing type based on how the connector is implemented. For 
+For connectors created with the Mule SDK, the SDK determines the most
+appropriate processing type based on how the connector is implemented. For
 details on that mechanism, refer to the xref:1.1@mule-sdk::index.adoc[Mule SDK documentation].
 
 [[threading]]
 == Threading
 
-Based on the processing type of a component, the runtime executes that 
-component on a thread pool that is specifically tuned for that kind of work. These 
-thread pools are managed by the runtime and shared across all apps in the same 
-runtime. When started, the runtime introspects the available resources (such 
-as memory and CPU cores) in the system to tune thread pools automatically for 
+Based on the processing type of a component, the runtime executes that
+component on a thread pool that is specifically tuned for that kind of work. These
+thread pools are managed by the runtime and shared across all apps in the same
+runtime. When started, the runtime introspects the available resources (such
+as memory and CPU cores) in the system to tune thread pools automatically for
 the environment where it is running. The default configuration was established
 through performance testing, which found optimal values for most scenarios.
 
-The different thread pools allow the runtime to be efficient, requiring 
-significantly fewer threads (and their inherent memory footprint) to handle a given work 
+The different thread pools allow the runtime to be efficient, requiring
+significantly fewer threads (and their inherent memory footprint) to handle a given work
 load when compared to Mule 3.
 
-Configuration of the pools is calculated based on the available resources (CPU and memory) of the system at startup. The default configuration is based on performance testing for the optimal values for most scenarios. The default configuration can be modified through `schedulers-conf` (documentation for the configuration options is within the comments of this file.). However, reconfiguration is not recommended. Note that the configuration is global and affects the entire Mule Runtime instance. MuleSoft strongly recommendeds that you perform load and stress testing with all applications involved in real-life scenarios to validate any change in the threading configurations and to understand how the thread pools work in Mule 4. 
+Configuration of the pools is calculated based on the available resources (CPU and memory) of the system at startup. The default configuration is based on performance testing for the optimal values for most scenarios. The default configuration can be modified through `schedulers-conf` (documentation for the configuration options is within the comments of this file.). However, reconfiguration is not recommended. Note that the configuration is global and affects the entire Mule Runtime instance. MuleSoft strongly recommendeds that you perform load and stress testing with all applications involved in real-life scenarios to validate any change in the threading configurations and to understand how the thread pools work in Mule 4.
 
-Note: By design, it is not possible to change the thread pools configurations in CloudHub. Any changes in local configurations will not be valid to compare to CloudHub applications. 
+Note: By design, it is not possible to change the thread pools configurations in CloudHub. Any changes in local configurations will not be valid to compare to CloudHub applications.
 
 The key aspects of each thread pool are described in the next sections.
 
@@ -52,18 +64,18 @@ The key aspects of each thread pool are described in the next sections.
 
 CPU Light is for a relatively small thread pool (2 threads per available core by default).
 
-Apart from executing the `CPU_LIGHT` processors, this pool performs the handoff
-of the event between processors in the flow (including the routers) and the 
-response handling for non-blocking IO. 
+Apart from executing the CPU Light processors, this pool performs the handoff
+of the event between processors in the flow (including the routers) and the
+response handling for non-blocking IO.
 
-In an app, when throughput drops or becomes unresponsive, it might be due to some code 
-misusing the `CPU Light` thread pool. This can be quickly checked by taking a 
-thread dump of the runtime and looking for `WAITING` or `BLOCKED` or for 
-long-running processes in the `CPU Light` threads. 
+In an app, when throughput drops or becomes unresponsive, it might be due to some code
+misusing the CPU Light thread pool. This can be quickly checked by taking a
+thread dump of the runtime and looking for `WAITING` or `BLOCKED` or for
+long-running processes in the CPU Light threads.
 
 === CPU Intensive
 
-CPU Intensive is also a small thread pool (2 threads per available core by default), 
+CPU Intensive is also a small thread pool (2 threads per available core by default),
 but it provides a queue for accepting more tasks.
 
 === IO
@@ -74,36 +86,36 @@ Tasks running in this pool should spend most of their time `WAITING` or `BLOCKED
 instead of doing CPU work, so they do not compete with the other pools.
 
 Also, when a transaction is active (since many transaction managers require all
-steps of a same transaction to be handled by the same thread), the `IO` pool 
-is used. 
+steps of a same transaction to be handled by the same thread), the `IO` pool
+is used.
 
 === Others
 
-Apart from the three core thread pools, some other pools are created by the runtime 
+Apart from the three core thread pools, some other pools are created by the runtime
 or some standard uses in some connectors:
 
-* Flow ring-buffer: Performs the handoff between the source of a flow and the
-flow itself. There is one pool for each flow, each with as many threads as half
-of the available cores by default.
-* NIO Selectors: Enables non-blocking IO. Each connector can create as many 
+* NIO Selectors: Enables non-blocking IO. Each connector can create as many
 as required.
 
 [[backpressure]]
 == Back-pressure
 
-Under heavy load, there is a case where the runtime has no resources 
-available to handle a specific event. This issue might occur because the `CPU_LIGHT` 
-threads are all busy and cannot perform the handoff of the newly arrived event or 
+Under heavy load, there is a case where the runtime has no resources
+available to handle a specific event. This issue might occur because the CPU Light
+threads are all busy and cannot perform the handoff of the newly arrived event or
 because the current flow's `maxConcurrency` has been exceeded already.
 
 In that case, a message is logged about the condition: `Flow 'flowName' is unable to accept new events at this time`. Also, the source of the flow is notified to perform any required actions.
 
-The actions to perform on back-pressure are specific to each connector's 
-source. For instance, an `http:listener` might return a `503` error code, while 
+The actions to perform on back-pressure are specific to each connector's
+source. For instance, an `http:listener` might return a `503` error code, while
 a message broker listener might provide the option to either wait for resources to
-be available or drop the message. In some cases, a source might  
+be available or drop the message. In some cases, a source might
 disconnect from a remote system to avoid getting more data than it can process
 and then reconnect once the server state is normalized.
 
-See specific connector documentation for details on how 
+////
+per https://www.mulesoft.org/jira/browse/DOCS-6457
+See specific connector documentation for details on how
 connector sources handle back-pressure.
+////

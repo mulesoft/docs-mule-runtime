@@ -5,7 +5,11 @@ endif::[]
 :keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
 
 DataWeave can read and write many types of data formats, such as JSON, XML, and
-many others. DataWeave supports these formats (or MIME types) as input and output:
+many others.
+//LINK TO DW 1.0 LANDING PAGE IN MULE 3.9 DOCS:
+include::partial$dataweave1-links.adoc[tag=dataweave1LandingPage]
+
+DataWeave supports these formats (or MIME types) as input and output:
 
 [cols="2,2", options="header"]
 |===
@@ -58,6 +62,76 @@ many others. DataWeave supports these formats (or MIME types) as input and outpu
 |===
 // TODO: PLAIN TEXT SECTION? <<format_plain_text>>
 
+[[dw_readers_writers]]
+== DataWeave Readers and Writers
+
+DataWeave can read input data as a whole in-memory, in indexed fashion,
+and for some data formats, part-by-part by streaming the input. When attempting
+to read a large file, it is possible to run out of memory or to impact
+performance negatively. Streaming can improve performance but impacts access to file.
+
+* Indexed and In-Memory: Allow for random access to data because both
+strategies parse the entire document. For these strategies, your DataWeave
+script can access any part of the resulting value at any time.
+** Indexed: Uses indexes over the disk.
+** In-Memory: Parses the entire document in memory.
+
+* Streaming: Allows for sequential access to the file. This strategy partitions
+the input document into smaller items and accesses its data sequentially,
+storing the current item in memory. A DataWeave selector can access the portion
+of the file that is getting read. DataWeave supports streaming for a few
+formats:
+** <<format_csv, CSV>>
+** <<format_json, JSON>>
+** <<format_excel, XLSX>> (starting in Mule 4.2.2)
+
+[[reader_writer_properties]]
+=== Using Reader and Writer Properties
+
+In some cases, it is necessary to modify or specify aspects of the format
+through format-specific properties. For example, you can specify CSV input and
+output properties, such as the `separator` (or delimiter) to use in the CSV file.
+For Cobol copybook, you need to specify the path to a schema file using the
+`schemaPath` property.
+
+You can append reader properties to the MIME type (`outputMimeType`) attribute
+for certain components in your Mule app. Listeners and Read operations accept
+these settings. For example, this On New File listener example identifies the `,`
+separator for a CSV input file:
+
+.Example: Properties for the CSV Reader
+[source,xml,linenums]
+----
+<file:listener doc:name="On New File" config-ref="File_Config" outputMimeType='application/csv; separator=","'>
+  <scheduling-strategy >
+    <fixed-frequency frequency="45" timeUnit="SECONDS"/>
+  </scheduling-strategy>
+  <file:matcher filenamePattern="comma_separated.csv" />
+</file:listener>
+----
+
+Note that the `outputMimeType` setting above helps the CSV _reader_ interpret
+the format and delimiter of the input `comma_separated.csv` file, not the writer.
+
+To specify the output format, you can provide the MIME type and any writer
+properties for the writer, such as the CSV or JSON writer used by a File Write
+operation. For example, you might need to write a pipe (`|`) delimiter in your
+CSV output payload, instead of some other delimiter used in the input. To do
+this, you append the property and its value to the `output` directive of a
+DataWeave expression. For example, this Write operation specifies the pipe as
+a `separator`:
+
+.Example: output Directive for the CSV Writer
+[source,xml,linenums]
+----
+<file:write doc:name="Write" config-ref="File_Config" path="my_transform">
+  <file:content ><![CDATA[#[output application/csv separator="|" --- payload]]]></file:content>
+</file:write>
+----
+
+The sections below list the format-specific reader and writer properties
+available for each supported format.
+
 [[set_mime_types]]
 == Setting MIME Types
 
@@ -106,53 +180,6 @@ format to another. They simply help the reader interpret the format of the input
 You can also set special reader and writer properties for use by the
 format-specific reader or writer of a source, operation, or component.
 See <<reader_writer_properties>>.
-
-[[reader_writer_properties]]
-== Using Reader and Writer Properties
-
-In some cases, it is necessary to modify or specify aspects of the format
-through format-specific properties. For example, you can specify CSV input and
-output properties, such as the `separator` (or delimiter) to use in the CSV file.
-For Cobol copybook, you need to specify the path to a schema file using the
-`schemaPath` property.
-
-You can append reader properties to the MIME type (`outputMimeType`) attribute
-for certain components in your Mule app. Listeners and Read operations accept
-these settings. For example, this On New File listener example identifies the `,`
-separator for a CSV input file:
-
-.Example: Properties for the CSV Reader
-[source,xml,linenums]
-----
-<file:listener doc:name="On New File" config-ref="File_Config" outputMimeType='application/csv; separator=","'>
-  <scheduling-strategy >
-    <fixed-frequency frequency="45" timeUnit="SECONDS"/>
-  </scheduling-strategy>
-  <file:matcher filenamePattern="comma_separated.csv" />
-</file:listener>
-----
-
-Note that the `outputMimeType` setting above helps the CSV _reader_ interpret
-the format and delimiter of the input `comma_separated.csv` file, not the writer.
-
-To specify the output format, you can provide the MIME type and any writer
-properties for the writer, such as the CSV or JSON writer used by a File Write
-operation. For example, you might need to write a pipe (`|`) delimiter in your
-CSV output payload, instead of some other delimiter used in the input. To do
-this, you append the property and its value to the `output` directive of a
-DataWeave expression. For example, this Write operation specifies the pipe as
-a `separator`:
-
-.Example: output Directive for the CSV Writer
-[source,xml,linenums]
-----
-<file:write doc:name="Write" config-ref="File_Config" path="my_transform">
-  <file:content ><![CDATA[#[output application/csv separator="|" --- payload]]]></file:content>
-</file:write>
-----
-
-The sections below list the format-specific reader and writer properties
-available for each supported format.
 
 // application/avro //////////////////////////////////////////////////////////
 [[format_avro]]
@@ -204,6 +231,9 @@ The Transform Message component provides settings for handling the Cobol copyboo
 format. For example, you can import a Cobol definition into the Transform Message
 component and use it for your Copybook transformations.
 
+NOTE: Cobol copybook in DataWeave supports files of up to 15 MB, and the memory requirement is roughly 40 to 1. For example, a 1-MB file requires up to 40 MB of memory to process, so it's important to consider this memory requirement in conjunction with your TPS needs for large copybook files. This is not an exact figure; the value might vary according to the complexity of the mapping instructions.
+
+
 [[cobol_metadata]]
 === Importing a Copybook Definition
 
@@ -231,23 +261,23 @@ For example, assume that you have a copybook definition file
 (`mailing-record.cpy`) that looks like this:
 
 ----
-      01  MAILING-RECORD.
-          05  COMPANY-NAME            PIC X(30).
-          05  CONTACTS.
-              10  PRESIDENT.
-                  15  LAST-NAME       PIC X(15).
-                  15  FIRST-NAME      PIC X(8).
-              10  VP-MARKETING.
-                  15  LAST-NAME       PIC X(15).
-                  15  FIRST-NAME      PIC X(8).
-              10  ALTERNATE-CONTACT.
-                  15  TITLE           PIC X(10).
-                  15  LAST-NAME       PIC X(15).
-                  15  FIRST-NAME      PIC X(8).
-          05  ADDRESS                 PIC X(15).
-          05  CITY                    PIC X(15).
-          05  STATE                   PIC XX.
-          05  ZIP                     PIC 9(5).
+       01  MAILING-RECORD.
+           05  COMPANY-NAME            PIC X(30).
+           05  CONTACTS.
+               10  PRESIDENT.
+                   15  LAST-NAME       PIC X(15).
+                   15  FIRST-NAME      PIC X(8).
+               10  VP-MARKETING.
+                   15  LAST-NAME       PIC X(15).
+                   15  FIRST-NAME      PIC X(8).
+               10  ALTERNATE-CONTACT.
+                   15  TITLE           PIC X(10).
+                   15  LAST-NAME       PIC X(15).
+                   15  FIRST-NAME      PIC X(8).
+           05  ADDRESS                 PIC X(15).
+           05  CITY                    PIC X(15).
+           05  STATE                   PIC XX.
+           05  ZIP                     PIC 9(5).
 ----
 
 * Copybook definitions must always begin with a `01` entry. A separate record
@@ -301,7 +331,8 @@ Not all copybook features are supported by the Cobol Copybook format in
 DataWeave. In general, the format supports most common usages and simple
 patterns, including:
 
-* USAGE of DISPLAY, BINARY (COMP), and PACKED-DECIMAL (COMP-3)
+* USAGE of DISPLAY, BINARY (COMP), COMP-5, and PACKED-DECIMAL (COMP-3).
+For character encoding restrictions, see <<character_encoding>>.
 * PICTURE clauses for numeric values consisting only of:
 ** '9' - One or more numeric character positions
 ** 'S' - One optional sign character position, leading or trailing
@@ -314,20 +345,49 @@ patterns, including:
   control value is nested inside a containing structure, you need to manually
   modify the generated schema to specify the full path for the value in the
   form "container.value".
+* REDEFINES clause (used to provide different views of the same portion of
+  record data - see details in section below)
 
-Unsupported features include:
+_Unsupported_ features include:
 
 * Alphanumeric-edited PICTURE clauses
-* Numeric-edited PICTURE clauses with insertion or replacement
+* Numeric-edited PICTURE clauses, including all forms of insertion, replacement, and zero suppression
 * Special level-numbers:
 ** Level 66 - Alternate name for field or group
 ** Level 77 - Independent data item
 ** Level 88 - Condition names (equivalent to an enumeration of values)
-* USAGE of COMP-1, COMP-2, or COMP-5
-* REDEFINES clause (used to provide different views of the same portion of
-  record data)
+* SIGN clause at group level (only supported on elementary items with PICTURE clause)
+* USAGE of COMP-1 or COMP-2 and of clause at group level (only supported on elementary items with PICTURE clause)
 * VALUE clause (used to define a value of a data item or conditional name from
   a literal or another data item)
+
+=== REDEFINES Support
+
+REDEFINES facilitates dynamic interpretation of data in a record. When you import a
+copybook with REDEFINES present, the generated schema uses a special grouping
+with the name '*' (or '*1', '*2', and so on, if multiple REDEFINES groupings are present
+at the same level) to combine all the different interpretations. You use this
+special grouping name in your DataWeave expressions just as you use any other
+grouping name.
+
+Use of REDEFINES groupings has higher overhead than normal copybook groupings,
+so MuleSoft recommends that you remove REDEFINES from your copybooks where possible
+before you import them into Studio.
+
+[[character_encoding]]
+=== Character Encodings
+
+BINARY (COMP), COMP-5, or PACKED-DECIMAL (COMP-3) usages are only supported
+with single-byte character encodings, which use the entire range of 256 potential
+character codes. UTF-8 and other variable-length encodings are not supported for
+these usages (because they're not single-byte), and ASCII is also not supported
+(because it doesn't use the entire range). Supported character encodings include
+ISO-8859-1 (an extension of ASCII to full 8 bits) and other 8859 variations and
+EBCDIC (IBM037).
+
+REDEFINES requires you to use a single-byte-per-character character encoding for
+the data, but any single-byte-per-character encoding can be used unless BINARY
+(COMP), COMP-5, or PACKED-DECIMAL (COMP-3) usages are included in the data.
 
 === Common Copybook Import Issues
 
@@ -436,12 +496,108 @@ contains header field names. . Valid options: `true` or `false`
 | `separator` | Char | `,` a| Character that separates one record from another.
 | `streaming` | Boolean | `false` a| Used for streaming input CSV.
 Valid options: `true` or `false` (Use only if entries are accessed sequentially.)
+See the <<stream_csv, streaming example>>, and see <<dw_readers_writers>>.
 |===
 
 * When `header=true` you can then access the fields within the input anywhere
 by name, for example: `payload.userName`.
 * When `header=false` you must access the fields by index, referencing first
 the entry and then the field, for example: `payload[107][2]`
+
+[[stream_csv]]
+.Streaming Example:
+
+By default, the CSV reader stores input data from an entire file in-memory
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance
+of the reader by setting a `streaming` property to `true`. To demonstrate the use of
+this property, the next example streams a CSV file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<flow name="dw-streamingFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read
+     path="${app.home}/input.csv"
+     config-ref="File_Config"
+     outputMimeType="application/csv; streaming=true; header=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((row) -> {
+zipcode: row.zip
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    config-ref="File_Config1"
+    path="/path/to/output/file/output.json"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The example configures the HTTP listener to stream the CSV input
+by setting `outputMimeType="application/csv; streaming=true"`.
+In the Studio UI, you can set the *MIME Type* on the listener to `application/csv`
+and the *Parameters* for the MIME Type to *Key* `streaming` with *Value* `true`.
+The example also sets `header=true` for illustration purposes, though this setting is the
+default.
+* The DataWeave script uses the `map` function in the *Transform Message*
+component to iterate over each row in the CSV payload and select the value
+of each field in the `zip` column.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+Note that the example indicates that the input file is located in Studio project
+directory `src/main/resources`, which is the location of `${app.home}`.
+
+The structure of the CSV input looks something like the following.
+
+.CSV File Input for Streaming Example (truncated):
+[source,csv,linenums]
+----
+street,city,zip,state,beds,baths,sale_date
+3526 HIGH ST,SACRAMENTO,95838,CA,2,1,Wed May 21 00:00:00 EDT 2018
+51 OMAHA CT,SACRAMENTO,95823,CA,3,1,Wed May 21 00:00:00 EDT 2018
+2796 BRANCH ST,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+2805 JANETTE WAY,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+6001 MCMAHON DR,SACRAMENTO,95824,CA,2,1,,Wed May 21 00:00:00 EDT 2018
+5828 PEPPERMILL CT,SACRAMENTO,95841,CA,3,1,Wed May 21 00:00:00 EDT 2018
+----
+
+Note that a streamed file is typically much longer.
+
+.Output for Streaming Example:
+[source,json,linenums]
+----
+[
+  {
+    "zipcode": "95838"
+  },
+  {
+    "zipcode": "95823"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95824"
+  },
+  {
+    "zipcode": "95841"
+  }
+]
+----
 
 [[writer_properties_csv]]
 === Writer Properties (for CSV)
@@ -474,8 +630,6 @@ Valid options: `true` or `false`
 | `quoteValues` | Boolean | `false` a| Indicates if every value should be quoted
 (even if it contains special characters within).
 | `separator` | String | `,` a| Character that separates records from another.
-| `streaming` | Boolean | `false` a| Used for streaming input.
-Valid options: `true` or `false` (Only use if entries are accessed sequentially.)
 |===
 
 All of these parameters are optional.
@@ -504,9 +658,17 @@ image::dataweave-formats-4a556.png[]
 
 MIME Type: `application/dw`
 
+NOTE: This format is for debugging purposes only. Performance impacts can occur if you use this format in a production environment.
+
 The DataWeave (weave) format is the canonical format for all transformations.
 This format can help you understand how input data is interpreted before it is
 transformed to a new format.
+
+[WARNING]
+====
+This format is intended only to help you debug the results of DataWeave transformations.
+It is significantly slower than other formats. It is not recommended to be used in production applications because it can impact the performance.
+====
 
 This example shows how XML input is expressed in the DataWeave format.
 
@@ -596,6 +758,9 @@ output application/xlsx header=true
 }
 ----
 
+For another example, see
+xref:dataweave-cookbook-xlsx-lookup.adoc[Look Up Data in an Excel (XLSX) File].
+
 === Reader Properties (for Excel)
 
 When defining `application/xlsx` input for the DataWeave reader, you can set
@@ -608,11 +773,64 @@ the following property.
 headers. Valid options: `true` or `false`
 | `ignoreEmptyLine` | Boolean | `true` a| Indicates whether to ignore empty
 line. Valid options: `true` or `false`
+| `streaming` | Boolean | `false` a| Introduced in Mule 4.2.2: Streaming is intended for
+processing a large file. When streaming is enabled, the reader accesses each row
+sequentially, keeping one row in memory at a time, instead of making all data
+available at once. Streaming does not permit random access to rows in the file.
 | `tableOffset` | String | None a| The position of the first cell in the
 table (`<Column><Row> example A1`).
 | `zipBombCheck` | Boolean | `true` a| If set to `false`, the zip bomb check is
 turned off. Valid options: `true` or `false`
 |===
+
+[[stream_csv]]
+.Streaming Example:
+By default, the Excel reader stores input data from an entire file in-memory
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance
+of the reader by setting a `streaming` property to `true`. To demonstrate the use of
+this property, the next example streams a XLSX file and transforms it to JSON.
+
+The following example streams an Excel file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<http:listener-config
+    name="HTTP_Listener_config"
+    doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="streaming_flow" >
+  <http:listener
+    doc:name="Listener"
+    config-ref="HTTP_Listener_config"
+    path="/"
+    outputMimeType="application/xlsx; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Sheet Name" map ((row) -> {
+    foo: row.a,
+    bar: row.b
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+The example:
+
+* Configures the HTTP listener to stream the XLSX input
+by setting `outputMimeType="application/xlsx; streaming=true"`.
+In the Studio UI, you can use the *MIME Type* on the listener to `application/xlsx`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* Uses a DataWeave script in the *Transform Message* component to iterate
+over each row in the XLSX payload (an XLSX sheet called `"Sheet Name"`) and
+select the values of each cell in the row (using `row.a`, `row.b`). It assumes
+columns named `a` and `b` and maps the values from each row in those columns
+into `foo` and `bar`, respectively.
 
 === Writer Properties (for Excel)
 
@@ -666,6 +884,9 @@ Fixed width types are technically considered a type of Flat File format, but
 when selecting this option, the Transform component offers you settings that are
 better tailored to the needs of this format.
 
+NOTE: Fixed width in DataWeave supports files of up to 15 MB, and the memory requirement is roughly 40 to 1. For example, a 1-MB file requires up to 40 MB of memory to process, so it's important to consider this memory requirement in conjunction with your TPS needs for large fixed width files. This is not an exact figure; the value might vary according to the complexity of the mapping instructions.
+
+
 === Reader Properties (for Fixed Width)
 
 When defining `application/flatfile` input for the DataWeave reader, you can set
@@ -710,6 +931,11 @@ image::dataweave-formats-27b3c.png[]
 
 MIME Type: `application/flatfile`
 
+Flat file supports multiple types of fixed width records within a single message. The schema structure allows you to define
+how different record types are distinguished, and how the records are logically grouped.
+
+NOTE: Flat file in DataWeave supports files of up to 15 MB, and the memory requirement is roughly 40 to 1. For example, a 1-MB file requires up to 40 MB of memory to process, so it's important to consider this memory requirement in conjunction with your TPS needs for large flat files. This is not an exact figure; the value might vary according to the complexity of the mapping instructions.
+
 [[reader_properties_flat_file]]
 === Reader Properties (for Flat File)
 
@@ -721,8 +947,8 @@ the following property.
 | Parameter | Type | Default | Description
 | `enforceRequires` | Boolean | `false` a| Error if required value missing.
   Valid options: `true` or `false`
-| `missingValues` | String | None a| Fill character used to represent missing
-values. How missing values are represented in the input data:
+| `missingValues` | String | `nulls` for copybook schema, `spaces` otherwise a| Fill character used to represent missing
+values. To represent missing values in the input data, you can use:
 
 * `none`: Treat all data as actual values
 * `spaces`: Interpret a field consisting of only spaces as a missing value
@@ -736,26 +962,15 @@ Expected separation between lines/records:
 
 * `strict`: line break expected at exact end of each record
 * `lenient`: line break used but records may be shorter or longer than schema specifies
-* `noTerminator`: means records follow one another with no separation
-
-| `recordParsing` | String | None a| Record separator line break handling. Valid options:
-
-* `strict`
-* `lenient`
-* `noTerminator`
-* `singleRecord`
+* `noTerminator`: records follow one another with no separation
+* `singleRecord`: entire input is a single record
 
 | `schemaPath` | String | None a| Schema definition. Location in your local disk
-of the schema file used to parse your input. The schema must have an
-`.ESL` extension.
-| `segmentIdent` | String | None a| Segment identifier in schema.
-| `structureIdent` | String | None a| Structure identifier in schema. The
-schema file might define multiple, different structures. This field selects
-which to use. If the schema only defines one, you also need to explicitly
-select that one through this field.
-| `truncateDependingOn` | Boolean | `false` a| Truncate DEPENDING ON COBOL
-copybook values to length used.
-  Valid options: `true` or `false`
+of the schema file used to parse your input.
+| `segmentIdent` | String | None a| Segment identifier in the schema for fixed width or copybook schemas (only needed when parsing a single segment/record definition and if the schema includes multiple segment definitions).
+| `structureIdent` | String | None a| Structure identifier in schema for flatfile schemas (only needed when parsing a structure definition, and if the schema includes multiple structure definitions)
+| `truncateDependingOn` | Boolean | `false` a| Truncate COBOL
+copybook DEPENDING ON values to length used.  Valid options: `true` or `false`
 | `zonedDecimalStrict` | Boolean | `false` a| Use the `strict` ASCII form of
 sign encoding for COBOL copybook zoned decimal values.
 Valid options: `true` or `false`
@@ -784,14 +999,15 @@ parser processes data.
 such as `UTF-8`.
 | `enforceRequires` | Boolean | `false` a| Error if a required value is missing.
 Valid options: `true` or `false`
-| `missingValues` | String | None a| Fill character used to represent missing values:
+| `missingValues` | String | `nulls` for copybook schema, `spaces` otherwise a| Fill character used to represent missing
+values:
 
-* None
-* Spaces: fill the field with spaces
-* Zeros
-* Nulls: use 0 bytes
+* `none`: Write nothing for missing values
+* `spaces`: Fill field with spaces
+* `zeroes`: Fill numeric fields with '0' characters and character fields with space characters
+* `nulls`: Fill field with 0 bytes
 
-| `recordTerminator` | String | None a| Record separator line break. Valid options:
+| `recordTerminator` | String | System property `line.separator` a| Record separator line break. Valid options:
 
 * `lf`
 * `cr`
@@ -803,11 +1019,8 @@ when there are multiple records. Values translate directly to character codes
 (`none` leaves no termination on each record).
 | `schemaPath` | String | None a| Schema definition. Path where the schema file
 to be used is located.
-| `segmentIdent` | String | None a| Segment identifier in schema
-| `structureIdent` | String | None a| Structure identifier in schema. In case
-the schema file, defines multiple formats, indicates which of them to use.
-| `trimValues` | Boolean | `false` a| Trim string values longer than field
-length by truncating trailing characters. Valid options: `true` or `false`
+| `segmentIdent` | String | None a| Segment identifier in the schema for fixed width or copybook schemas (only needed when writing a single segment/record definition, and if the schema includes multiple segment definitions).
+| `structureIdent` | String | None a| Structure identifier in schema for flatfile schemas (only needed when writing a structure definition and if the schema includes multiple structure definitions)| `trimValues` | Boolean | `false` a| Trim string values longer than the field length by truncating trailing characters. Valid options: `true` or `false`
 | `truncateDependingOn` | Boolean | `false` a| Truncate DEPENDING ON COBOL
 copybook values to length used. Valid options: `true` or `false`
 | `zonedDecimalStrict` | Boolean | `false` a| Use the `strict` ASCII form of
@@ -1159,8 +1372,113 @@ the following property.
 |===
 | Parameter | Type | Default | Description
 | `streaming` | Boolean | `false` a| Used for streaming input. Use only if
-entries are accessed sequentially. Valid options: `true` or `false`
+entries are accessed sequentially. Valid options: `true` or `false`.
+The input must be a top-level array. For more on streaming in DataWeave, see
+<<dw_readers_writers>>.
 |===
+
+To demonstrate streaming, the following example streams a JSON file by reading
+each element in an array one at a time.
+
+.Streaming Example:
+[source,xml,linenums]
+----
+<file:config name="File_Config" doc:name="File Config" />
+<flow name="dw-streaming-jsonFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read"
+     config-ref="File_Config"
+     path="${app.home}/myjsonarray.json"
+     outputMimeType="application/json; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.myJsonExample map ((element) -> {
+returnedElement : element.zipcode
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    path="/path/to/output/file/output.json"
+    config-ref="File_Config1"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The streaming example configures the HTTP listener to stream the JSON input
+by setting `outputMimeType="application/json; streaming=true"`.
+In the Studio UI, you can set the *MIME Type* on the listener to `application/json`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* The DataWeave script in the *Transform Message* component iterates over the
+array in the input payload and selects its `zipcode` values.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+The JSON input payload looks like the following.
+
+.JSON Input for Streaming Example (truncated):
+[source,json,linenums]
+----
+{ "myJsonExample" : [
+    {
+      "name" : "Shoki",
+      "zipcode": "95838"
+    },
+    {
+      "name" : "Leandro",
+      "zipcode": "95823"
+    },
+    {
+      "name" : "Mariano",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Cristian",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Kevin",
+      "zipcode": "95824"
+    },
+    {
+      "name" : "Stanley",
+      "zipcode": "95841"
+    }
+  ]
+}
+----
+
+.Output for JSON Streaming Example:
+[source,json,linenums]
+----
+[
+  {
+    "returnedElement": "95838"
+  },
+  {
+    "returnedElement": "95823"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95824"
+  },
+  {
+    "returnedElement": "95841"
+  }
+]
+----
 
 [[skip_on_null]]
 ==== Skip Null On (for JSON)
@@ -1322,9 +1640,10 @@ the following properties.
 | Parameter | Type | Default | Description
 | `maxEntityCount` | Number | `1` a| The maximum number of entity expansions.
 The limit is in place to avoid Billion Laughs attacks.
-| `optimizeFor` | String | `speed` a|
 | `indexedReader` | Boolean | `true` a| If the indexed XML reader should be
 used when the threshold is reached. Valid options: `true` or `false`
+//| `maxAttributeSize` | Number | `-1` a| Sets the maximum number of characters
+accepted in an XML attribute. Available since Mule 4.2.1.
 | `nullValueOn` | String | `blank` a| If a tag with empty or blank text should
 be read as null. Valid options:  `empty`, `none`, or `blank`
 | `externalEntities` | Boolean | `false` a| Indicates whether external entities
@@ -1338,24 +1657,26 @@ When specifying `application/xml` as the `output` format in a DataWeave script,
 you can add the following properties to change the way the DataWeave parser
 processes data.
 
-[cols="1,1,1,3", options="header"]
+[cols="1,1,1,3a", options="header"]
 |===
 | Parameter | Type | Default | Description
-| `bufferSize` | Number | `8192` a| Size of the buffer writer.
-| `encoding` | String | None a| Encoding for the writer to use.
-| `deferred` | Boolean | `false` a| For deferred output.
+| `bufferSize` | Number | `8192` | Size of the buffer writer.
+| `encoding` | String | None |Encoding for the writer to use.
+| `deferred` | Boolean | `false` |For deferred output.
   Valid options: `true` or `false`
-| `indent` | Boolean | `true` a| Indicates whether to indent the output.
+//| `escapeCR` | Boolean | `false` | Whether to escape a carriage return (CR).
+Valid options: `true` or `false`. Available since Mule 4.2.1.
+| `indent` | Boolean | `true` |Indicates whether to indent the output.
 Valid options: `true` or `false`
-| `inlineCloseOn` | String | `empty` a| When the writer should use inline close
+| `inlineCloseOn` | String | `empty` |When the writer should use inline close
 tag. Valid options: `empty` or `none`
-| `onInvalidChar` | String | None a| Valid options: `base64`, `ignore`, or `none`
-| `writeNilOnNull` | Boolean | `false` a| Whether to write a nil attribute when
+| `onInvalidChar` | String | None |Valid options: `base64`, `ignore`, or `none`
+| `writeNilOnNull` | Boolean | `false` |Whether to write a nil attribute when
 the value is null. Valid options: `true` or `false`
-| `skipNullOn` | String | None a| Skips null values in the specified data
+| `skipNullOn` | String | None |Skips null values in the specified data
 structure. By default it does not skip. Valid options: `elements`, `attributes`,
 or `everywhere`. See <<skip_on_null_xml>>
-| `writeDeclaration` | Boolean | `true` a| Indicates whether to write the XML
+| `writeDeclaration` | Boolean | `true` |Indicates whether to write the XML
 header declaration. Valid options: `true` or `false`
 |===
 

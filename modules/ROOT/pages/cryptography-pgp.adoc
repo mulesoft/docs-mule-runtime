@@ -3,8 +3,6 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :keywords: cryptography, module, sign, encrypt, pgp, AES
-:toc:
-:toc-title:
 
 Mule can encrypt all or part of a message using Pretty Good Privacy (PGP). PGP combines data compression and data encryption to secure messages. The compression reduces the size of the payload to help reduce the transmission time later on your application.
 
@@ -19,10 +17,37 @@ This section addresses these scenarios:
 
 This document assumes that you are reasonably familiar with PGP encryption, as well as the concepts of public and private keys and asymmetric cryptography.
 
-== Encrypting
+== Configure PGP Encryption from Anypoint Studio
 
-When using PGP encryption, the sender of the message must encrypt its content using the receiver's public key. So, whenever you want to encrypt messages
-in your Mule app using someone else's public key, you must add the public key to your key ring. When adding a new PGP configuration to your Mule app, you need to provide your key ring file so the encryption module can get the public key from it to encrypt the message.
+To configure PGP encryption from Anypoint Studio, follow these steps:
+
+. From the Mule palette, add *Crypto* to your project.
++
+See xref:cryptography.adoc#install-crypto-module[Install the Extension] for instructions.
+. Select the desired operation, and drag the component to the flow:
++
+image::mruntime-crypto-pgp-add.png[crypto-pgp-add]
+. Open the component properties and select an existing *Module configuration*, or create a new one by specifying the *Public keyring* file and the *Private keyring* file.
++
+You can also add asymmetric key information to be used in the sign operations:
++
+image::mruntime-crypto-pgp-global-config.png[crypto-pgp-global-config]
+. Configure *Key selection* by using a *Key id* value previously defined in the module configuration, or define a new one for this operation:
++
+image::mruntime-crypto-pgp-config.png[crypto-pgp-config]
+. Select the algorithm to use during the operation.
+
+== Working with Subkeys
+
+A key can contain subkeys, according to the RFC-4880 standard specification. When working with subkeys, use the `fingerprint` attribute of the `<crypto:pgp-asymmetric-key-info>` element in the XML configuration to specify the key to use.
+
+For example, if you use different keys for signing and encrypting operations, and each of these keys use different algorithms, like DSA and ElGamal, then you must reference the appropriate key's fingerprint, depending on the operation you want to perform.
+
+In this case, you reference the ElGamal fingerprint to encrypt your messages and the DSA fingerprint to sign your messages.
+
+== Encrypting Messages with Public Keys
+
+During PGP encryption, the sender of the message must encrypt its content using the receiver's public key. So, whenever you want to encrypt messages in your Mule app using someone else's public key, you must add the public key to your key ring. When adding a new PGP configuration to your Mule app, you need to provide your key ring file so the encryption module can get the public key from it to encrypt the message.
 
 . Use a tool such as GPG Suite to import the other party's public key. See below for details.
 . Using the same tool, export the public key, selecting `binary` as the output format. This produces a key ring file with a `.gpg` extension.
@@ -38,31 +63,54 @@ in your Mule app using someone else's public key, you must add the public key to
 </crypto:pgp-config>
 ----
 
-The next example returns an ASCII-armored encrypted payload, which is suitable for sending over plain-text channels.
-
-.Example: Using the Encrypt Operation
+* Using the Encrypt Operation
++
+The next example returns an ASCII-armored encrypted payload, which is suitable for sending over plain-text channels:
++
 [source,xml,linenums]
 ----
 <crypto:pgp-encrypt config-ref="encrypt-conf" keyId="myself"/>
 ----
 
+* Using the Encrypt Binary Operation
++
 If you want to return a binary output instead, you can use the `pgp-encrypt-binary` operation:
-
++
+[source,xml,linenums]
 ----
-<crypto:pgp-encrypt-binary config-ref="pgpConfig" keyId="recipient"/>
+<crypto:pgp-encrypt-binary config-ref="pgp-conf" keyId="recipient"/>
 ----
-Producing a binary output is faster that using ASCII-armored. However, the output is not standard and might not be ideal to send to other systems for decryption.
++
+Producing a binary output is faster than using ASCII-armored. However, the output is not standard and might not be ideal to send to other systems for decryption.
 
-If you later need to send such a payload to another system, you can transform it to ASCII-armored:
-
+* Using the Binary to Armored Operation
++
+If you need to send a payload with binary output to another system, you can transform it to ASCII-armored:
++
+[source,xml,linenums]
 ----
 <crypto:pgp-binary-to-armored/>
 ----
-The operation above has a single input parameter, the message payload to transform.
+This operation has a single input parameter, the message payload to transform.
 
-== Decrypting
+== Encrypt and Sign
 
-When using PGP decryption, the receiver of the message must use its private key to decrypt the contents of a message that was encrypted using a public key.
+In addition to encrypting, you can atomically encrypt and sign a message, which returns a message (in ASCII-armored format) similar to the encrypted one. In this case, the returned message also has a signature inside its encrypted contents. The signature provides an integrity check of the original message.
+
+To encrypt and sign, the signer private key (which is usually the sender) must be in the public key ring. This process always produces an ASCII-armored output.
+
+.Example: PGP Configuration
+[source,xml,linenums]
+----
+<crypto:pgp-encrypt-and-sign config-ref="encrypt-conf">
+    <crypto:encryption-key-selection keyId="recipient-key-id" />
+    <crypto:sign-key-selection keyId="signer-key-id" />
+</crypto:pgp-encrypt-and-sign>
+----
+
+== Decrypt
+
+During PGP decryption, the receiver of the message must use its private key to decrypt the contents of a message that was encrypted using a public key.
 Therefore, the receiver must distribute its public key to those who will use it to send encrypted messages.
 
 .Example: PGP Configuration
@@ -88,6 +136,18 @@ In the example above, notice that you need to provide at least three parameters 
 
 == Signing
 
+Sign a message using a configured private key.
+
+.Example: PGP Configuration
+[source,xml,linenums]
+----
+<crypto:pgp-config name="sign-conf" privateKeyring="pgp/secring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="myself" fingerprint="DE3F10F1B6B7F221" passphrase="mule1234"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
+
 .Example: Using the Sign Operation
 [source,xml,linenums]
 ----
@@ -95,6 +155,18 @@ In the example above, notice that you need to provide at least three parameters 
 ----
 
 == Validating a Signature
+
+Validate the signature of a message using the signer's public key.
+
+.Example: PGP Configuration
+[source,xml,linenums]
+----
+<crypto:pgp-config name="validate-conf" publicKeyring="pgp/pubring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="signer" fingerprint="DE3F10F1B6B7F221"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
 
 .Example: Using the Validate Operation
 [source,xml,linenums]
@@ -144,6 +216,7 @@ For example, you can set Content to `#[payload.name]` to decrypt only an encrypt
 * non-repeatable-stream |  +++Configure if repeatable streams should be used and their behavior+++ |  | {nbsp}
 | Target Variable a| String |  +++The name of a variable on which the operation's output will be placed+++ |  | {nbsp}
 | Target Value a| String |  +++An expression that will be evaluated against the operation's output and the outcome of that expression will be stored in the target variable+++ |  `#[payload]` | {nbsp}
+| Validate Signature if Found a| Boolean |  +++If a contents signature is found in any of the internal decryption stages, the operation will attempt to validate the decrypted contents. Note that this requires the *Signer's public key* to be present in the operation config's public keyring. Also, if the validation fails, the decryption operation will also.+++ |  `false` | {nbsp}
 |===
 
 === Output Type
@@ -208,14 +281,63 @@ Binary
 * `CRYPTO:ENCRYPTION` {nbsp}
 * `CRYPTO:KEY` {nbsp}
 
+[[pgpEncryptAndSign]]
+== PGP Encrypt and Sign Operation
+
+`<crypto:pgp-encrypt-and-sign>`
+
+You can encrypt and sign a stream using PGP, producing an ASCII-armored stream output as a result. The encryption requires the public key of the recipient, so the secret passphrase is not required. The secret passphrase is required for signing because the process uses private key of the signer (usually the sender).
+
+
+=== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+| Configuration | String | The name of the configuration to use. | | *x*
+| Content a| Binary |  You can encrypt all, or part of a message by using a DataWeave expression. +
+For example, you can set Content to `#[payload.name]` to encrypt only a variable called `name` from the payload |  `#[payload]` | {nbsp}
+| Algorithm a| Enumeration, one of:
+
+** `IDEA`
+** `TRIPLE_DES`
+** `CAST5`
+** `BLOWFISH`
+** `SAFER`
+** `DES`
+** `AES_128`
+** `AES_192`
+** `AES_256`
+** `TWOFISH`
+** `CAMELLIA_128`
+** `CAMELLIA_192`
+** `CAMELLIA_256` |  Symmetric algorithm to use for encryption. |  `AES_256` | {nbsp}
+| File Name a| String |  The internal file name to use in the resulting PGP header. | stream | {nbsp}
+| Encryption key selection a| A child element with <<PgpKeySelection>> |  The identifier of the recipient public key. |   | {nbsp}
+| Sign key selection a| A child element with <<PgpKeySelection>> | The identifier of the signer's private key. |   | {nbsp}
+| Streaming Strategy a| * <<repeatable-in-memory-stream>>
+* <<repeatable-file-store-stream>>
+* non-repeatable-stream |  Configure if repeatable streams should be used and their behavior |  | {nbsp}
+| Key Id a| String |  The key ID, as defined in the PGP configuration. |  | {nbsp}
+| Target Variable a| String |  The name of a variable in which to store the operation's output. |  | {nbsp}
+| Target Value a| String |  An expression that is evaluated against the operation's output. The result of that expression is stored in the target variable. |  `#[payload]` | {nbsp}
+|===
+
+=== Output Type
+
+Binary
+
+=== Throws
+* `CRYPTO:MISSING_KEY` {nbsp}
+* `CRYPTO:ENCRYPTION` {nbsp}
+* `CRYPTO:KEY` {nbsp}
+
 
 [[pgpEncryptBinary]]
-== Pgp Encrypt Binary Operation
+== PGP Encrypt Binary Operation
 `<crypto:pgp-encrypt-binary>`
 
-+++
-Encrypt a stream using PGP, giving a binary output as a result. The encryption is done with the public key of the recipient, so the secret passphrase is not required.
-+++
+You can encrypt a stream using PGP, producing a binary output as a result. Because the encryption process uses the public key of the recipient, the secret passphrase is not required.
+
 
 === Parameters
 [cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
@@ -473,11 +595,24 @@ Binary
 |===
 
 [[PgpAsymmetricKeyIdentifier]]
-=== Pgp Asymmetric Key Identifier
+=== PGP Asymmetric Key Identifier
 
 [cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
 |===
 | Field | Type | Description | Default Value | Required
 | Fingerprint a| String | The Fingerprint of the configured key |  |
-| Principal a| String | A combination of name and email specified while generating the key |  |
+| Principal a| String | A combination of name and email specified while generating the key. When you use this field, you use the primary key.
+Do not use this field when you are using keys with different algorithms to sign and encrypt (for example, DSA and Elgamal); specify the proper key by using the `fingerprint` property instead. |  |
+|===
+
+[[PgpKeySelection]]
+=== PGP Key Selection
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Key is a| String | Internal key ID for referencing from operations |  |
+| Pgp Key info a| One of:
+
+* <<PgpAsymmetricKeyInfo>> | An inline key definition. |  |
 |===
