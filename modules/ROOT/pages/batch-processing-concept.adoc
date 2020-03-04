@@ -10,7 +10,7 @@ Batch processing is exclusive to Mule Enterprise runtimes.
 
 Mule allows you to process messages in batches.
 
-Within an application, you can initiate a batch job scope, which is a block of code that splits messages into individual records, performs actions upon each record, then reports on the results and potentially pushes the processed output to other systems or queues.
+Within an application, you can initiate a Batch Job scope, which splits messages into individual records, performs actions upon each record, and then reports on the results and potentially pushes the processed output to other systems or queues.
 
 //_TODO: Check this
 // *Are there any message processors that you cannot use in batch processing?*
@@ -72,6 +72,9 @@ A batch job contains one or more batch steps that act upon records as they move 
 Each batch step in a batch job contains processors that act upon a record to transform, route, enrich, or otherwise process data contained within it. By leveraging the functionality of existing Mule processors, the batch step offers a lot of flexibility regarding how a batch job processes records. See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
 
 A batch job executes when the flow reaches the process-records section of the batch job. When triggered, Mule creates a new batch job instance.
+When the job instance becomes executable, the batch engine submits a task for each record block to the
+I/O pool to process each record. Parallelism occurs automatically, at the record
+block level. The Mule runtime engine uses its autotuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).  
 
 When the batch job starts executing, Mule splits the incoming message into records, stores them in a persistent queue, and queries and schedules those records in blocks of records to process. By default, the runtime stores 100 records in each batch step. You can customize this size according to the performance you require. See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
 
@@ -184,6 +187,33 @@ As a good practice, you should configure some mechanism for reporting on failed 
 Every processed record of the Batch Job Instance starts with the same variables and values present before the execution of the block. Every record has its own set of variables, so new variables or modifications of already-existing variables during the processing of a given record will not be visible while processing another record. For each record, those variables (and modifications) are propagated through the different Batch Steps. For example, if record R1 sets a variable `varName: "hello"`, record R2 sets `varName: "world"`, and record R3 does not set this variable, then in the next step, R1 will see the value `"hello"`, R2 the value `"world"` and R3 will not see any value for that variable.
 
 In the On Complete phase, none of these variables (not event the original ones) are visible. Only the final result is available in this phase. Moreover, since the Batch Job Instance executes asynchronously from the rest of the flow, no variable set in either a Batch Step or the On Complete phase will be visible outside the Batch Scope.
+
+
+=== Scheduling Strategy
+
+A Mule application can contain several batch job definitions. Each definition 
+has its own scheduling strategy. A *Scheduling Strategy* enables you to control 
+how instances of a given batch job are executed: 
+
+* ORDERED_SQUENTIAL (the default): If several job instances are in an executable
+state at the same time, the instances execute one at a time based on their
+creation timestamp.
+* ROUND_ROBIN: This setting attempts to execute all available instances of a
+batch job using a round-robin algorithm to assign the available resources. 
++
+The ROUND_ROBIN option is useful when you can guarantee that no job execution can have a 
+side effect on another job execution. Therefore, this option is not a good 
+choice for data synchronization jobs, which can update the same record in two 
+concurrent jobs. Because the order of the job execution is not guaranteed, 
+your result might be a prior version of the data. However, you can safely 
+use this strategy to parallelize the job's execution if your batch job 
+retrieves only new records from a database or lifts individual files 
+from an SFTP server (and you are certain that all records are completely 
+independent).
+
+Note that none of these strategies guarantee that records will be executed in order.
+The strategies do not control the execution order of records in the batch job,
+nor do they depend on the number of records each instance contains.
 
 
 == See Also
