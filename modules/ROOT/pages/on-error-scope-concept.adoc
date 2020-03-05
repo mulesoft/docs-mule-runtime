@@ -60,18 +60,61 @@ to fatal errors, which have error messages that contain the word "fatal":
 ----
 <on-error-continue
   enableNotifications="true" logException="true"
-  doc:name="On Error Continue" type="ANY"
+  type="ANY"
   when='error.cause.message contains "fatal"'/>
 ----
 
 Note that matching conditions are evaluated sequentially, in the order in
-which the On-Error components reside in the Error Handler. So, for example, if
-you want to handle specific HTTP errors in one way but handle all other errors
-a different way, you need to provide an On-Error component configuration for
-the HTTP errors before a component that captures the remaining errors with
-ANY. Keep in mind that default error handling takes place for errors you
-that you do not explicitly match or use ANY to capture. The default error
-handler logs and propagates such unhandled errors.
+which the On-Error components reside in the error handler. For example, if
+you want to handle `VALIDATION:NOT_NULL` in one way but handle all other
+errors a different way, provide an On-Error component configuration
+for that error before a component that captures the remaining errors
+(identified as `ANY` by the second On-Error component). Remember that 
+default error handling takes place for errors you do not explicitly match 
+or use ANY to capture.
+
+The following error handlers are configured to produce
+`{ "MyError": "value was expected to be null" }` for a `VALIDATION:NOT_NULL`
+error, rather than `{ "messageANY" : "Some other error" }`. The string
+`value was expected to be null` is the description of the
+`VALIDATION:NOT_NULL` error. The Is Null component can throw this error.
+Is Null belongs to the Validation module. 
+
+[source,xml,linenums]
+----
+<error-handler >
+  <on-error-continue enableNotifications="true"
+    logException="true" 
+    type="VALIDATION:NOT_NULL">
+    <ee:transform >
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+MyError : error.description as String
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </on-error-continue>
+  <on-error-continue
+    enableNotifications="true"
+    logException="true" 
+    type="ANY">
+    <ee:transform>
+      <ee:message >
+        <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+"messageANY" : "Some other error"
+}
+]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+  </on-error-continue>
+</error-handler>
+----
 
 //TODO: enableNotifications -- what notifications are these?
 // When and where do they occur?
