@@ -142,14 +142,21 @@ The header of a DataWeave script accepts a `var` directive that initializes a va
 * Local variables are initialized in the body of the DataWeave script and can be referenced by name only from within the scope of the expression where they are initialized.
 +
 The syntax for initializing a local variable looks like this:
-`using (<variable-name> = <expression>)`
 +
-It must use the keyword `using`, and it must use the `var` syntax, rather than the `fun` syntax.
-+
+[source,dataweave,linenums]
+----
+do {
+      [type <name> = <type expression>]*
+      [var <name> = <expression>]*
+      [fun <name>(<params>*) = <expression>]*
+      [ns <name> <nsUri>]*
+      ---
+      <body>
+}
+----
+
 
 Note that DataWeave variables cannot be reassigned. They are also distinct from variables that are part of the Mule message (such as target variables). DataWeave variables do not persist beyond the scope of the script in which they are initialized.
-
-You can combine several local variable definitions as a comma separated list inside the using function. For example: `using (firstName='Annie', lastName='Point')`
 
 == Naming Rules for Variables
 
@@ -158,18 +165,24 @@ You can declare any variable name that is a valid identifier. See xref:dataweave
 [[example_global_variable]]
 == Example: Global DataWeave Variables
 
-This example initializes the `language` variable in the header and inserts the constant value `Español` in the output `language` element.
+This example defines a `do` operation that initializes a `language` variable with the constant value `Español` and returns that constant value. The body of the DataWeave script calls the
+`do` operation using the variable `myVar`, which populates the `<language/>` element in the
+XML output with the value `Español`.
 
 .Transform
 [source,dataweave,linenums]
 ----
 %dw 2.0
 output application/xml
-var language='Español'
+var myVar = do {
+    var language = "Español"
+    ---
+    language
+}
 ---
 {
   document: {
-    language: language,
+    language: myVar,
     text: "Hola mundo"
   }
 }
@@ -178,10 +191,10 @@ var language='Español'
 .Output
 [source,xml,linenums]
 ----
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <document>
   <language>Español</language>
-  <text>Hola Mundo</text>
+  <text>Hola mundo</text>
 </document>
 ----
 
@@ -190,115 +203,124 @@ var language='Español'
 
 To initialize local variables, you can use either literal expressions, variable reference expressions, or functional expressions. These expressions can reference any other local variables within their scope or any input or global variables.
 
+As a best practice, declare local variables within `do` scopes (see xref:dataweave-flow-control#control_flow_do[Flow Control in DataWeave]). The alternative method of declaring a scope with the `using` keyword is no longer recommended and available only to provide compatibility.
+
 You can only reference a local variable by name from within the scope of the expression that initializes it. The declaration can be prepended to any literal expression. The literal delimits the scope of the variable, so you cannot reference any variable outside of its scope.
 
-The examples that follow show initialization of local variables used in literal expressions. The syntax is the same
+The examples that follow show initialization of local variables. 
 
-.Example: Scoped to Simple Value
+.Example: Scoped to a Simple Value
+The following example sets the local variable `myVar` in a `do` scope. It calls `do` from the body of the DataWeave script:
+
 [source,dataweave,linenums]
 ----
 %dw 2.0
 output application/json
 ---
-using (x = 2) 3 + x
+do {
+      var myVar = 2
+      ---
+      3 + myVar
+}
 ----
 
 The result is `5`.
 
 .Example: Scoped to an Array Literal
+The following example sets the local variable `myVar` in a `do` scope and uses it to set the value of the second element in the array to `2`:
+
 [source,dataweave,linenums]
 ----
 %dw 2.0
 output application/json
 ---
-using (x = 2) [1, x, 3]
+do {
+      var myVar = 2
+      ---
+      [1, myVar, 3]
+}
 ----
 
 The result is `[ 1, 2, 3]`
 
-.Example: Scoped to Object literal
-Here, the reference to `user` is valid because it is within the object `person`.
+.Example: Scoped to the Object literal
+In the following example, references to all the variables are valid. `fn` and `ln` are defined and called within the `do` scope. The global `myVar` variable is also accessible from that scope.
 
 [source,dataweave,linenums]
 ----
 %dw 2.0
+var myVar = 1234
+var myDo =  do {
+    var fn = "Annie"
+    var ln = "Point"
+    ---
+    {
+      id : myVar,
+      firstname : fn,
+      lastname : ln
+    }
+}
 output application/xml
 ---
-{
-  person: using (user='Greg', gender='male') {
-    name: user,
-    gender: gender
-  }
-}
+{ person : myDo }
 ----
 
-.Output
 [source,xml,linenums]
 ----
 <?xml version='1.0' encoding='UTF-8'?>
 <person>
-  <name>Greg</name>
-  <gender>male</gender>
+  <id>1234</id>
+  <firstname>Annie</firstname>
+  <lastname>Point</lastname>
 </person>
 ----
 
-.Example: Invalid Reference that is Outside the Scope
-This example produces an error because `gender` is referenced from outside the scope of `person`, where `gender` is initialized.
+.Example: *Invalid Reference* That Is Outside the Scope
+The following example produces an error because `fromDoScope` is referenced from outside the scope of `do`. As a consequence, the concatenation operation (`++`) cannot append the name-value pair to the collection.
 
 [source,dataweave,linenums]
 ----
 %dw 2.0
+var myVar = 1234
+var myDo =  do {
+    var fn = "Annie"
+    var ln = "Point"
+    var fromDoScope = "Platform"
+    ---
+    {
+      id : myVar,
+      firstname : fn,
+      lastname : ln
+    }
+}
 output application/xml
 ---
-entry: using (firstName = "Annie", lastName = "Point") {
-  person: using (user = firstName, gender = "male") {
-    name: user,
-    gender: gender
-  },
-  sn: lastName,
-  gen: gender
+{
+    person : myDo ++ { "outsideDoScope" : fromDoScope }
 }
 ----
 
 The invalid example returns this error:
-`Unable to resolve reference of gender.`
+`Unable to resolve reference of fromDoScope.`
 
-.Example: Scoped to a Global Variable and to a Function
+.Example: Reference That Is Inside a Function
+The following example passes the string `HELLO` to the `test` function defined in the header. The `do` scope accepts the string, converts it to lowercase, and then concatenates that string to the `suffix` variable, which is also defined in the header of the scope.
+
 [source,dataweave,linenums]
 ----
 %dw 2.0
-output application/json
-var myGlobalVar = 2
----
-{
-  examples: {
-    // x is a global variable that is referenced by a literal expression.
-    'ex_a': using (x = myGlobalVar) 3 + x,
-    // y is an expression that coerces a Boolean into a string,  then referenced by the upper function.
-    'ex_b': using (y = true as String) upper(y ++ ' as a string'),
-    // z is a function expression that is referenced by a literal object.
-    'ex_c': using (z = ["a", "b", "c"] map upper($)) {mapping : z}
-  }
+fun test(param1: String) = do {
+    var suffix = "123"
+    fun innerTest(str: String) = lower(str)
+   ---
+   innerTest(param1 ++ suffix)
 }
+output application/json
+---
+test("HELLO")
 ----
 
-.Output
-[source,json,linenums]
-----
-{
-  "examples": {
-    "ex_a": 5,
-    "ex_b": "TRUE AS A STRING",
-    "ex_c": {
-      "mapping": [
-        "A",
-        "B",
-        "C"
-      ]
-    }
-  }
-}
-----
+The result is `"hello123"`.
 
 == Variables Assigned as Lambda Expressions
 
