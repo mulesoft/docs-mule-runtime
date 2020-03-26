@@ -7,9 +7,16 @@ endif::[]
 
 When you troubleshoot a failing script, one challenge to reproducing an error is having the same inputs the script had
 when it executed, especially in production environments where inputs can
-change unexpectedly.
+change unexpectedly. Therefore it's important to capture the inputs going into a
+script debugging or using loggers. Often, the failures occur because the input
+coming from another component upstream is not valid. For DataWeave errors themselves,
+you can find here a listing of the most common ones and how to overcome them.
 
 == DataWeave Exceptions
+
+There are a number of common DataWeave exceptions or errors you might encounter. 
+
+=== Incorrect Arguments
 
 When a function is called with the incorrect kind of argument, it throws the
 exception, `org.mule.weave.v2.exception.UnsupportedTypeCoercionException`.
@@ -19,7 +26,7 @@ Causes of this exception include:
 * <<mimetype_unset>>
 
 [[null_arg_not_accepted]]
-=== Function Does Not Accept Null Argument
+==== Function Does Not Accept Null Argument
 
 The most common cause of this exception occurs when one of the arguments is
 `Null` and the function does not accept `Null` as an argument. This issue
@@ -46,19 +53,19 @@ But it expects one of these combinations:
   (TimeZone, Date)
   (TimeZone, LocalTime)
 
-4| payload.message ++ " A text"
+1| payload.message ++ " A text"
    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Trace:
-  at main::++ (line: 4, column: 1)
-  at main::main (line: 4, column: 17)
+  at ++ (line: 1, column: 1)
+  at main (line: 1, column: 17)
 ----
 
-One way to resolve this issue is using the `default` operator. For example,
+One way to resolve this issue uses the `default` operator. For example,
 using `payload.message default "" ++ " A text"` appends empty text when the
 when the message is null.
 
 [[mimetype_unset]]
-=== MIME Type Is Not Set
+==== MIME Type Is Not Set
 
 When the MIME type is not set, you receive an error message similar to the
 following:
@@ -66,7 +73,7 @@ following:
 [source,weave, linenums]
 ----
 You called the function 'Value Selector' with these arguments:
-  1: String ("{message: 123}")
+  1: String ("{message: 123}"
   2: Name ("message")
 
 But it expects one of these combinations:
@@ -81,12 +88,85 @@ But it expects one of these combinations:
   (Period, Name)
   (Time, Name)
 
-4| payload.message
+1| payload.message
    ^^^^^^^^^^^^^^^
 Trace:
-  at main::main (line: 4, column: 1)
+  at main (line: 1, column: 1)
 ----
 
 When no MIME type is set on the payload, the MIME type defaults to
 `application/java`, and the content is handled as a `String` instead of a
 JSON object.
+
+=== Stack Overflow
+
+When a function recurses too deeply, an error like the following one is thrown:
+
+[source,weave, linenums]
+----
+Stack Overflow. Max stack is 256
+----
+
+You can configure the maximum stack size by using the property `com.mulesoft.dw.stacksize`.
+
+== Output Mismatch When Undefined
+
+Unlike transformations, DataWeave expressions do not require you to define an output format because DataWeave can infer the output based on the expression and the variables you use. Occasionally, the inference process results in a mismatch between the inferred type and the expected type. To resolve this issue, you must make the output explicit. Common examples of this situation occur when:
+
+* <<xml_extraction>>
+* <<multipart_handling>>
+* <<manipulating_text>>
+
+[[xml_extraction]]
+=== Extracting Data from XML
+
+When extracting a String, for example, from an XML payload with the expression `payload.order.product.model`, DataWeave infers an XML output based on the payload format. In such cases, an error similar to the following one occurs:
+
+[source,weave, linenums]
+----
+"Trying to output non-whitespace characters outside main element tree (in prolog or epilog), while writing Xml.
+Trace:
+  at main (Unknown)" evaluating expression: "payload.order.product.model".
+----
+
+For such an error, you must make the output format explicit, for example: `output text/plain --- payload.order.product.model`.
+
+[[multipart_handling]]
+=== Handling Multipart Entries
+
+A common inference error occurs with multipart data, which has a very specific structure. Consider a multipart payload and the expression `dw::core::Objects::keySet(payload.parts)`. Without an explicit output format, DataWeave must infer, based on the payload type, that you intend to output multipart content. In this case, an error similar to the following is thrown:
+
+[source,weave, linenums]
+----
+"Expecting type is {
+  preamble?: String,
+  parts: {
+    _*: {
+      headers: Object,
+      content: Any
+    }
+  }
+} but got Array, while writing MultiPart.
+Trace:
+  at main (Unknown)" evaluating expression: "dw::core::Objects::keySet(payload.parts)".
+----
+
+To resolve this issue, you must define an output format, for example: `output application/json --- dw::core::Objects::keySet(payload.parts)`
+
+[[manipulating_text]]
+=== Manipulating Text Data
+
+You can use text data to create a more complex object. However, if you do not define the output format for the input text data, DataWeave infers that it must use the plain text writer for the output. The expression `payload splitBy ' '`, for example, will fail with an error similar to:
+
+[source,weave, linenums]
+----
+"Text plain writer is unable to write Array.
+Reason:
+Cannot coerce Array (["hey", "there"]) to String
+Trace:
+  at main (Unknown), while writing TextPlain.
+Trace:
+  at main (Unknown)" evaluating expression: "payload splitBy ' '".
+----
+
+Making the output explicit solves the issue: `output application/java --- payload splitBy ' '`
