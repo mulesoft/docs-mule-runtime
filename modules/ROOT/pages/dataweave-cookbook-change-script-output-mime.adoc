@@ -1,0 +1,120 @@
+= Change Your Script Output Mime Type
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, dataweave, data weave, output structure, mime type, mime
+
+This DataWeave examples shows how to use a different MIME type as output for your
+script than the one the data will be formatted as. This is helpful when building
+Mule applications where MIME types will have an impact on how data is rendered
+by clients using that app, such as HTTP which uses the MIME type to generate its
+`Content-Type` header.
+
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+The first example follows the "problem details" standard for APIs, which requires
+responding in JSON format with some specific keys and an `application/problem+json`
+content type.
+
+The flow below handles HTTP requests but always fails, triggering the error
+handler which sets a 400 as status code and produces a response using a transform.
+Because the transform output is declared as `output application/problem+json with json`,
+the response will have an `application/problem+json` MIME type and be in JSON
+format.
+
+A client receiving such a 400 error will then receive
+a `Content-Type: application/problem+json` header and therefore be notified to
+handle the response data in the standard way, knowing for example that a `title`
+key will be available. Had this been simply `Content-Type: application/json`,
+ no such assumption could be made.
+
+
+.Flow
+[source,xml,linenums]
+----
+<flow name="problemDetailFlow">
+		<http:listener config-ref="HTTP_Listener_config" path="/test">
+			<http:error-response statusCode="#[vars.statusCode]" >
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<raise-error doc:name="Raise error" type="CUSTOM:FORCED" description="This is a manual error to force the execution of the error handler."/>
+		<error-handler >
+			<on-error-propagate>
+				<set-variable value="#[400]" variableName="statusCode"/>
+				<ee:transform>
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/problem+json with json
+---
+{
+  "type": "https://example.org/out-of-stock",
+  title: "Out of Stock",
+  status: vars.statusCode,
+  detail: "Item B00027Y5QG is no longer available",
+  product: "B00027Y5QG"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+----
+
+.Result
+[source,text,linenums]
+----
+HTTP/1.1 400 Bad Request
+Content-Type: application/problem+json; charset=UTF-8
+Content-Length: 173
+Date: Thu, 02 Apr 2020 19:48:23 GMT
+Connection: close
+
+{
+  "type": "https://example.org/out-of-stock",
+  "title": "Out of Stock",
+  "status": 400,
+  "detail": "Item B00027Y5QG is no longer available",
+  "product": "B00027Y5QG"
+}
+----
+
+In this other example, the Mule flow returns `text/markdown` content generated
+with DataWeave as simply text. A browser with markdown support could actually
+render the content accordingly instead of showing text.
+
+.Flow
+[source,xml,linenums]
+----
+<flow name="listFlow">
+  <http:listener config-ref="HTTP_Listener_config" path="/some.md"/>
+  <ee:transform>
+    <ee:message>
+      <ee:set-payload ><![CDATA[%dw 2.0
+output text/markdown with text
+---
+"* idea 1
+* some other idea"]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+.Result
+[source,text,linenums]
+----
+HTTP/1.1 200
+Content-Type: text/markdown; charset=UTF-8
+Content-Length: 26
+Date: Thu, 02 Apr 2020 21:28:36 GMT
+
+* idea 1
+* some other idea
+----
+
+== See Also
+
+* xref:dataweave-formats.adoc[DataWeave Formats]
+
+* xref:dataweave-cookbook.adoc[DataWeave Cookbook]
