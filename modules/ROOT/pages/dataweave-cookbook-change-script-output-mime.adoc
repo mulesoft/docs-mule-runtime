@@ -1,0 +1,113 @@
+= Change a Script's MIME Type Output
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, dataweave, data weave, output structure, mime type, mime
+
+The DataWeave examples show how to differentiate the output MIME type from the MIME type in which the output data is formatted. Such differentiation enables a Mule application to output a MIME type that clients can use to determine how to render the application's output data. An example is HTTP, which uses the MIME type to generate its `Content-Type` header.
+
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+The first example uses the "problem details" standard for APIs. The standard requires the
+`application/problem+json` content type in the response header and a JSON-formatted response body that contains specific keys.
+
+The example is a Mule flow that handles HTTP requests but always fails. The
+failure triggers the error handler, which sets the status code to 400 and uses
+a DataWeave script to produce a response that conforms to the standard.
+
+The DataWeave output directive `output application/problem+json with json` instructs
+the script to produce a response with the `application/problem+json` MIME type
+and a JSON-formatted body.
+
+A client that receives the 400 error uses the `Content-Type: application/problem+json` in the response to determine that it can handle the response data in the standard way, for example, using the `title` key it expects. By contrast, the MIME type `Content-Type: application/json`, without `problem+`, fails to indicate whether the client can handle the error in that way.
+
+.Mule Flow:
+[source,xml,linenums]
+----
+<flow name="problemDetailFlow">
+		<http:listener config-ref="HTTP_Listener_config" path="/test">
+			<http:error-response statusCode="#[vars.statusCode]" >
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<raise-error doc:name="Raise error" type="CUSTOM:FORCED" description="This is a manual error to force the execution of the error handler."/>
+		<error-handler >
+			<on-error-propagate>
+				<set-variable value="#[400]" variableName="statusCode"/>
+				<ee:transform>
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/problem+json with json
+---
+{
+  "type": "https://example.org/out-of-stock",
+  title: "Out of Stock",
+  status: vars.statusCode,
+  detail: "Item B00027Y5QG is no longer available",
+  product: "B00027Y5QG"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+----
+
+.Response:
+[source,text,linenums]
+----
+HTTP/1.1 400 Bad Request
+Content-Type: application/problem+json; charset=UTF-8
+Content-Length: 173
+Date: Thu, 02 Apr 2020 19:48:23 GMT
+Connection: close
+
+{
+  "type": "https://example.org/out-of-stock",
+  "title": "Out of Stock",
+  "status": 400,
+  "detail": "Item B00027Y5QG is no longer available",
+  "product": "B00027Y5QG"
+}
+----
+
+In the next example, the Mule flow returns `text/markdown` content generated
+by DataWeave as simple text. A browser that supports Markdown might
+render the input as bulleted content according to the rules of Markdown instead of
+rendering it in plain text with asterisks.
+
+.Mule Flow:
+[source,xml,linenums]
+----
+<flow name="listFlow">
+  <http:listener config-ref="HTTP_Listener_config" path="/some.md"/>
+  <ee:transform>
+    <ee:message>
+      <ee:set-payload ><![CDATA[%dw 2.0
+output text/markdown with text
+---
+"* idea 1
+* some other idea"]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+.Response:
+[source,text,linenums]
+----
+HTTP/1.1 200
+Content-Type: text/markdown; charset=UTF-8
+Content-Length: 26
+Date: Thu, 02 Apr 2020 21:28:36 GMT
+
+* idea 1
+* some other idea
+----
+
+== See Also
+
+* xref:dataweave-formats.adoc[DataWeave Formats]
+
+* xref:dataweave-cookbook.adoc[DataWeave Cookbook]
