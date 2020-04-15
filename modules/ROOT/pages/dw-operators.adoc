@@ -363,3 +363,359 @@ xref:dataweave-variables.adoc#example_local_variable[Examples: Local DataWeave V
 | `if else` a| An `if` operator evaluates a conditional expression and returns the value under the `if` only if the conditional expression is true. Otherwise, it returns the expression under `else`. Every `if` expression must have a matching `else` expression. See xref:dataweave-flow-control.adoc#control_flow_if_else[if else] for an example.
 | `else if` | An `else` operator chains expressions together within an if-else construct by incorporating `else if`. See xref:dataweave-flow-control.adoc#control_flow_else_if[else if] for an example.
 |===
+
+== Update Operator
+
+DataWeave 2.0 supports the update operator that enables you to update a given field on a data structure with a new value. This use case is very common and was not simple to do in DataWeave.
+
+_Introduced in DataWeave 2.3.0. Supported by Mule 4.3 and later._
+
+.Example: Using Update Operator, let's say that you have an object:
+[source,json,linenums]
+----
+{
+    "name": "Ken",
+    "lastName":"Shokida",
+    "age": 30
+}
+----
+
+And you want to update the age by increasing it with one, without the need of recreating all the object again. Using the current DataWeave syntax is:
+
+[source,weave,linenums]
+----
+payload mapObject ((value,key) ->
+    if(key as String == "age")
+       {(key): value as Number + 1}
+    else
+       {(key): value} )
+----
+
+Using the update operator will be:
+
+[source,weave,linenums]
+----
+payload update {
+    case age at .age -> age + 1
+}
+----
+
+As shown in the previous example with the update operator there is no need for casting or going through all the key value pairs. The update syntax is as follows:
+
+[source,weave,linenums]
+----
+<value_to_update> update {
+    case <variable_name> at <update_expression>[!]? [if(<conditional_expression>)]? -> <new value>
+    ...
+}
+----
+
+* `value_to_update` represents the original value that is going to be updated.
+* `update_expression` is the selector expression that is going to match a given value of the `value_to_update`
+* `variable_name` is the name of the variable that is going to bind to the matched `update_expression` existing value.
+* `new_value` is the expression with the new value.
+* `[if(<conditional_expression>)]?` If `conditional_expression` is true then the value is update. This section is optional and only required for Optional update.
+* `[!]` marks then selector as an upsert, which means that if the selector is not matched then it is going to create it.
+* `update_expression` supports multiple `case` expressions.
+
+[NOTE]
+The update operator doesn't mutate the existing value but rather create a new one with the updated expressions.
+
+=== Selector Expressions
+
+Use selector expressions with the update operator.
+
+==== Value Selector
+
+This matching selector allows to match any field value of a given object. +
+
+Example: Update a field at the root level and a field in a nested level using the value selector.
+
+.Input
+[source,json,linenums]
+----
+{
+    "name": "Ken",
+    "lastName":"Shokida",
+    "age": 30,
+    "address": {
+        "street": "Amenabar",
+        "zipCode": "AB1234"
+    }
+}
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload update {
+    case age at .age -> age + 1
+    case s at .address.street -> "First Street"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "name": "Ken",
+  "lastName": "Shokida",
+  "age": 31,
+  "address": {
+    "street": "First Street",
+    "zipCode": "AB1234"
+  }
+}
+----
+
+==== Index Selector
+
+This matching selector allows to match any array by its index. +
+
+Example: Update an element that is at the first location of the array.
+
+.Input
+[source,json,linenums]
+----
+{
+    "name": "Ken",
+    "lastName":"Shokida",
+    "age": 30,
+    "addresses": [{
+        "street": "Amenabar",
+        "zipCode": "AB1234"
+    }]
+}
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload update {
+    case s at .addresses[0] -> {
+        "street": "Second Street",
+        "zipCode": "ZZ123"
+    }
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "name": "Ken",
+  "lastName": "Shokida",
+  "age": 30,
+  "addresses": [
+    {
+      "street": "Second Street",
+      "zipCode": "ZZ123"
+    }
+  ]
+}
+----
+
+==== Attribute Selector
+
+This matching selector allows to match any attribute value. +
+
+Example: Update an attribute value and change it to upper case.
+
+.Input
+[source,xml,linenums]
+----
+<user name="leandro"/>
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload update {
+    case name at .user.@name -> upper(name)
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<user name="LEANDRO"/>
+----
+
+==== Dynamic Selector
+
+Any of the given selectors can use an expression to make it dynamic. +
+
+Example: Select and update a value where the field to be updated is in a variable and not hardcoded. In this case from the variable `theFieldName` with value `name`.
+
+.Input
+[source,json,linenums]
+----
+{
+    "name": "Ken",
+    "lastName":"Shokida"
+}
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+var theFieldName = "name"
+---
+payload update {
+    case s at ."$(theFieldName)" -> "Shoki"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "name": "Shoki",
+  "lastName": "Shokida"
+}
+----
+
+=== Conditional Update
+
+The update operator has a syntax to write a conditional update if you only want to modify a field under a given condition. +
+
+Example: Update the category based on the name of the user.
+
+.Input
+[source,json,linenums]
+----
+[{"name": "Ken", "age": 30}, {"name": "Tomo", "age": 70}, {"name": "Kajika", "age": 10}]
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload map ((user) ->
+    user update {
+        case name at .name if(name == "Ken") -> name ++ " (Leandro)"
+        case name at .name if(name == "Tomo") -> name ++ " (Christian)"
+    }
+)
+----
+
+
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "name": "Ken (Leandro)",
+    "age": 30
+  },
+  {
+    "name": "Tomo (Christian)",
+    "age": 70
+  },
+  {
+    "name": "Kajika",
+    "age": 10
+  }
+]
+----
+
+=== Upserting
+
+The update operator allows to insert a field if it is not present using the `!` symbol at the end of selector expression. When the field is not present the value `null` is going to be bind to the variable. +
+
+Example: Update the category based on the name of the user.
+
+.Input
+[source,json,linenums]
+----
+[{"lastName": "Doe"}, {"lastName": "Parker", "name": "Peter" }]
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload  map ((user) ->
+    user update {
+        case name at .name! -> if(name == null) "JHON" else upper(name)
+    }
+)
+----
+
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "lastName": "Doe",
+    "name": "JHON"
+  },
+  {
+    "lastName": "Parker",
+    "name": "PETER"
+  }
+]
+----
+
+
+=== Sugar Syntax
+
+The update operator allows to write a shorter version syntax to avoid some code boilerplate and this is by binding a default variable name `$`. +
+
+Example: Same Value Selector example but using simple syntax.
+
+.Input
+[source,json,linenums]
+----
+{
+    "name": "Ken",
+    "lastName":"Shokida",
+    "age": 30,
+    "address": {
+        "street": "Amenabar",
+        "zipCode": "AB1234"
+    }
+}
+----
+
+.Source
+[source,weave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload update {
+    case .age -> $ + 1
+    case .address.street -> "First Street"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "name": "Ken",
+  "lastName": "Shokida",
+  "age": 31,
+  "address": {
+    "street": "First Street",
+    "zipCode": "AB1234"
+  }
+}
+----
