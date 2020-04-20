@@ -32,91 +32,164 @@ details on that mechanism, refer to the xref:1.1@mule-sdk::index.adoc[Mule SDK d
 [[threading]]
 == Threading
 
-Based on the processing type of a component, Mule executes that component on a thread pool that is specifically tuned for that kind of work. These thread pools are managed by Mule and shared across all apps in the same Mule instance.
-When started, Mule introspects the available resources (such as memory and CPU cores) in the system to tune thread pools automatically for the environment where it is running. The default configuration was established through performance testing, which found optimal values for most scenarios.
+Mule 4.3 contains one unique thread pool, called the UBER pool. This thread pool is managed by Mule and shared across all apps in the same Mule instance. At startup, Mule introspects the available resources (such as memory and CPU cores) in the system and tunes automatically for the environment where Mule is running. This algorithm was established through performance testing and found optimal values for most scenarios.
 
-The different thread pools allow Mule to manage resources more efficiently, requiring significantly fewer threads (and their inherent memory footprint) to handle a given workload.
+The single thread pool allows Mule to be efficient, requiring significantly fewer threads (and their inherent memory footprint) to handle a given workload when compared to Mule 3.
 
-Following are described the key aspects of each thread pool.
-
-=== CPU Light
-
-CPU Light is for a relatively small thread pool (2 threads per available core by default).
-
-Apart from executing the CPU Light processors, this pool performs the handoff
-of the event between processors in the flow (including the routers) and the
-response handling for non-blocking IO.
-
-Sometimes, throughput might drop or become unresponsive in an app due to some code
-misusing the CPU Light thread pool. This issue can be quickly checked by taking a
-thread dump of the runtime and looking for `WAITING` or `BLOCKED` or for
-long-running processes in the CPU Light threads.
-
-=== CPU Intensive
-
-CPU Intensive is also a small thread pool (2 threads per available core by default),
-but it provides a queue for accepting more tasks.
-
-=== IO
-
-IO is an elastic thread pool that grows as needed.
-
-Tasks running in this pool should spend most of their time `WAITING` or `BLOCKED`
-instead of doing CPU work, so they do not compete with the other pools.
-
-Also, when a transaction is active (since many transaction managers require all
-steps of the same transaction to be handled by the same thread), the `IO` pool
-is used.
-
-=== Custom Pools
-
-Apart from the three core thread pools, Mule or some components might create additional pools for specific purposes, such as:
-
-* NIO Selectors +
-Enables non-blocking IO. Each connector can create as many as required.
-* Recurring tasks pools +
-Some connectors or components might create specific pools to perform recurring tasks (e.g: expiration monitors, queue consumers, etc.)
+[NOTE]
+If you are upgrading from earlier Mule 4.x versions, see xref:4.2@execution-engine.adoc#threading[Threading in Mule 4.2] to understand the differences applied to the threading model in Mule 4.3.
 
 === Proactor Pattern
 
 Proactor is a design pattern for asynchronous execution. To understand how the Proactor design pattern works, visit https://en.wikipedia.org/wiki/Proactor_pattern
 
-According to this design pattern, all tasks are classified in categories that correspond to each of Mule thread pools, and each task is submitted for execution to its corresponding thread pool.
+According to this design pattern, all tasks are classified in categories that correspond to each of Mule processing types, and each task is submitted for execution to the UBER pool.
 
-Consider the following example where a flow pulls down a JSON array of Person objects described in JSON format, pushes the content through an HTTP request, picks the name of the first entry and does some additional processing:
+Performance testing shows that applying the Proactor pattern leads to better performance, even with one unique thread pool, because it allows threads to go back to the main loop quicker, allowing the system to keep accepting new work while the IO tasks are blocked waiting.
 
-[source, xml, linenums]
-----
-<flow>
-  <sftp:read path="personsArray.json" /> <1>
-  <http:request path="/persons" method="POST" /> <2>
-  <set-variable variableName="firstEntryName" value="#[payload[0].name]" /> <3>
-  <ee:transform ... /> <4>
-  <logger message="#[vars.firstEntryName]" /> <5>
-</flow>
-----
+=== Transactions
 
-According to the Proactor pattern, Mule submits the tasks as follows:
-
-<1> The blocking operation(`<sftp:read>`) executes in the IO pool.
-<2> `<http:request>` is a non blocking operation. Mule performs the request in the current thread. When the flow receives the response, Mule switches to the `CPU_LIGHT` pool.
-<3> `<set-variable>` operations should be fairly quick and stay in `CPU_LIGHT`. There is no thread switch.
-<4> `<ee:transform>`, this is potentially a computational heavy transformation, so Mule switches to the `CPU_INTENSIVE` pool.
-<5> Logger stays on `CPU_INTENSIVE`. There is no thread switch. +
-[NOTE]
-Due to optimizations regarding latency, thread switches are omitted when an IO or `CPU_INTENSIVE` task is followed by a `CPU_LIGHT` one. The reasoning behind this optimization is that executing said `CPU_LIGHT` task is most likely cheaper than the thread switch.
+When there’s an active transaction, all thread switches are suspended. Event processors participating in the transaction are executed in the same thread.
 
 == Configuration
 
-Mule runtime engine automatically configures the thread pools at startup time, by applying formulas that consider available resources such as CPU and memory. These formulas can be modified by editing the `MULE_HOME/conf/schedulers-pools.conf` file. However, MuleSoft doesn’t recommend changing the thread pools' configuration.
+The thread pool is automatically configured by Mule at startup time, by applying formulas that consider available resources such as CPU and memory. These formulas can be modified in the `MULE_HOME/conf/schedulers-pools.conf` file. The configuration file contains comments that document each of the properties, but depending on the configured pool strategy, you can configure specific properties.
 
-Note that the configuration is global and affects the entire Mule instance.
+Configure the `org.mule.runtime.scheduler.SchedulerPoolStrategy` parameter to switch between the two available strategies:
+
+* UBER +
+Unified scheduling strategy. Default.
+* DEDICATED +
+Separated pools strategy. Legacy.
+
+[source, properties, linenums]
+----
+# The strategy to be used for managing the thread pools that back the 3 types of schedulers in the Mule Runtime
+# (cpu_light, cpu_intensive and I/O).
+# Possible values are:
+#    - UBER: All three scheduler types will be backed by one uber uber thread pool (default since 4.3.0)
+#    - DEDICATED: Each scheduler type is backed by its own Thread pool (legacy mode to Mule 4.1.x and 4.2.x)
+org.mule.runtime.scheduler.SchedulerPoolStrategy=UBER
+----
+
+=== UBER Scheduling Strategy
+
+When the strategy is set to `UBER`, the following configuration applies:
+
+* `org.mule.runtime.scheduler.uber.threadPool.coreSize=cores`
+* `org.mule.runtime.scheduler.uber.threadPool.maxSize=max(2, cores + ((mem - 245760) / 5120))`
+* `org.mule.runtime.scheduler.uber.workQueue.size=0`
+* `org.mule.runtime.scheduler.uber.threadPool.threadKeepAlive=30000`
+
+Example `schedulers-pools.conf` file:
+
+[source, properties, linenums]
+----
+# The number of threads to keep in the uber pool.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=UBER
+org.mule.runtime.scheduler.uber.threadPool.coreSize=cores
+
+# The maximum number of threads to allow in the uber pool.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=UBER
+org.mule.runtime.scheduler.uber.threadPool.maxSize=max(2, cores + ((mem - 245760) / 5120))
+
+# The size of the queue to use for holding tasks in the uber pool before they are executed.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=UBER
+org.mule.runtime.scheduler.uber.workQueue.size=0
+
+# When the number of threads in the uber pool is greater than SchedulerService.io.coreThreadPoolSize, this is the maximum
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=UBER
+# time (in milliseconds) that excess idle threads will wait for new tasks before terminating.
+org.mule.runtime.scheduler.uber.threadPool.threadKeepAlive=30000
+----
+
+=== DEDICATED Pools Strategy
+
+When the strategy is set to `DEDICATED`, the parameters from the UBER strategy are ignored.
+
+To enable this configuration, uncomment the following parameters in your `schedulers-pools.conf` file:
+
+* `org.mule.runtime.scheduler.cpuLight.threadPool.size=2*cores`
+* `org.mule.runtime.scheduler.cpuLight.workQueue.size=0`
+* `org.mule.runtime.scheduler.io.threadPool.coreSize=cores`
+* `org.mule.runtime.scheduler.io.threadPool.maxSize=max(2, cores + ((mem - 245760) / 5120))`
+* `org.mule.runtime.scheduler.io.workQueue.size=0`
+* `org.mule.runtime.scheduler.io.threadPool.threadKeepAlive=30000`
+* `org.mule.runtime.scheduler.cpuIntensive.threadPool.size=2*cores`
+* `org.mule.runtime.scheduler.cpuIntensive.workQueue.size=2*cores`
+
+Example `schedulers-pools.conf` file:
+
+[source, properties, linenums]
+----
+# The number of threads to keep in the cpu_lite pool, even if they are idle.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.cpuLight.threadPool.size=2*cores
+
+# The size of the queue to use for holding cpu_lite tasks before they are executed.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.cpuLight.workQueue.size=0
+
+# The number of threads to keep in the I/O pool.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.io.threadPool.coreSize=cores
+
+# The maximum number of threads to allow in the I/O pool.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.io.threadPool.maxSize=max(2, cores + ((mem - 245760) / 5120))
+
+# The size of the queue to use for holding I/O tasks before they are executed.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.io.workQueue.size=0
+
+# When the number of threads in the I/O pool is greater than SchedulerService.io.coreThreadPoolSize, this is the maximum
+# time (in milliseconds) that excess idle threads will wait for new tasks before terminating.
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.io.threadPool.threadKeepAlive=30000
+
+# The number of threads to keep in the cpu_intensive pool, even if they are idle.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.cpuIntensive.threadPool.size=2*cores
+
+# The size of the queue to use for holding cpu_intensive tasks before they are executed.
+# Supports Expressions
+# Only applies when org.mule.runtime.scheduler.threadPool.strategy=DEDICATED
+org.mule.runtime.scheduler.cpuIntensive.workQueue.size=2*cores
+----
+
+==== Considerations
+
+MuleSoft doesn’t recommend changing the used pool strategy nor change its configuration values. Note that the configuration is global and affects the entire Mule Runtime instance.
+
+MuleSoft recommends that you perform load and stress testing with all applications involved in real-life scenarios to validate any change in the threading configurations and to understand how the thread pools work in Mule 4.
 
 === Configuration at the Application Level
 
-You can define the configuration of each pool and use it in a specific application by adding the following to your application code:
+You can define the pool strategy to use in an application by adding the following to your application code:
 
-[source,xml,linenums]
+[source, xml, linenums]
+----
+<ee:scheduler-pools poolStrategy="UBER" gracefulShutdownTimeout="15000">
+   <ee:uber
+       corePoolSize="1"
+       maxPoolSize="9"
+       queueSize="5"
+       keepAlive="5"/>
+</ee:scheduler-pools>
+----
+
+Notice that there’s a `poolStrategy` parameter. This parameter exists for backwards compatibility reasons and allows you to switch back to the three pools scheme from prior versions of mule:
+
+[source, xml, linenums]
 ----
 <ee:scheduler-pools gracefulShutdownTimeout="15000">
    <ee:cpu-light
@@ -137,9 +210,19 @@ You can define the configuration of each pool and use it in a specific applicati
 
 Applying pool configurations at the application level causes Mule to create a completely new set of thread pools for the Mule app. This configuration does not change the default settings configured in the `scheduler-conf.properties` file, which is particularly important for on-premises deployments because many Mule apps can be deployed to the same Mule instance.
 
-Mulesoft recommends running mule using the default settings. If you use custom thread pool configurations, MuleSoft recommends that you perform load and stress testing with all applications involved in real-life scenarios to validate any change in the threading configurations and to understand how the thread pools work in Mule 4.
+MuleSoft recommends running Mule using default settings.
+If you are upgrading from Mule 4.1.x or Mule 4.2.x you can use the DEDICATED strategy so that any customizations applied in the `scheduler-conf.properties` file can still be used. However, MuleSoft still recommends to try the new default setting first and then determine whether the optimizations are still required. Also, try first to customize the new UBER strategy before falling back to the legacy mode.
 
 In any case, MuleSoft recommends consulting with Support before going into production with customized settings.
+
+== Custom Pools
+
+Besides the unique UBER thread pool, some components might create additional pools for specific purposes, such as:
+
+* NIO Selectors +
+Enables non-blocking IO. Each connector can create as many as required.
+* Recurring tasks pools +
+Some connectors or components might create specific pools to perform recurring tasks (e.g: expiration monitors, queue consumers, etc.)
 
 [[backpressure]]
 == Back-pressure
@@ -147,6 +230,44 @@ In any case, MuleSoft recommends consulting with Support before going into produ
 Under heavy load, Mule might not have resources available to handle a specific event. This issue might occur because all threads are busy and cannot perform the handoff of the newly arrived event or because the current flow’s `maxConcurrency` value has been exceeded already.
 
 In case Mule cannot handle an event, a message is logged about the condition: `Flow 'flowName' is unable to accept new events at this time`. Also, Mule sends a notification to the flow source to perform any required actions.
-The actions Mule performs on back-pressure are specific to each connector’s source. For example, an `http:listener` might return a `503` error code, while a message broker listener might provide the option to either wait for resources to be available or drop the message.
 
-In some cases, a source might disconnect from a remote system to avoid getting more data than it can process and then reconnect once the server state is normalized.
+The actions Mule performs on back-pressure are specific to each connector’s source. For instance, an `http:listener` might return a `503` error code, while a message broker listener might provide the option to either wait for resources to be available or drop the message. In some cases, a source might disconnect from a remote system to avoid getting more data than it can process and then reconnect once the server state is normalized.
+
+== Upgrading from Mule 4.2/4.1
+
+If you are upgrading from Mule 4.2.x or 4.1.x to Mule 4.3.x, take the following actions:
+
+* If there are no custom threading settings applied (either through the `scheduler-pools.conf` file or directly in the Mule app), then no action is required.
+* If there are custom threading configurations applied, test your Mule applications with the default configuration. +
+Because of the UBER pool strategy and other performance updates implemented in Mule 4.3, you might not need custom threading configurations.
+* If tests confirm that custom configuration is still necessary, then reach out to our Support team. +
+The best practice is to use a custom configuration only after our Support team has validated the root cause of the problem. Failing to follow this best practice can lead to inefficient use of resources and might hide underlying issues.
+
+== Troubleshooting
+
+When troubleshooting a Mule app, have in mind the naming convention used for threads.
+
+Consider this flow:
+
+[source, xml, linenums]
+----
+<flow name="echoFlow">
+   <http:listener config-ref="HTTP_Listener_config" path="/echo"/>
+   <set-payload value="#['Echo ' ++ now()]" mimeType="text/plain"/>
+   <logger level="ERROR" message="request at #[now()]" />
+</flow>
+----
+
+After execution, the flow produces the following log:
+
+----
+ERROR 2020-03-12 19:13:45,292 [[MuleRuntime].uber.07: [echo].echoFlow.CPU_LITE @63e7e52c]
+[event: bd56a240-64ae-11ea-8f7d-f01898419bde] org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
+request at 2020-03-12T19:13:45.283-03:00[America/Argentina/Buenos_Aires]
+----
+
+In this case, the thread name is `uber.07`. Mule also logs the type of the operation, which in this case is `CPU_LITE`.
+
+This also shows up on thread dumps or when using a profiler:
+
+image::mruntime-thread-profiler.png[Thread dumps in profiler]
