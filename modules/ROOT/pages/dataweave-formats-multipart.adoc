@@ -1,0 +1,174 @@
+= Multipart Format (Form Data)
+
+MIME Type: `multipart/form-data`
+
+ID: `multipart`
+
+DataWeave supports multipart subtypes, in particular `form-data`. These formats
+enable you to handle several different data parts in a single payload,
+regardless of the format each part has. To distinguish the beginning and end of
+a part, a boundary is used and metadata for each part can be added through
+headers.
+
+[[examples]]
+== Examples
+
+The following examples show uses of the Multipart format.
+
+* <<example1>>
+* <<example2>>
+
+[[example1]]
+=== Example: Access and Transform Data from Parts
+
+Within a DataWeave script, you can access and transform data from any of the
+parts by selecting the `parts` element. Navigation can be array-based or key-based when parts feature a name to reference them by. The part's data can be
+accessed through the `content` keyword, while headers can be accessed through
+the `headers` keyword.
+
+==== Input
+
+This example serves as input to separate DataWeave scripts. shows a raw `multipart/form-data` payload with a `34b21` boundary consisting of 3 parts:
+
+* a `text/plain` one named `text`
+* an `application/json` file (`a.json`) named `file1`
+* a `text/html` file (`a.html`) named `file2`
+
+.Raw Multipart Data:
+[source,text,linenums]
+----
+--34b21
+Content-Disposition: form-data; name="text"
+Content-Type: text/plain
+
+Book
+--34b21
+Content-Disposition: form-data; name="file1"; filename="a.json"
+Content-Type: application/json
+
+{
+  "title": "Java 8 in Action",
+  "author": "Mario Fusco",
+  "year": 2014
+}
+--34b21
+Content-Disposition: form-data; name="file2"; filename="a.html"
+Content-Type: text/html
+
+<!DOCTYPE html>
+<title>
+  Available for download!
+</title>
+--34b21--
+----
+
+==== Source
+
+The following DataWeave script uses the raw `multipart/form-data` payload as input to produce `Book:a.json`.
+
+.Reading Multipart Content:
+[source,dataweave,linenums]
+----
+%dw 2.0
+output text/plain
+---
+payload.parts.text.content ++ ':' ++ payload.parts[1].headers.'Content-Disposition'.filename
+----
+
+[[example2]]
+=== Example: Generate Multipart Content
+
+You can generate multipart content that DataWeave uses to build an object with a
+list of parts, each containing its headers and content. The following
+DataWeave script produces the raw multipart data (previously analyzed)
+if the HTML data is available in the payload.
+
+.Writing Multipart Content:
+[source,dataweave,linenums]
+----
+%dw 2.0
+output multipart/form-data
+boundary='34b21'
+---
+{
+  parts : {
+    text : {
+      headers : {
+        "Content-Type": "text/plain"
+      },
+      content : "Book"
+    },
+    file1 : {
+      headers : {
+        "Content-Disposition" : {
+            "name": "file1",
+            "filename": "a.json"
+        },
+        "Content-Type" : "application/json"
+      },
+      content : {
+        title: "Java 8 in Action",
+        author: "Mario Fusco",
+        year: 2014
+      }
+    },
+    file2 : {
+      headers : {
+        "Content-Disposition" : {
+            "filename": "a.html"
+        },
+        "Content-Type" : payload.^mimeType
+      },
+      content : payload
+    }
+  }
+}
+----
+
+Notice that the key determines the part's name if the name is not explicitly
+provided in the `Content-Disposition` header, and note that DataWeave can
+handle content from supported formats, as well as references to unsupported
+ones, such as HTML.
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for the Multipart format.
+
+== Reader Properties
+
+The Multipart reader accepts optional parameters that provide instructions for reading input data.
+
+You can set the boundary for the reader to use when it analyzes the data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `boundary` | `String` | None | The multipart boundary value. A String to
+delimit parts.
+|===
+
+=== Writer Properties
+
+The Multipart writer accepts optional parameters that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `boundary` | `String` | None | The multipart boundary value. A String to
+delimit parts.
+| `bufferSize` | `Number` | `8192` | Size of the buffer writer.
+| `deferred` | `Boolean` | `false` | Property for deferred output.
+  Valid values are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types (for Multipart)
+
+The Multipart format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`multipart/*`
+|===
