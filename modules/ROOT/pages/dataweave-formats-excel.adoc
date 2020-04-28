@@ -1,0 +1,240 @@
+= Excel Format
+
+MIME Type: `application/xlsx`
+
+ID: `excel`
+
+An Excel workbook is a sequence of sheets. In DataWeave, this is mapped to an
+object where each sheet is a key. Only one table is allowed per Excel sheet.
+A table is expressed as an array of rows. A row is an object where its keys
+are the columns and the values the cell content.
+
+[NOTE]
+====
+Only `.xlsx` files are supported (Excel 2007). `.xls` files are not supported
+by Mule.
+====
+
+The DataWeave reader for Excel input supports the following parsing strategies:
+
+* In-Memory
+* Streaming
+
+To understand the parsing strategies that DataWeave readers and writers can apply to this format, see xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Parsing Strategies].
+
+[[mapping]]
+== Excel Type Mapping
+
+The following table shows how Excel types map to DataWeave types.
+
+[cols="2,2",options="header"]
+|===
+| Excel Type | DataWeave Type
+| `String` | `String`
+| `Numeric` | `Number`
+| `Boolean` | `Boolean`
+| `Data` | `Date`
+|===
+
+
+[[examples]]
+== Examples
+
+The following examples show uses of the Excel format.
+
+* <<example1>>
+* <<example2>>
+* <<example3>>
+
+[[example1]]
+=== Example: Represent Excel in the DataWeave (dw) Format
+
+This example shows how DataWeave represents an Excel workbook.
+
+==== Input
+
+The Excel workbook (`Sheet1`) serves as an input payload for the DataWeave source.
+
+.Sheet1:
+[cols="2,2,2",options="header"]
+----
+.   | A    | B
+1   | Id   | Name
+2   | 123  | George
+3   | 456  | Lucas
+----
+
+==== Source
+
+The DataWeave script transforms the Excel input payload to the DataWeave (dw) format and MIME type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+==== Output
+
+The DataWeave output looks like this. You can select values the same way you select values in other objects.
+
+[source,dataweave,linenums]
+----
+{
+    "Sheet1": [
+        {
+                "A": 123,
+                "B": "George"
+        },
+        {
+                "A": 456,
+                "B": "Lucas"
+        }
+    ]
+}
+
+----
+
+[[example2]]
+=== Example: Output an Excel Table
+
+The following DataWeave script outputs an Excel table with the header and fields.
+
+The body of this DataWeave script is a DataWeave object that defines the content of the Excel sheet. The name of the sheet, `Sheet1`, is the key of this object. The value is an array of objects. Each object in the array contains a collection of key-value pairs. The keys in each pair are treated as header values for the
+spreadsheet. The values in each pair are treated as data values for a row in the sheet.
+
+The output directive indicates that the output is the Excel format and MIME type. The `header=true` setting indicates that the output includes the header values.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xlsx header=true
+---
+{
+  Sheet1: [
+    {
+      Id: 123,
+      Name: George
+    },
+    {
+      Id: 456,
+      Name: Lucas
+    }
+  ]
+}
+----
+
+For another example, see
+xref:dataweave-cookbook-xlsx-lookup.adoc[Look Up Data in an Excel (XLSX) File].
+
+[[example3]]
+=== Example: Stream Excel Input
+
+By default, the Excel reader stores input data from an entire file in-memory
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance
+of the reader by setting a `streaming` property to `true`.
+
+The following Configuration XML for a Mule application streams an Excel file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<http:listener-config
+    name="HTTP_Listener_config"
+    doc:name="HTTP Listener config" >
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="streaming_flow" >
+  <http:listener
+    doc:name="Listener"
+    config-ref="HTTP_Listener_config"
+    path="/"
+    outputMimeType="application/xlsx; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Sheet Name" map ((row) -> {
+    foo: row.a,
+    bar: row.b
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+The example:
+
+* Configures the HTTP listener to stream the XLSX input
+by setting `outputMimeType="application/xlsx; streaming=true"`.
+In the Studio UI, you can use the *MIME Type* on the listener to `application/xlsx`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* Uses a DataWeave script in the *Transform Message* component to iterate
+over each row in the XLSX payload (an XLSX sheet called `"Sheet Name"`) and
+select the values of each cell in the row (using `row.a`, `row.b`). It assumes
+columns named `a` and `b` and maps the values from each row in those columns
+into `foo` and `bar`, respectively.
+
+==== Output
+
+The following image shows the Excel table output.
+
+image::dataweave-formats-exceltable.png[]
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for Excel.
+
+=== Reader Properties (for Excel)
+
+The Excel format accepts properties that provide instructions for reading input data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `header` | `Boolean` | `true` | Indicates whether the Excel table contains
+headers. Valid values are `true` or `false`.
+| `ignoreEmptyLine` | `Boolean` | `true` | Indicates whether to ignore empty
+line. Valid values are `true` or `false`.
+| `streaming` | `Boolean` | `false` | Introduced in Mule 4.2.2: Streaming is intended for processing a large file. When streaming is enabled, the reader accesses each row sequentially, keeping one row in memory at a time, instead of making all data available at once. Streaming does not permit random access to rows in the file. Use only if the entries are accessed sequentially. Valid values are `true` or `false`.
+| `tableOffset` | `String` | `null` | The position of the first cell in the
+table (`<Column><Row> example A1`).
+| `zipBombCheck` | `Boolean` | `true` | If set to `false`, the zip bomb check is turned off. Valid values are `true` or `false`.
+|===
+
+=== Writer Properties (for Excel)
+
+The Excel format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+|Parameter | Type | Default | Description
+| `bufferSize` | `Number` | `8192` | Size of the writer buffer.
+| `deferred` | `Boolean` | `false` | Property for deferred output.
+  Valid values are `true` or `false`.
+| `header` | `Boolean` | `true` |	Indicates whether the Excel table contains
+headers. Valid values are `true` or `false`. When there are no headers, column names are used (for example, A, B, C, and so on).
+| `ignoreEmptyLine` | `Boolean` | `true` | Indicates whether to ignore empty
+lines. Valid values are `true` or `false`.
+| `tableOffset` | `String` | `null` | The position of the first cell in the table (`<Column><Row> example A1`).
+| `zipBombCheck` | `Boolean` | `true` | If set to `false`, the zip bomb check is turned off. Valid values are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types (for Excel)
+
+DataWeave supports the following MIME type.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+|`application/xlsx`
+|===

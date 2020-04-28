@@ -1,0 +1,239 @@
+= CSV Format
+
+MIME Type: `application/csv`
+
+ID: `csv`
+
+The CSV data format is represented as a DataWeave array of objects in which each object represents a row. All simple values are represented as strings.
+
+The DataWeave reader for CSV input supports the following parsing strategies:
+
+* Indexed
+* In-Memory
+* Streaming
+
+By default, the CSV reader stores input data from an entire file in-memory if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process writes the data to disk. For very large files, you can improve the performance of the reader by setting a streaming property to true.
+
+For additional details, see xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Readers].
+
+== Examples
+
+The following examples show uses of the CSV format.
+
+* <<example1>>
+* <<example2>>
+
+[[example1]]
+=== Example: Represent CSV Data
+
+The following example shows how DataWeave represents CSV data.
+
+==== Input
+
+The following sample data serves as input for the DataWeave source.
+
+[source,csv,linenums]
+----
+name,lastname,age,gender
+Mariano,de Achaval,37,male
+Paula,de Estrada,37,female
+----
+
+==== Source
+
+The DataWeave script transforms the CSV input payload to the DataWeave (dw) format and MIME type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+==== Output
+
+The DataWeave script produces the following output.
+
+[source,dataweave,linenums]
+----
+[
+  {
+    name: "Mariano",
+    lastname: "de Achaval",
+    age: "37",
+    gender: "male"
+  },
+  {
+    name: "Paula",
+    lastname: "de Estrada",
+    age: "37",
+    gender: "female"
+  }
+]
+----
+
+[[example2]]
+=== Example: Stream CSV Data
+
+By default, the CSV reader stores input data from an entire file in-memory
+if the file is 1.5MB or less. If the file is larger than 1.5 MB, the process
+writes the data to disk. For very large files, you can improve the performance
+of the reader by setting a `streaming` property to `true`. To demonstrate the use of this property, the next example streams a CSV file and transforms it to JSON.
+
+==== Input
+
+The structure of the CSV input looks something like the following. Note that a streamed file is typically much longer.
+
+.CSV File Input for Streaming Example (truncated):
+[source,csv,linenums]
+----
+street,city,zip,state,beds,baths,sale_date
+3526 HIGH ST,SACRAMENTO,95838,CA,2,1,Wed May 21 00:00:00 EDT 2018
+51 OMAHA CT,SACRAMENTO,95823,CA,3,1,Wed May 21 00:00:00 EDT 2018
+2796 BRANCH ST,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+2805 JANETTE WAY,SACRAMENTO,95815,CA,2,1,Wed May 21 00:00:00 EDT 2018
+6001 MCMAHON DR,SACRAMENTO,95824,CA,2,1,,Wed May 21 00:00:00 EDT 2018
+5828 PEPPERMILL CT,SACRAMENTO,95841,CA,3,1,Wed May 21 00:00:00 EDT 2018
+----
+
+==== XML Configuration
+
+To demonstrate a use of the `streaming` property, the following Mule flow streams a CSV file and transforms it to JSON.
+
+[source,xml,linenums]
+----
+<flow name="dw-streamingFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read
+     path="${app.home}/input.csv"
+     config-ref="File_Config"
+     outputMimeType="application/csv; streaming=true; header=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload map ((row) -> {
+zipcode: row.zip
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    config-ref="File_Config1"
+    path="/path/to/output/file/output.json"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The example configures the Read operation (`<file:read/>`) to stream the CSV input by setting `outputMimeType="application/csv; streaming=true"`. The input CSV file is located in the project directory, `src/main/resources`, which is the location of `${app.home}`.
+* The DataWeave script in the *Transform Message* component uses the `map`
+function to iterate over each row in the CSV payload and select the value
+of each field in the `zip` column.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+==== Output
+
+The CSV streaming example produces the following output.
+
+[source,json,linenums]
+----
+[
+  {
+    "zipcode": "95838"
+  },
+  {
+    "zipcode": "95823"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95815"
+  },
+  {
+    "zipcode": "95824"
+  },
+  {
+    "zipcode": "95841"
+  }
+]
+----
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for CSV.
+
+=== Reader Properties
+
+The CSV format accepts properties that provide instructions for reading input data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `bodyStartLineNumber` | `Number` | `0` | The line number on which the body starts.
+| `escape` | `String` | `\` | Character used to escape invalid characters, such as separators or quotes within field values.
+| `header` | `Boolean` |`true` | Indicates whether a CSV header is present.
+ Valid values are `true` or `false`.
+
+* If `header=true`, you can access the fields within the input
+ by name, for example, `payload.userName`.
+* If `header=false`, you must access the fields by index, referencing
+ the entry first and the field next, for example, `payload[107][2]`.
+| `headerLineNumber` | `Number` | `0` | The line number on which the CSV header is located.
+| `ignoreEmptyLine`| `Boolean` | `true` | Ignores any empty line.
+Valid values are `true` or `false`.
+| `quote` | `String` | `"` | Character to use for quotes.
+| `separator` | `String` | `,` | Character that separates one record from another.
+| `streaming` | `Boolean` | `false` | Property for streaming CSV input. Use only if entries are accessed sequentially. Valid values are `true` or `false`.
+See the <<example2, streaming example>>, and see xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Readers].
+|===
+
+[[writer_properties]]
+=== Writer Properties
+
+The CSV format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `bodyStartLineNumber` | `Number` | `0` | Line number on which the body starts.
+| `bufferSize` | `Number` | `8192` | Size of the writer buffer.
+| `deferred` | `Boolean` | `false` | Property for deferred output.
+  Valid values are `true` or `false`.
+| `encoding` | `String` | `null` | Encoding for the writer to use, such as `UTF-8`.
+| `escape` | `String` | `\` | Character to use for escaping an invalid character,
+such as occurrences of the separator or quotes within field values.
+| `header` | `Boolean` | `true` | Indicates whether to write a CSV header. Valid values are `true` or `false`.
+| `headerLineNumber` | `Number` | `0` | Identifies the line number on which the header is located.
+| `ignoreEmptyLine` | `Boolean` | `true` | Ignores any empty line.
+Valid values are `true` or `false`.
+| `lineSeparator` | `String` | New Line | Line separator to use when writing the CSV, for example, `\r\n`.
+| `quote` | `String` | `"` | The character to be used for quotes.
+| `quoteHeader` | `Boolean` | `false` | Indicates whether to quote header values.
+Valid values are `true` or `false`.
+| `quoteValues` | `Boolean` | `false` | Indicates whether to quote every value
+(even if the value contains special characters). Valid values are `true` or `false`.
+| `separator` | `String` | `,` | Character that separates records from another.
+|===
+
+[[mime_types]]
+== Supported MIME Types
+
+The CSV format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`*/csv`
+|===

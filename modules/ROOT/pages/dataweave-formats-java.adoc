@@ -1,0 +1,286 @@
+= Java Format
+
+MIME Type: `application/java`
+
+ID: `java`
+
+For the Java data format, DataWeave attempts to map any Java value to a DataWeave value, most often by matching the semantics of DataWeave and Java.
+
+== Java Value Mapping
+
+The following table maps Java classes to DataWeave types.
+
+[cols="2,2",options="header"]
+|===
+| Java Class | DataWeave
+| `java.lang.String` | `String`
+| `Enum` | `String`
+| `Class` | `String`
+| `UUID` | `String`
+| `CharSequence`| `String`
+| `Char` | `String`
+| `java.sql.Clob` | `String`
+| `java.io.Reader` | `String`
+| `int` | `Number`
+| `long` | `Number`
+| `double` | `Number`
+| `short` | `Number`
+| `BigInteger` | `Number`
+| `BigDecimal` | `Number`
+| `AtomicInteger` | `Number`
+| `AtomicLong` | `Number`
+| `boolean` | `Boolean`
+| `AtomicBoolean` | `Boolean`
+| `java.util.Collection` | `Array`
+| `java.lang.Iterable` | `Array`
+| `java.util.Iterator` | `Array`
+| `java.util.Map` | `Object`
+| `java.util.Optional` | `Null` or `Value`
+| `byte[]` | `Binary`
+| `java.lang.InputStream` | `Binary`
+| `byte` | `Binary`
+| `java.lang.File` | `Binary`
+| `java.time.LocalDateTime` | `LocalDateTime`
+| `java.sql.Timestamp` | `LocalDateTime`
+| `java.sql.Date` | `LocalDateTime`
+| `java.time.ZonedDateTime` | `DateTime`
+| `java.time.LocalTime` | `LocalTime`
+| `java.time.OffsetTime` |`Time`
+| `java.time.LocalDate` | `Date`
+| `java.time.ZoneOffset` | `TimeZone`
+| `java.util.Calendar` | `DateTime`
+| `java.util.XMLGregorianCalendar` | `DateTime`
+| `*[]` | `Array`
+|===
+
+IMPORTANT: If a Java class is not in present in the table, DataWeave treats it as a `JavaBean` and maps it as an `Object` type. In this case, DataWeave takes all properties from the Java getters.
+
+[[metadata]]
+== Metadata
+
+DataWeave supports the `^class` metadata for the Java format.
+
+All Java objects are associated with a class. DataWeave maintains this association by mapping the class to a Metadata property.
+
+`payload.^class` returns the name of the class of the `payload`.
+
+The Java writer uses the metadata property to discover the Java class to which the DataWeave value maps. That is, DataWeave uses the metadata property to determine which Java class is to be created from a given DataWeave value. For example, the expression `output application/java --- now() as DateTime {class: "java.util.Calendar"}` creates a `java.util.Calendar`.
+
+[[format_enum]]
+== Enum Custom Type
+
+The Java format supports the `Enum` custom type. To put a Java `enum` value into a `java.util.Map`, the DataWeave Java module defines a custom type called `Enum`.
+This custom type enables you to handle a given string as the name of a specified `enum` type. You must use the `class` metadata property when specifying the Java class name of the enum, for example: `{gender: "Female" as Enum {class: "org.mycompany.Gender"}}`
+
+[[format_examples]]
+== Examples
+
+The following examples show uses of the Java format.
+
+* <<example1>>
+* <<example2>>
+* <<example3>>
+
+=== Class Definitions
+
+The Java examples use the following class definitions:
+
+* <<class_user, `User`>>
+* <<class_customer, `Customer`>> (which extends `User`)
+
+[[class_user]]
+.User class:
+[source,java,linenums]
+----
+class User {
+    private String name;
+    private String lastName;
+
+    public User(){
+
+    }
+
+    public User(String name, String lastName){
+        this.name = name;
+        this.lastName = lastName;
+    }
+
+    public void setName(String name){
+        this.name = name;
+    }
+
+     public void setLastName(String lastName){
+        this.lastName = lastName;
+    }
+
+    public String getName(){
+        return name;
+    }
+
+    public String getLastName(){
+        return lastName;
+    }
+}
+----
+
+The following class extends `User`.
+
+[[class_customer]]
+.Customer class:
+[source,java,linenums]
+----
+import java.util.Calendar;
+class Customer extends User {
+    private Calendar expirationDate;
+    private User salesRepr;
+
+    public User(){
+
+    }
+
+    public User(String name, String lastName,Calendar expirationDate){
+        super(name,lastName);
+        this.expirationDate = expirationDate;
+    }
+
+    public void setSalesRepr(User salesRepr){
+        this.salesRepr = salesRepr;
+    }
+
+    public User getSalesRepr(){
+        return this.salesRepr;
+    }
+
+    public void  setExpirationDate(Calendar expirationDate){
+        this.expirationDate = expirationDate;
+    }
+
+    public Calendar getExpirationDate(){
+        return this.expirationDate;
+    }
+}
+----
+
+[[example1]]
+=== Example: Access Values of Java Properties
+
+This example shows how to access the values of Java properties.
+
+==== Input
+
+The `User` values serves as the input payload to the DataWeave script.
+
+[source,groovy,linenums]
+----
+new User("Leandro", "Shokida")
+----
+
+==== Source
+
+The DataWeave scripts transforms the input value to JSON.
+
+[source,dataweave,linenums]
+----
+output application/json
+---
+{
+    a: payload.name,
+    b: payload.lastName
+}
+----
+
+==== Output
+
+The output is a JSON object that contains key-value pairs. The values are the `name` and `lastName` values from the input `User` object.
+
+[source,json,linenums]
+----
+{
+    "a": "Leandro",
+    "b": "Shokida"
+}
+----
+
+[[example2]]
+=== Example: Create a Customer Object
+
+This example shows how to create an instance of a `Customer` class. The script outputs the object in the JSON format and MIME type.
+
+Notice that it is not necessary to specify the class of inner properties because their class is inferred from the parent class definition.
+
+[source,dataweave,linenums]
+----
+output application/json
+---
+{
+    name: "Tomo",
+    lastName: "Chibana",
+    expirationDate: now(),
+    salesRepr: {
+        name: "Mariano",
+        lastName: "de Achaval",
+    }
+} as Object {class: "Customer"}
+----
+
+[[example3]]
+=== Example: Use a Generic
+
+This example relies on generic support in the class name to create a `java.util.ArrayList` of `User` objects.
+
+Note that you do not need to use a generic to specify the class in each instance. The class is taken from the generic in the list.
+
+[source,dataweave,linenums]
+----
+output application/json
+---
+[{
+    name: "Tomo",
+    lastName: "Chibana"
+},
+{
+    name: "Ana",
+    lastName: "Felissati"
+},
+{
+    name: "Leandro",
+    lastName: "Shokida"
+}
+] as Array {class: "java.util.ArrayList<User>"}
+----
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for the Java format.
+
+=== Reader Properties
+
+There are no reader properties for Java data.
+
+=== Writer Properties
+
+The Java format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `duplicateKeyAsArray` | `Boolean` | `false` | If duplicate keys are detected in
+an object, the writer will change the value to an array with all those values.
+Valid values are `true` or `false`.
+| `writeAttributes` | `Boolean` | `false` | Indicates whether to add attributes of a key to children of the key. The new attribute key name will start with &#64;. Valid options are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types
+
+The Java format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`*/java`
+|===

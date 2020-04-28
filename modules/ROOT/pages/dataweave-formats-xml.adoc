@@ -1,0 +1,632 @@
+= XML Format
+
+MIME Type: `application/xml`
+
+ID: `xml`
+
+The XML data structure is mapped to DataWeave objects that can contain other
+objects, strings, or `null` values. XML uses unbounded elements to represent collections, which are mapped to repeated keys in DataWeave objects. In addition, DataWeave natively supports `namespaces`, `CData` an `xsi:types`.
+
+The DataWeave reader for XML input supports the following parsing strategies:
+
+* Indexed
+* In-Memory
+* Streaming
+
+To understand the parsing strategies that DataWeave readers and writers can apply to this format, see xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Parsing Strategies].
+
+[[format_xml_cdata]]
+== CData Custom Type
+
+`CData` is a custom DataWeave data type for XML that is used to identify a Character DATA (CDATA) block. The `CData` type tells the XML writer to wrap content inside a `CDATA` block or to check for an input string inside a `CDATA` block. In DataWeave, `CData` inherits from the type `String`.
+
+[[examples]]
+== Examples
+
+The following examples show uses of the XML format.
+
+* <<example1>>
+* <<example2>>
+* <<example3>>
+* <<example4>>
+* <<example5>>
+* <<example6>>
+* <<example7>>
+* <<example8>>
+* <<example9>>
+* <<example10>>
+
+[[example1]]
+=== Example: Stream Input XML Data
+
+This example shows how to set up XML streaming, which requires you to specify the following reader properties:
+
+* `streaming=true`
+* `collectionPath="root.repeated"`
+
+The `collectionPath` setting selects the elements to stream.
+
+When streaming, the XML parser can start processing content without having all the XML content.
+
+==== Input
+
+The following XML serves as the input payload to the DataWeave source. Assume that it is the content of an XML file `myXML.xml`.
+
+.myXML.xml
+[source,xml,linenums]
+----
+<root>
+    <text>
+        Text
+    </text>
+    <repeated>
+        <user>
+            <name>Mariano</name>
+            <lastName>de Achaval</lastName>
+            <age>36</age>
+        </user>
+        <user>
+            <lastName>Shokida</lastName>
+            <name>Leandro</name>
+            <age>30</age>
+        </user>
+        <user>
+            <age>29</age>
+            <name>Ana</name>
+            <lastName>Felissati</lastName>
+
+        </user>
+        <user>
+            <age>29</age>
+            <lastName>Chibana</lastName>
+            <name>Christian</name>
+        </user>
+
+    </repeated>
+</root>
+----
+
+==== Source
+
+The reader property settings in the DataWeave script tell the XML reader to stream the input and process the repeated keys. The script uses the DataWeave `map` function to iterate over the repeated keys.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myInput  readUrl('classpath://myXML.xml', 'application/xml', {streaming:true, collectionPath: "root.repeated"})
+output application/dw
+---
+myInput.root.repeated.*user map {
+    n: $.name,
+    l: $.lastName,
+    a: $.age
+}
+----
+
+==== Output
+
+The script transforms the mapped input XML to the DataWeave (dw) format and MIME type.
+
+[source,json,linenums]
+----
+[
+  {
+    "n": "Mariano",
+    "l": "de Achaval",
+    "a": "36"
+  },
+  {
+    "n": "Leandro",
+    "l": "Shokida",
+    "a": "30"
+  },
+  {
+    "n": "Ana",
+    "l": "Felissati",
+    "a": "29"
+  },
+  {
+    "n": "Christian",
+    "l": "Chibana",
+    "a": "29"
+  }
+]
+----
+
+[[example2]]
+=== Example: Null or Empty String in XML
+
+Because there is no standard way to represent a `null` value in XML, the reader maps the value to `null` when the `nil` attribute is set to `true`.
+
+==== Input
+
+The following XML serves as the input payload to the DataWeave source.
+Notice the `nil` setting in `<xsi:nil="true"`/>.
+
+[source,xml,linenums]
+----
+<book xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <author xsi:nil="true"/>
+</book>
+----
+
+==== Source
+
+The DataWeave script transforms the input XML to the JSON format and MIME type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+payload
+----
+
+==== Output
+
+The output is in the JSON format. Notice that the `nil` value in the input is transformed to `null`.
+
+[source,json,linenums]
+----
+{
+  "book": {
+    "author": null
+  }
+}
+----
+
+[[example3]]
+=== Example: Output `null` Values for Missing XML Values
+
+The XML reader property `nullValueOn` accepts the value `blank` (the default) or `empty`.
+
+This example uses the `nullValueOn` default, so it maps the values of the `title` and `author` elements to `null`.
+
+==== Input
+
+The following XML serves as input to the DataWeave source. Notice that the `title` and `author` elements lack values.
+
+Assume that this input is content within the file, `myInput.xml`.
+
+.myXML.xml content:
+[source,xml,linenums]
+----
+<book>
+    <author></author>
+    <title>
+
+</title>
+</book>
+----
+
+==== Source
+
+The DataWeave script transforms the XML input to JSON. Note that it
+explicitly sets the `nullValueOn` default, `blank`, for demonstration purposes.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myInput readUrl('classpath://myXML.xml', 'application/xml', {nullValueOn: "blank"})
+output application/json
+---
+myInput
+----
+
+==== Output
+
+The `title` and `author` keys in the JSON output are assigned `null` values.
+
+[source,json,linenums]
+----
+{
+  "book": {
+    "author": null,
+    "title": null
+  }
+}
+----
+
+[[example4]]
+===  Example: Output `null` Values for Missing XML Values
+
+The XML reader property `nullValueOn` accepts the value `blank` (the default) or `empty`.
+
+The example maps the value of the `title` element to a `String` and value of the `author` element to `null` because the XML reader property `nullValueOn` is set to `empty`.
+
+==== Input
+
+The following XML serves as input to the DataWeave source. Notice that the `title` and `author` elements lack values. The difference between the two elements is the space between the starting and ending tags. The tags of the `title` element are separated by line breaks (the hidden characters, `\n`), while the tags of the `author` element are not separated by any characters.
+
+Assume that this input is content within the file, `myInput.xml`.
+
+.myXML.xml content:
+[source,xml,linenums]
+----
+<book>
+    <author></author>
+    <title>
+
+</title>
+</book>
+----
+
+==== Source
+
+The DataWeave script uses a DataWeave variable to input the content of `myXML.xml` and applies the `nullValueOn: "empty"` to it. The script transforms the XML input to JSON.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+var myInput readUrl('classpath://myXML.xml', 'application/xml', {nullValueOn: "empty"})
+output application/json
+---
+myInput
+----
+
+==== Output
+
+The JSON output maps the value of the `author` element to `null` and value of the `title` element to the `String` value `"\n\n"`, which is for the new line characters.
+
+[source,json,linenums]
+----
+{
+  "book": {
+    "author": null,
+    "title": "\n\n"
+  }
+}
+----
+
+[[example5]]
+=== Example: Represent XML Attributes in the DataWeave (dw) Format
+
+This example maps XML attributes to a canonical DataWeave representation,
+the `application/dw` format and MIME type.
+
+==== Input
+
+The XML serves as the input payload to the DataWeave source. Notice that the input contains XML attributes.
+
+[source,xml,linenums]
+----
+<users>
+  <company>MuleSoft</company>
+  <user name="Leandro" lastName="Shokida"/>
+  <user name="Mariano" lastName="Achaval"/>
+</users>
+----
+
+==== Source
+
+The DataWeave script transforms the XML input payload to the DataWeave (dw) format and MIME type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+==== Output
+
+The output shows how the DataWeave (dw) format represents the XML input. Notice how the attributes from the XML input and the empty values are represented.
+
+[source,dataweave,linenums]
+----
+{
+  users: {
+    company: "MuleSoft",
+    user @(name: "Leandro",lastName: "Shokida"): "",
+    user @(name: "Mariano",lastName: "Achaval"): ""
+  }
+}
+----
+
+[[example6]]
+=== Example: Represent XML Namespaces in the DataWeave (dw) Format
+
+This example maps XML namespaces to a canonical DataWeave representation,
+the `application/dw` format and MIME type.
+
+==== Input
+
+The XML serves as the input payload to the DataWeave source. Notice that the input contains XML namespaces.
+
+[source,xml,linenums]
+----
+<root>
+    <h:table xmlns:h="http://www.w3.org/TR/html4/">
+      <h:tr>
+        <h:td>Apples</h:td>
+        <h:td>Bananas</h:td>
+      </h:tr>
+    </h:table>
+
+    <f:table xmlns:f="https://www.w3schools.com/furniture">
+      <f:name>African Coffee Table</f:name>
+      <f:width>80</f:width>
+      <f:length>120</f:length>
+    </f:table>
+</root>
+----
+
+==== Source
+
+The DataWeave script transforms the XML input payload to the DataWeave (dw) format and MIME type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+==== Output
+
+The output shows how the DataWeave (dw) format represents the XML input. Notice how the namespaces from the XML are represented.
+
+[source,dataweave,linenums]
+----
+ns h http://www.w3.org/TR/html4/
+ns f https://www.w3schools.com/furniture
+---
+{
+  root: {
+      h#table: {
+        h#tr: {
+          h#td: "Apples",
+          h#td: "Bananas"
+        }
+      },
+      f#table: {
+        f#name: "African Coffee Table",
+        f#width: "80",
+        f#length: "120"
+      }
+  }
+}
+----
+
+[[example7]]
+=== Example: Create a CDATA Element
+
+This example shows how to use the `CData` type to create a CDATA element in the XML output.
+
+==== Source
+
+The body of the DataWeave script coerces the `String` value to the `CData` type.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+    test: "A text <a>" as CData
+}
+----
+
+==== Output
+
+The output encloses the input `String` value in a CDATA block, which contains the special characters, `&lt;` and `&gt;`, from the input.
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<test><![CDATA[A text <a>]]></test>
+----
+
+[[example8]]
+=== Example: Check for CDATA in a `String`
+
+This example indicates whether a given `String` value is CDATA.
+
+==== Input
+
+The XML serves as the input payload to the DataWeave source. Notice that the
+`test` element contains a CDATA block.
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<test><![CDATA[A text <a>]]></test>
+----
+
+==== Source
+
+The DataWeave script uses the `is CData` expression to determine whether the `String` value is CDATA.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+    test: payload.test is CDATA
+}
+----
+
+==== Output
+
+The JSON output contains the value `true`, which indicates tha the input `String` value is CDATA.
+
+[source,json,linenums]
+----
+{
+    "test": true
+}
+----
+
+[[example9]]
+=== Example: Use the `inlineCloseOn` Writer Property
+
+This example uses the `inlineCloseOn` writer property with the value `none` to act on the key-value pairs from the input.
+
+==== Source
+
+The DataWeave script transforms the body content to XML. Notice that values of the `emptyElement` keys are `null`.
+
+[source,dataweave,linenums]
+----
+%dw 2.0s
+output application/xml inlineCloseOn="none"
+---
+{
+  someXml: {
+    parentElement: {
+      emptyElement1: null,
+      emptyElement2: null,
+      emptyElement3: null
+    }
+  }
+}
+----
+
+==== Output
+
+The `emptyElement` elements are empty. They do not contain the value `null`.
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<someXml>
+  <parentElement>
+    <emptyElement1></emptyElement1>
+    <emptyElement2></emptyElement2>
+    <emptyElement3></emptyElement3>
+  </parentElement>
+</someXml>
+----
+
+[[example10]]
+=== Example: Transforms Repeated JSON Keys to Repeated XML Elements
+
+XML encodes collections using repeated (unbounded) elements. DataWeave represents unbounded elements by repeating the same key.
+
+This example shows how to convert the repeated keys in a JSON array of objects into repeated XML elements.
+
+==== Input
+
+The JSON input serves as the payload to the DataWeave source. Notice that the
+`name` keys in the array are repeated.
+
+[source,json,linenums]
+----
+{
+  "friends": [
+    {"name": "Mariano"},
+    {"name": "Shoki"},
+    {"name": "Tomo"},
+    {"name": "Ana"}
+  ]
+}
+----
+
+==== Source
+
+The DataWeave script selects the value of the `friends` key.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+friends: {
+    (payload.friends)
+}
+----
+
+==== Output
+
+The output represents the `name` keys as XML elements.
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<friends>
+  <name>Mariano</name>
+  <name>Shoki</name>
+  <name>Tomo</name>
+  <name>Ana</name>
+</friends>
+----
+
+See also, xref:dataweave-cookbook-output-self-closing-xml-tags.adoc[Example: Outputting Self-closing XML Tags].
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for the XML format.
+
+=== Reader Properties
+
+The XML format accepts properties that provide instructions for reading input data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+|`collectionPath`  |`String`| `null` | Path to the document where the collection is located. It specifies a path expression that identifies the location of the elements to stream. See <<example1>>.
+| `externalEntities` | `Boolean` | `false` | Indicates whether external entities
+should be processed or not. By default this is disabled to avoid XXE attacks.
+Valid values are `true` or `false`.
+| `indexedReader` | `Boolean` | `true` | Indicates whether to use the indexed XML reader when the threshold is reached. Valid values are `true` or `false`.
+| `maxAttributeSize` | `Number` | `-1` | Sets the maximum number of characters
+accepted in an XML attribute. Available since Mule 4.2.1.
+| `maxEntityCount` | `Number` | `1` | The maximum number of entity expansions.
+The limit is in place to avoid Billion Laughs attacks.
+| `nullValueOn` | `String` | `blank` | Indicates whether to read an element with empty or blank text as a `null` value. Valid values are `empty`, `none`, or `blank`. See <<example3>> and <<example4>>.
+|`optimizeFor` |`String`| `'speed'` | Indicates how to configure the XML parser. Valid values are `speed` and `memory`.
+|`streaming` |`Boolean` | `false` | Indicates whether to stream input (use only if entries are accessed sequentially). Valid Options are `true` or `false`. See <<example1>>.
+|`supportDtd` |`Boolean` | `true` |  Enable or disable DTD handling. Disabling skips (and does not process) internal and external subsets. Valid Options are `true` or `false`.
+|===
+
+=== Writer Properties
+
+The XML format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `bufferSize` | `Number` | `8192` | Size of the buffer writer.
+| `encoding` | `String` | `null` |Encoding for the writer to use.
+| `deferred` | `Boolean` | `false` |Property for deferred output.
+  Valid values are `true` or `false`.
+| `escapeCR` | `Boolean` | `false` | Whether to escape a carriage return (CR).
+Valid values are `true` or `false`. Available since Mule 4.2.1.
+| `indent` | `Boolean` | `true` |Indicates whether to indent the code for better readability or to compress it into a single line.
+Valid values are `true` or `false`.
+| `inlineCloseOn` | `String` | `empty` |Indicates when the writer uses inline close tag or use open close tags.
+Valid values are `empty` or `none`.
+| `onInvalidChar` | `String` | `null` | Valid values are `base64`, `ignore`, or `none`.
+| `skipNullOn` | `String` | `null` | Skips `null` values in the specified data
+structure. By default, the writer does not skip them. Valid values are `elements`, `attributes`, or `everywhere`.
+
+* `arrays` +
+Ignore and omit `null` values from JSON output, for example, `output application/json skipNullOn="arrays"`.
+* `objects`+
+Ignore an object that has a null value. The output contains an empty object (`{}`) instead of the object with the null value, for example, `output application/json skipNullOn="objects"`.
+* `everywhere` +
+Apply `skipNullOn` to arrays and objects, for example, `output application/json skipNullOn="everywhere"`.
+
+| `writeDeclaration` | `Boolean` | `true` |Indicates whether to write the XML
+header declaration. Valid values are `true` or `false`.
+| `writeNilOnNull` | `Boolean` | `false` | Indicates whether to write a nil attribute when the value is `null`. Valid values are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types
+
+The XML format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`*/xml`
+|`*/*+xml`
+|===
