@@ -1,0 +1,305 @@
+= Multipart Format (Form Data)
+
+MIME Type: `multipart/form-data`
+
+ID: `multipart`
+
+DataWeave supports Multipart subtypes, in particular `form-data`. These formats
+enable you to handle several different data parts in a single payload,
+regardless of the format each part has. To distinguish the beginning and end of
+a part, a boundary is used and metadata for each part can be added through
+headers.
+
+DataWeeave represents a Multipart document with the given `Object` structure:
+
+[source,weave,linenums]
+----
+type Multipart = {
+  preamble?: String,
+  parts: {
+    _?: MultipartPart
+  }
+}
+type MultipartPart = {
+  headers?: {
+    "Content-Disposition"?: {
+      name: String,
+      filename?: String
+    },
+    "Content-Type"?: String
+  },
+  content: Any
+}
+----
+
+[[examples]]
+== Examples
+
+The following examples show uses of the Multipart format.
+
+* <<example1>>
+* <<example2>>
+* <<example3>>
+
+[[example1]]
+=== Example: Multipart
+
+This example shows how DataWeave reads simple Multipart content.
+
+==== Input
+
+The Multipart input serves as the payload to the DataWeave source.
+
+[source,text,linenums]
+----
+--34b21
+Content-Disposition: form-data; name="text"
+Content-Type: text/plain
+Book
+--34b21
+Content-Disposition: form-data; name="file1"; filename="a.json"
+Content-Type: application/json
+{
+"title": "Java 8 in Action",
+"author": "Mario Fusco",
+"year": 2014
+}
+--34b21
+Content-Disposition: form-data; name="file2"; filename="a.html"
+Content-Type: text/html
+
+<title> Available for download! </title>
+--34b21--
+----
+
+==== Source
+
+The DataWeave script transforms the Multipart input payload to the DataWeave (dw) format.
+
+[source,weave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+==== Output
+
+The output shows how the DataWeave (dw) format represents the Multipart input. Note that the `raw` and `content` values are  shortened for brevity. The full values are longer.
+
+[source,weave,linenums]
+----
+{
+    parts: {
+        text: {
+            headers: {
+                "Content-Disposition": {
+                    name: "text",
+                    subtype: "form-data"
+                },
+                "Content-Type": "text/plain"
+            },
+        content: "Book" as String {
+            raw: "Qm9vaw==" as Binary {
+                    base: "64"
+                },
+                encoding: null,
+                mediaType: "text/plain",
+                mimeType: "text/plain"
+            }
+        },
+        file1: {
+            headers: {
+                "Content-Disposition": {
+                    name: "file1",
+                    filename: "a.json",
+                    subtype: "form-data"
+                },
+                "Content-Type": "application/json"
+            },
+            content: {
+                title: "Java 8 in Action",
+                author: "Mario Fusco",
+                year: 2014
+            } as Object {
+                raw: "ewogICJ0aXRsZSI6ICJKYXZhI...==" as Binary {
+                    base: "64"
+                },
+                encoding: null,
+                mediaType: "application/json",
+                mimeType: "application/json"
+            }
+        },
+        file2: {
+            headers: {
+                "Content-Disposition": {
+                    name: "file2",
+                    filename: "a.html",
+                    subtype: "form-data"
+                },
+                "Content-Type": "text/html"
+            },
+            content: "PCFET0NUWVBFIGh0bWw+Cjx0aXRsZT4KI...==" as Binary {
+                base: "64"
+            }
+       }
+    }
+}
+----
+
+[[example2]]
+=== Example: Access and Transform Data from Parts
+
+Within a DataWeave script, you can access and transform data from any of the
+parts by selecting the `parts` element. Navigation can be array-based or key-based when parts feature a name to reference them by. The part's data can be
+accessed through the `content` keyword, while headers can be accessed through
+the `headers` keyword.
+
+==== Input
+
+This example serves as input to separate DataWeave scripts. shows a raw `multipart/form-data` payload with a `34b21` boundary consisting of 3 parts:
+
+* a `text/plain` one named `text`
+* an `application/json` file (`a.json`) named `file1`
+* a `text/html` file (`a.html`) named `file2`
+
+.Raw Multipart Data:
+[source,text,linenums]
+----
+--34b21
+Content-Disposition: form-data; name="text"
+Content-Type: text/plain
+
+Book
+--34b21
+Content-Disposition: form-data; name="file1"; filename="a.json"
+Content-Type: application/json
+
+{
+  "title": "Java 8 in Action",
+  "author": "Mario Fusco",
+  "year": 2014
+}
+--34b21
+Content-Disposition: form-data; name="file2"; filename="a.html"
+Content-Type: text/html
+
+<!DOCTYPE html>
+<title>
+  Available for download!
+</title>
+--34b21--
+----
+
+==== Source
+
+The following DataWeave script uses the raw `multipart/form-data` payload as input to produce `Book:a.json`.
+
+.Reading Multipart Content:
+[source,dataweave,linenums]
+----
+%dw 2.0
+output text/plain
+---
+payload.parts.text.content ++ ':' ++ payload.parts[1].headers.'Content-Disposition'.filename
+----
+
+[[example3]]
+=== Example: Generate Multipart Content
+
+You can generate multipart content that DataWeave uses to build an object with a
+list of parts, each containing its headers and content. The following
+DataWeave script produces the raw multipart data (previously analyzed)
+if the HTML data is available in the payload.
+
+.Writing Multipart Content:
+[source,dataweave,linenums]
+----
+%dw 2.0
+output multipart/form-data
+boundary='34b21'
+---
+{
+  parts : {
+    text : {
+      headers : {
+        "Content-Type": "text/plain"
+      },
+      content : "Book"
+    },
+    file1 : {
+      headers : {
+        "Content-Disposition" : {
+            "name": "file1",
+            "filename": "a.json"
+        },
+        "Content-Type" : "application/json"
+      },
+      content : {
+        title: "Java 8 in Action",
+        author: "Mario Fusco",
+        year: 2014
+      }
+    },
+    file2 : {
+      headers : {
+        "Content-Disposition" : {
+            "filename": "a.html"
+        },
+        "Content-Type" : payload.^mimeType
+      },
+      content : payload
+    }
+  }
+}
+----
+
+Notice that the key determines the part's name if the name is not explicitly
+provided in the `Content-Disposition` header, and note that DataWeave can
+handle content from supported formats, as well as references to unsupported
+ones, such as HTML.
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for the Multipart format.
+
+=== Reader Properties
+
+The Multipart format accepts properties that provide instructions for reading input data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `boundary` | `String` | `null` | The multipart `boundary` value. A string to
+delimit parts.
+|===
+
+=== Writer Properties
+
+The Multipart format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `boundary` | `String` | `null` | The multipart boundary value. A String to
+delimit parts.
+| `bufferSize` | `Number` | `8192` | Size of the buffer writer.
+| `deferred` | `Boolean` | `false` | Property for deferred output.
+  Valid values are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types (for Multipart)
+
+The Multipart format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`multipart/*`
+|===

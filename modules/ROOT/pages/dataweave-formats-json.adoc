@@ -1,0 +1,318 @@
+= JSON Format
+
+MIME Type: `application/json`
+
+ID: `json`
+
+In the JSON data format, values map one-to-one with DataWeave values.
+JSON supports `String`, `Boolean`, `Number`, `Null`, `Object`, and `Array` types. DataWeave supports each of these values natively.
+
+The DataWeave reader for JSON input supports the following parsing strategies:
+
+* Indexed
+* In-Memory
+* Streaming
+
+To understand the parsing strategies that DataWeave readers and writers can apply to this format, see xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Parsing Strategies].
+
+[[examples]]
+== Examples
+
+The following examples show uses of the JSON format:
+
+* <<example1>>
+* <<example2>>
+* <<example3>>
+
+[[example1]]
+=== Example: Represent JSON in the DataWeave (dw) Format
+
+This example shows how JSON input is represented in the DataWeave (dw) format.
+
+==== Input
+
+The following JSON object serves as the input payload to the DataWeave source.
+
+[source,json,linenums]
+----
+{
+  "name": "Matias",
+  "age": 8,
+  "male": true,
+  "kids": null,
+  "brothers": ["Pedro", "Sara"]
+}
+----
+
+==== Source
+
+The DataWeave script transforms the JSON input payload to the DataWeave (dw) format and MIME type.
+
+[source,dataweave,linenums]
+----
+output application/dw
+---
+payload
+----
+
+==== Output
+
+Notice that only the keys of the JSON input and the `application/dw` output differ. The JSON keys are surrounded by quotation marks. These DataWeave (dw)
+keys do not require quotation marks. See xref:dataweave-cookbook-extract-data.adoc#valid-keys[Valid Keys] for details.
+
+[source,dataweave,linenums]
+----
+{
+  name: "Matias",
+  age: 8,
+  male: true,
+  kids: null,
+  brothers: [
+    "Pedro",
+    "Sara"
+  ]
+}
+----
+
+[[example2]]
+=== Example: Convert Repeated XML Elements to JSON
+
+This example shows how to convert repeated XML elements to JSON.
+
+Note that XML encodes collections using repeated (unbounded) elements. DataWeave represents unbounded elements by repeating the same key.
+
+==== Input
+
+The following XML data contains repeating child elements with the
+key `name`. This XML serves as the input payload to the DataWeave source.
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<friends>
+  <name>Mariano</name>
+  <name>Shoki</name>
+  <name>Tomo</name>
+  <name>Ana</name>
+</friends>
+----
+
+==== Source
+
+The following DataWeave script takes the XML input as its payload and outputs that payload in the JSON format.
+
+The script selects the `name` elements from the XML input and uses the DataWeave `map` function to map the values of those elements into an array of objects. Each object in the array takes the form `{ name : item }`, where `item` is the value of the `name` element. The entire array serves as the value of the `friends` key.
+
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+friends: payload.friends.*name map (
+            (item, index) -> {name: item}
+         )
+----
+
+==== Output
+
+The DataWeave script outputs the following JSON object.
+
+[source,json,linenums]
+----
+{
+  "friends": [
+    {
+      "name": "Mariano"
+    },
+    {
+      "name": "Shoki"
+    },
+    {
+      "name": "Tomo"
+    },
+    {
+      "name": "Ana"
+    }
+  ]
+}
+----
+
+[[example3]]
+=== Example: Stream JSON Data
+
+To demonstrate streaming, the following example streams a JSON file by reading
+each element in an array one at a time.
+
+==== Input
+
+The JSON input payload serves as input for the XML configuration.
+
+.JSON Input (truncated):
+[source,json,linenums]
+----
+{ "myJsonExample" : [
+    {
+      "name" : "Shoki",
+      "zipcode": "95838"
+    },
+    {
+      "name" : "Leandro",
+      "zipcode": "95823"
+    },
+    {
+      "name" : "Mariano",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Cristian",
+      "zipcode": "95815"
+    },
+    {
+      "name" : "Kevin",
+      "zipcode": "95824"
+    },
+    {
+      "name" : "Stanley",
+      "zipcode": "95841"
+    }
+  ]
+}
+----
+
+==== XML Configuration
+
+The following XML configuration streams JSON input.
+
+[source,xml,linenums]
+----
+<file:config name="File_Config" doc:name="File Config" />
+<flow name="dw-streaming-jsonFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="MINUTES"/>
+    </scheduling-strategy>
+  </scheduler>
+  <file:read doc:name="Read"
+     config-ref="File_Config"
+     path="${app.home}/myjsonarray.json"
+     outputMimeType="application/json; streaming=true"/>
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.myJsonExample map ((element) -> {
+returnedElement : element.zipcode
+})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <file:write doc:name="Write"
+    path="/path/to/output/file/output.json"
+    config-ref="File_Config1"/>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+* The streaming example configures the HTTP listener to stream the JSON input
+by setting `outputMimeType="application/json; streaming=true"`.
+In the Studio UI, you can set the *MIME Type* on the listener to `application/json`
+and the *Parameters* for the MIME Type to *Key* `streaming` and *Value* `true`.
+* The DataWeave script in the *Transform Message* component iterates over the
+array in the input payload and selects its `zipcode` values.
+* The Write operation returns a file, `output.json`, which contains the result
+of the transformation.
+* The Logger prints the same output payload that you see in `output.json`.
+
+==== Output
+
+The JSON streaming example produces a JSON array of objects.
+
+[source,json,linenums]
+----
+[
+  {
+    "returnedElement": "95838"
+  },
+  {
+    "returnedElement": "95823"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95815"
+  },
+  {
+    "returnedElement": "95824"
+  },
+  {
+    "returnedElement": "95841"
+  }
+]
+----
+
+
+// CONFIG PROPS ///////////////////////////////////////////////////////
+
+[[properties]]
+== Configuration Properties
+
+DataWeave supports the following configuration properties for JSON.
+
+=== Reader Properties (for JSON)
+
+The JSON format accepts properties that provide instructions for reading input data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `streaming` | `Boolean` | `false` | Property for streaming input. Use only if
+entries are accessed sequentially. Valid values are `true` or `false`.
+The input must be a top-level array. For more on streaming in DataWeave, see
+xref:dataweave-formats.adoc#dw_readers_writers[DataWeave Readers].
+|===
+
+=== Writer Properties (for JSON)
+
+The JSON format accepts properties that provide instructions for writing output data.
+
+[cols="1,1,1,3a", options="header"]
+|===
+| Parameter | Type | Default | Description
+| `bufferSize` | `Number` | `8192` | Size of the writer buffer.
+| `deferred` | `Boolean` | `false` | Property for deferred output. Valid values are `true` or `false`.
+| `duplicateKeyAsArray` | `Boolean` | `false` | If duplicate keys are detected
+in an object, the writer changes the value to an array with all those values.
+Valid values are `true` or `false`. Note that JSON language does not allow
+duplicate keys with one same parent, so the duplication usually raises an
+exception.
+| `encoding` | `String` | `UTF-8` | The character set to use for the output.
+| `indent` | `Boolean` | `true` | Indicates whether to indent the JSON code for
+better readability or to compress the JSON into a single line.
+Valid values are `true` or `false`.
+| `skipNullOn` | `String` | `null` | Skips `null` values in the specified data
+structure. By default, it does not skip the values. Valid values are `elements`, `attributes`,
+or `everywhere`.
+
+* `arrays` +
+Ignore and omit `null` values from JSON output, for example, `output application/json skipNullOn="arrays"`.
+* `objects`+
+Ignore an object that has a null value. The output contains an empty object (`{}`) instead of the object with the null value, for example, `output application/json skipNullOn="objects"`.
+* `everywhere` +
+Apply `skipNullOn` to arrays and objects, for example, `output application/json skipNullOn="everywhere"`.
+
+|`writeAttributes` | `Boolean` | `false` | Indicates whether to add attributes of a key to children of the key. The new attribute key name will start with &#64;. Valid options are `true` or `false`.
+|===
+
+[[mime_type]]
+== Supported MIME Types (for JSON)
+
+The JSON format supports the following MIME types.
+
+[cols="1", options="header"]
+|===
+| MIME Type
+|`*/json`
+|`*/*+json`
+|===
