@@ -1,0 +1,190 @@
+= Migrating API Proxies
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+[[performing_migration]]
+== Performing a Proxy Migration
+
+To perform a proxy migration, this example uses the Mule Migration Assistant
+(MMA). 
+//TODO for GA: We'll link out to this page so people can download MMA if they need to:
+// xref:migration-tutorial.adoc#prereqs[Prerequisites].
+
+The MMA command for migrating proxies uses the standard
+xref:migration-tool-procedure.adoc#options[command-line options] for migrating
+a Mule app:
+
+.Command-line Invocation:
+[source,console,linenums]
+----
+$ java -jar mule-migration-assistant-runner-0.5.1.jar \
+ -projectBasePath /Users/me/AnypointStudio/workspace-studio/my-mule3-proxy/ \
+ -muleVersion 4.1.5 \
+ -destinationProjectBasePath /Users/me/my-dir/my-migrated-proxy
+----
+
+Note that the MMA creates the directory for the migrated project through
+the `-destinationProjectBasePath` option. The  `my-migrated-proxy` must _not_
+exist before you invoke the command. If you point to a folder that exists
+already, the migration will fail an error like this:
+`Exception: Destination folder already exists.`
+
+When the migrator runs successfully, you see a message something like this:
+
+.Successful Migration
+[source,console,linenums]
+----
+Executing migration...
+...
+========================================================
+MIGRATION SUCCESS
+========================================================
+Total time: 11.335 s
+Migration report:
+/Users/me/my-dir/my-migrated-proxy/report/summary.html
+----
+
+After migration completes successfully, the destination folder contains:
+
+* A proxy POM file.
+* The `report` directory containing the
+xref:migration-report.adoc[Mule Migration Report] (`summary.html`).
+Note that the same information provided in the report can be found as comments
+in the proxy XML file.
+* The `mule-artifact.json` file, with a `minMuleVersion` value that matches the
+`-muleVersion` value set in the MMA command.
+* The `src` directory, which contains the migrated content.
+
+The `src` directory contains subdirectories `main` and `test`. Inside `main`, the `mule` directory
+is the proxy XML file. At the same level as the `mule` directory, MMA will create a
+`resources` directory for any DataWeave files or other files that the migrated proxy needs.
+Note that the configuration file defined in the proxy XML must be present in the `resources` directory
+for the artifact to be deployed correctly. The `test` directory contains test configuration files.
+
+After a successful migration, you need to modify the POM file as explained in
+<<pom_migration>>. Once the POM file has the correct organization ID, you can
+compile with `mvn clean install`. If the compilation is successful, you can
+upload the migrated proxy to Exchange using `maven clean deploy`. You can find
+a more detailed explanation of uploading a custom app in
+xref:https://docs.mulesoft.com/exchange/to-publish-assets-maven[Publish and Deploy Exchange Assets Using Maven].
+
+[[pom_migration]]
+=== POM Migration
+
+The POM file migration modifies the file to include the elements necessary for
+uploading the custom proxy to Exchange:
+
+* `{orgId}` must be replaced both in `<groupId>`
+* `<exchange.url>` with the organization ID found in Anypoint Platform.
++
+For more information on how to obtain the organization ID, see
+xref:api-manager::custom-policy-uploading-to-exchange.adoc[Uploading a Custom Policy to Exchange].
+
+By default, the Exchange URL is set to the production environment.
+
+[source,xml,linenums]
+----
+<groupId>{orgId}</groupId>
+
+<properties>
+ <exchange.url>https://maven.anypoint.mulesoft.com/api/v1/organizations/{orgId}/maven</exchange.url>
+</properties>
+----
+
+Note that for the EU version of the URL, you need to set the URL manually
+after the migration:
+
+* URL template for EU:
+`+https://maven.eu1.anypoint.mulesoft.com/api/v1/organizations/{orgId}/maven+`
+
+If the MMA does not find a POM file for the proxy, MMA will create a new POM
+file. In this file, the `artifactId` for the proxy is the name of the
+base directory for the proxy app. For example, for a proxy in
+`mytestproxy/src/main/app/proxy.xml`, the `artifactId` is `mytestproxy`.
+
+[[dependency_and_plugin_versions]]
+=== Dependency and Plugin Versions
+
+Dependency and plugin versions are set by default by the MMA, and you can change
+them manually, as needed.
+
+[[not_migrated_elements]]
+=== Un-Migrated Elements
+
+Several elements are not migrated from Mule 3 to Mule 4:
+
+[cols="2,5",options="header"]
+|===
+|Element                    | Reason
+
+| `api-platform-gw:tags`        | API auto-create is disabled in Mule 4.
+| `api-platform-gw:description` | API auto-create is disabled in Mule 4.
+
+|===
+
+For each of these elements, the child elements are removed, as well.
+
+[[common_migration_issues]]
+=== Common Migration Issues
+
+If proxy files are not found during the migration, the MMA prints a message
+like this one:
+
+.Unsuccessful Migration
+[source,console,linenums]
+----
+Executing migration...
+...
+===============================================================================
+MIGRATION FAILED
+===============================================================================
+Total time: 3.008 s
+Exception: Cannot read mule project. Is it a Mule Studio project?
+com.mulesoft.tools.migration.engine.exception.MigrationJobException: Cannot read mule project. Is it a Mule Studio project?
+	at com.mulesoft.tools.migration.engine.project.MuleProjectFactory.getMuleProject(MuleProjectFactory.java:50)
+	at com.mulesoft.tools.migration.engine.MigrationJob.generateSourceApplicationModel(MigrationJob.java:116)
+	at com.mulesoft.tools.migration.engine.MigrationJob.execute(MigrationJob.java:80)
+	at com.mulesoft.tools.migration.MigrationRunner.main(MigrationRunner.java:83)
+
+===============================================================================
+----
+
+[[pom_migration_issues]]
+=== POM Migration Issues
+
+If the MMA does not find the POM model for the proxy, the MMA will
+either generate the model from an existing POM in Mule 3, or if there is no
+Mule 3 POM, the MMA will create the model. If MMA uses an existing POM, any
+incorrect POM definition that the MMA encounters will cause POM model creation
+process to fail. For information about a POM model failure, you need to
+check for any preceding error messages regarding MMA steps on modifying the
+POM model.
+
+[[raml_proxy_migration]]
+=== RAML Proxy Migration
+
+Currently, RAML proxy migration is not supported.
+
+[[rest_proxy_migration]]
+=== REST Proxy Migration
+
+Currently, REST proxy migration is not supported.
+
+[[wsdl_proxy_migration]]
+=== WSDL Proxy Migration
+
+Currently, WSDL proxy migration is not supported.
+
+
+== See Also
+
+xref:migration-api-gateways.adoc[Migrating API Gateways]
+
+xref:migration-api-gateways-autodiscovery.adoc[Migrating API Gateways: Autodiscovery]
+
+xref:migration-api-gateways-runtime-config.adoc[Migrating API Gateways: Mule Runtime Configuration]
+
+xref:migration-core.adoc[Core Components Migration]
+
+xref:https://docs.mulesoft.com/exchange/to-publish-assets-maven[Publish and Deploy Exchange Assets Using Maven]

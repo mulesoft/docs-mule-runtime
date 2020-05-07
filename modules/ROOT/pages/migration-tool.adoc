@@ -1,0 +1,263 @@
+= Migration to Mule 4
+ifndef::env-site,env-github[]
+include::_attributes[]
+endif::[]
+
+//TODO: FOR GA, REMOVE *Beta* FROM GA VERSION
+*Beta Release: Mule Migration Assistant (MMA) and Compatibility Module*
+
+This section provides guidance on migrating a Mule 3 app to Mule 4 with the
+Mule Migration Assistant (MMA).
+
+The migration process is a multi-part procedure, where you:
+
+. Perform any pre-migration steps, such as migrating from the DataMapper to DataWeave.
+. Run the migrator on a Mule 3 project.
+. Import the migrator output into a supported version of Studio 7.
+. Review the Migration report.
+. Perform a manual migration on what the MMA does not migrate.
+. Remove uses of Compatibility module components.
+. Run any migrated MUnit tests.
+
+These steps are detailed in xref:migration-tool-procedure.adoc[Perform a Migration to Mule 4]. However, before proceeding with a migration, you should:
+
+* Review <<migration_tool>> and <<compatibility_module>>.
+* Learn what the MMA migrates in <<supported_migrations>>.
+
+[[migration_tool]]
+== Mule Migration Assistant
+
+The Mule Migration Assistant (MMA) automates the migration of Mule 3
+apps to Mule 4. Though the MMA does not migrate the app entirely,
+it provides significant help with these tasks:
+
+* Migrating the project structure.
+* Automatically creating descriptor files, such as `pom.xml` or `mule-artifact.json`.
+* Automatically performing a great number of adaptations in the app's
+code.
+* Providing guidance on how to manually migrate components and patterns that
+cannot be migrated automatically.
+
+The migrator helps with such heavy lifting, but it is not to be expected to
+deliver a fully functional app. Some additional steps are required.
+Those steps include testing and can also include:
+
+* Manual migration of unsupported components.
+* Manual migration of complex MEL expressions to DataWeave.
+* Manual migration of complex DataWeave transformations.
+* Prior migration of the DataMapper with the _DataWeave_ Migration tool,
+_before_ running the MMA.
+
+It is important to note that the MMA does not support incremental migrations.
+
+[[compatibility_module]]
+== Compatibility Module
+
+Some components or patterns cannot be migrated automatically by transforming
+the app's XML. For such cases, the migrator adds the Compatibility
+module to your project. The Compatibility module is a set of components that
+either adapts Mule 3 components into the Mule 4 architecture, or in some cases,
+enables some Mule 3 components to work in Mule 4.
+
+*Important:* MuleSoft recommends that you migrate to a point where the
+Compatibility module can be dropped from your app and that you simply use the
+module as a bridge until the manual steps of the migration are complete.
+
+The Compatibility module does not cover every migration gap. Instead, it
+complements the MMA:
+
+ * By providing MEL support for the cases where a MEL expression could not be
+ migrated to DataWeave automatically.
+ * By adapting the Mule 3 Message model to Mule 4.
+
+You or your team will need to handle other migration gaps that are covered in the xref:migration-report.adoc[Mule Migration report].
+
+[[supported_migrations]]
+== Supported Components
+
+//TODO: FOR GA, REMOVE NOTE AND REVISE CONTENT, AS NEEDED
+*Note on the Beta release*: This list applies to the Beta and will expand over
+time.
+
+The Mule Migration Assistant (MMA) supports the following migrations:
+
+// (`<mule/>`)
+// APIKIT & SOAPKIT
+* APIKit and SOAPkit:
+** APIKit Console, APIKit Router
+// (`<apikit-soap:fault/>`),  (`<apikit-soap:router/>`)
+** APIKit for SOAP (also called SOAPkit): SOAP Fault,
+SOAP Router
+
+// CONNECTORS
+* Connectors and Modules:
+//DB OPERATION AND CONFIGS FOR DIFF DBS: (`<db:derby-config/>`, `<db:generic-config/>`, `<db:mysql-config/>`, `<db:oracle-config/>`)
+** Database
+//(`<http:listener-config/>`)
+** HTTP
+** Security module
+*** OAuth Provider
+*** Security filters
+*** Checksum operations
+** ObjectStore (Mule Object Store configurations and operations)
+// (`<ws:consumer-config/>`)
+** Web Service Consumer
+
+//TODO: CLARIFY AS NEEDED
+* Error Handling
+
+* Filters: And, Custom, Exception, Expression, Indempotent Message, Message, Message Property, Not, Or, Payload, Regex, Schema Validation, and Wildcard global element configurations migrate to validation operations in the Validations module for Mule 4
+
+//TODO: CLARIFY AS NEEDED
+* GZip transformers: GZip Compress and GZip Uncompress
+
+* Mule apps and domains only
+
+* xref:migration-api-gateways-proxies.adoc[HTTP Proxy apps]
+
+* xref:migration-api-gateways-policies.adoc[Custom Policies]
+
+* Mule Expression Language (MEL) to DataWeave 2.0 expressions (simple cases only)
+
+* xref:migration-tool-procedure#munit[MUnit tests]
+// (`<apikit:console/>`),  (`<apikit:router/>`)
+
+* Properties and secure properties
+
+//FLOW CONTROL (ROUTERS) AND SCOPES:
+* Flow Control (Routers) and Scopes
+** Aggregators: Collection Aggregator, Custom Aggregator, _but not_ Message Chunk Aggregator (`<message-chunk-aggregator/>`)
+// (`<async/>`)
+** Async scope
+// Batch (all)
+** Batch scopes (Batch, Batch Commit, Batch Execute, Batch Step only, but _not_ Batch-specific MEL functions)
+// (`<ee:cache/>`)
+** Cache scope
+// (`<choice/>`)
+** Choice router
+// (`<collection-splitter/>`)
+** Collection Splitter
+// (`<composite-source/>`)
+** Composite Source scope
+// (`<first-successful/>`)
+** First Successful router
+// (`<foreach/>`)
+** For Each scope
+// (`<map-splitter/>`)
+** Message Enricher scope (`<enricher>`) migrates to Target Variables (sometimes called Target Parameters) in Mule 4
+// (`<poll/>` )
+** Poll scope migrates to the Scheduler component for Mule 4
+//(`<scatter-gather/>`)
+** Scatter-Gather router
+// (`<splitter/>`)
+** Splitters: Splitter, Collection Splitter, and Map Splitter (`<map-splitter/>`) to a Mule 4 For Each collection `<foreach collection="#[]"/>`, where the `collection` contains a DataWeave expression, _but not_ Message Chunk Splitter `<message-chunk-splitter/>`
+//(`<enricher/>`)
+// (`<transactional/>`) TODO: RELATED TO ERROR HANDLING?
+** Transactional scope
+// (`<until-successful/>`)
+** Until Successful scope
+
+* Script component (DSL only, no migration of the script itself) to the Scripting module for Mule 4
+
+//TODO: CLARIFY AS NEEDED
+* Spring Beans definition
+
+* Transform Message component (`<dw:transform-message/>` for DataWeave 1.0 migrates to
+`<ee:transform/>` for DataWeave 2.0)
+
+* Transports:
+** AMQP transport to the AMQP connector
+** Email-related (IMAP, SMTP, POP3) transports migrate to the Email connector for Mule 4
+//(`<file:inbound-endpoint/>`, `<file:outbound-endpoint/>`)
+** File transports migrate to the File connector
+//(`<ftp:inbound-endpoint/>`, `<ftp:outbound-endpoint/>`)
+** FTP transports migrate to the FTP connector
+//`<http:listener/>`, `<http:request/>`,<http:static-resource-handler?
+** HTTP transports migrate to the HTTP connector
+// (`<jms:inbound-endpoint/>`, `<jms:outbound-endpoint/>`)
+** JMS transports migrate to the JMS connector
+//(`<quartz:inbound-endpoint/>`, `<<quartz:outbound-endpoint/>`)
+** Quartz migrates to the Scheduler component for Mule 4
+// (`<sftp:inbound-endpoint/>`, `<sftp:outbound-endpoint/>`)
+** SFTP transports migrate to the SFTP connector
+// (`vm:inbound-endpoint/>`, `<vm:outbound-endpoint/>`)
+** VM transports migrate to the VM connector
+//(`<imap:inbound-endpoint/>`), (`<smtp:outbound-endpoint/>`), (`<pop3:inbound-endpoint/>`)
+
+* Validation component (validations only) to the Validation module for Mule 4
+
+* Watermark configurations
+
+The <<compatibility_module, Compatibility module>> supports some
+additional items from Mule 3.x until you can migrate them:
+
+* `set-property`
+* `remove-property`
+* `copy-properties`
+* `set-session-variable`
+* `remove-session-variable`
+
+[[unsupported_migrations]]
+== Unsupported Components
+
+//TODO: FOR GA, REMOVE NOTE AND REVISE CONTENT, AS NEEDED
+*Note on the Beta release*: This list applies to the Beta and will change over
+time.
+
+The MMA does not currently support the following components:
+
+* Custom Java code, either used directly or through any of the following:
+** `<custom-transformer>`
+** `<custom-message-processor>`
+** `<component>`
+** `<pooled-component>`
+** `<invoke>`
+** Anything that implements the `org.mule.api.lifecycle.Callable` interface
+** etc.
+* DataMapper: Use the DataWeave Migration tool. See
+xref:migration-tool-procedure#datamapper[Migrating from the DataMapper to DataWeave].
+* Custom types defined in Studio
+
+See also:
+
+* xref:migration-tool-procedure#devkit[Migrating Custom DevKit Connectors]
+* <<unsupported_connectors>>
+
+[[unsupported_connectors]]
+== Unsupported Connectors
+
+Connectors that are used in an app but not currently supported by the MMA
+generate this ERROR in the Migration report:
+
+`The migration of some-connector is not supported`
+
+Such connectors require manual migration.
+
+To manually migrate them, see xref:migration-tool-procedure#unsupported_projects[Migrating Unsupported Connectors].
+
+[[supported_future]]
+== Supported in the Future
+
+*Note on the Beta Release:* This list might change over time.
+
+For future releases, MuleSoft will also support these:
+
+* Documentation on how to migrate DataMapper transformations
+* Encryption/Decryption components
+* Tracking component
+* XML module
+
+////
+* Documentation on how to migrate DataMapper transformations
+*  elements
+* Security Module
+* Watermark
+* XML and JSON module
+* Splitter and aggregator pattern
+////
+
+== See Also
+
+* xref:migration-tutorial.adoc[Mule Migration Tool Tutorial]
+* xref:migration-report.adoc[Mule Migration Report]
+* xref:migration-tool-post-mig.adoc[Post-Migration Tasks]

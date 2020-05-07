@@ -1,0 +1,435 @@
+= Post-Migration Tasks
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+//TODO: FOR GA, REMOVE *Beta* FROM GA VERSION
+*Beta Release: Mule Migration Assistant (MMA) and Compatibility Module*
+
+The Mule Migration Assistant (MMA) performs migrations on individual components, connectors, and modules. In some cases, you can make improvements to the migrated app by taking into account the flow or project as a whole.
+
+This section focuses on *recommended* post-migration tasks to perform after
+using the MMA, incorporating the Compatibility module (see
+xref:migration-tool.adoc[Migration to Mule 4]) as needed, and
+performing any manual migration steps indicated in the Migration report.
+
+//TODO: REMOVE WHEN BETA IS OVER.
+*Note on the Beta Release:* This page might be augmented periodically during the
+Beta period based on feedback and recommendations.
+
+[[mel_expressions]]
+== MEL Expressions (Manual Post-Migration Steps)
+
+Most MEL expressions are migrated to xref:dataweave.adoc[DataWeave] by the
+Mule Migration Assistant (MMA). However, some operators and MEL constructs are
+not supported by the MMA to generate the equivalent DataWeave automatically.
+
+For example, the expressions in the next Output examples receive the `mel:` prefix from the MMA. The Compatibility module supports the MEL language from
+Mule 3, so these expressions still work. The Manual Modification examples show
+how to manually migrate the expressions in the Output examples to Mule 4.
+
+* MEL `flowVars` become Mule event variables (`vars`) in DataWeave expressions.
++
+.Example 1: MMA Output
+[source]
+----
+#[mel:flowVars.booleanVar ? 1 : 0]
+----
++
+.Example 2: Manual Modification to MMA Output
+[source]
+----
+#[if (vars.booleanVar) 1 else 0]
+----
++
+* The MEL map is a `HashMap` that contains a key-value pair. In DataWeave,
+the same pair is a simple JSON object:
++
+.Example 1: MMA Output
+[source]
+----
+#[mel:Map m = new HashMap<>(); m.put(“key”, “value”); return m;]
+----
++
+.Example 2: Manual Modification MMA Output
+[source]
+----
+#[{‘key’, ‘value’}]
+----
+
+See also, xref:migration-mel.adoc[Migrate from MEL to DataWeave].
+
+=== Using the Scripting Module to Migrate procedural MEL Expressions
+
+Some MEL expressions are not simply expressions but actually procedural scripts,
+so they cannot be migrated seamlessly to a functional language such as DataWeave.
+For these cases, you should use the
+xref:connectors::scripting/scripting-module.adoc[Scripting module] and
+migrate the MEL script to a language supported by the Scripting module.
+
+.Example: MMA Output
+[source,XML,linenums]
+----
+<expression-component><![CDATA[
+if(flowVars.fail) {
+    throw new IllegalStateException(“var fail is set to true”);
+} else {
+    payload = “Some Result”;
+}
+]]></expression-component>
+----
+
+.Example: Manual Modification to MMA Output
+[source,XML,linenums]
+----
+<script:execute engine="groovy">
+    <script:code><![CDATA[
+if(vars.fail) {
+    throw new IllegalStateException(“var fail is set to true”);
+} else {
+    payload = “Some Result”;
+}
+    ]]></script:code>
+</script:execute>
+----
+
+Note that the content might look similar because MEL and Groovy syntax are
+both Java-based, but always test that the behavior of any migrated script
+is maintained.
+
+[[inbound_properties]]
+== Inbound Properties (Manual Post-Migration Steps)
+
+Instead of relying on the Compatibility module to handle inbound properties (see
+xref:intro-mule-message.adoc#inbound-properties-are-now-attributes[Inbound Properties Are Now Attributes])
+and on the `mel:` syntax to allow MEL expressions in Mule 4, it is recommended that you follow each of these steps on Mule Migration Assistant (MMA) output:
+
+. Remove `<compatibility:attributes-to-inbound-properties/>` elements.
+. Replace uses of `inboundProperties` in MEL expressions with a DataWeave 2.0 expression.
+. Replace uses of `vars.compatibility_inboundProperties[‘propName’]` with a reference to a Message attribute value.
+
+This example shows modifications to inbound properties from an HTTP listener:
+
+.Example: MMA Output
+[source,XML,linenums]
+----
+<http:listener config-ref="myHttp"/>
+<compatibility:attributes-to-inbound-properties/>
+<logger message="#[vars.compatibility_inboundProperties['http.request']]">
+<logger message="#[mel:message.inboundProperties['http.request']]">
+----
+
+.Example: Manual Modification to MMA Output
+[source,XML,linenums]
+----
+<http:listener config-ref="myHttp"/>
+<logger message="#[message.attributes.requestPath]">
+<logger message="#[message.attributes.requestPath]">
+----
+
+[[outbound_properties]]
+== Outbound Properties (Manual Post-Migration Steps)
+
+If an outbound property is _not_ set in a flow, you can safely remove any
+usage of that outbound property (see
+xref:intro-mule-message.adoc#outbound-properties[Outbound Properties]).
+For example, you can remove the `status` attribute from an HTTP listener and
+rely on the default for the listener _if_ an `http.status` outbound property is
+never set in the flow.
+
+//TODO: A BEFORE/AFTER EXAMPLE HERE WOULD HELP NICE.
+
+If a property is set in the flow, you need to move the expression that sets the
+property into the attribute of the operation or source where it is used. For
+example, you might modify the XML output of the Mule Migration Assistant (MMA):
+
+.Example: MMA Output
+[source,XML,linenums]
+----
+<compatibility:set-property propertyName="http.method" value="#[if(get) 'GET' else 'PUT']"/>
+...
+<http:request config-ref="myHttp" method="#[vars.compatibility_outboundProperties['http.method']]"/>
+----
+
+The next example moves the expression that sets the `http.method` property
+(shown in the example above) to the `method` attribute of the `http:request`
+operation where it is used.
+
+.Example: Manual Modification to MMA Output
+[source,XML,linenums]
+----
+<http:request config-ref="myHttp" method="#[if(get) 'GET' else 'PUT']"/>
+----
+
+Note that in Mule 3, the outbound property can be set by any component or inside
+a referenced flow. This kind of complexity makes the manual step necessary
+because the MMA does not have the full context to interpret the semantics of an
+app.
+
+[[session_variables]]
+== Session Properties (Manual Post-Migration Steps)
+
+Transport barriers do not exist in Mule 4, so Session properties are no longer needed and have been removed from Mule 4. After running the
+Mule Migration Assistant (MMA) on a Mule app that uses Session properties, you should store data in Mule event variables (`vars`).
+
+To migrate Session properties to variables:
+
+* Replace the Compatibility module's `compatibility:set-session-variable`
+processors with Set Variable (`set-variable`) components, for example:
++
+.Example: MMA Output with `compatibility:set-session-variable`
+[source,xml,linenums]
+----
+<flow="sessionExampleFlow">
+  <compatibility:set-session-variable variableName="token" value="1234" />
+  <compatibility:outbound-properties-to-var/>
+  <http:request config-ref="flowRequestConfig" method="GET" path="/">
+    <http:headers>
+        #[migration::HttpRequester::httpRequesterTransportHeaders(vars)]
+    </http:headers>
+  </http:request>
+  <compatibility:attributes-to-inbound-properties/>
+</flow>
+----
++
+The following manual modification that replaces both
+`<compatibility:set-session-variable/>`
+and `<compatibility:outbound-properties-to-var/>` configurations with
+`<set-variable variableName="token" value="1234" />`. In the HTTP header (`<http:headers>`) setting `{'token': vars.token}` selects the value of that
+variable.
++
+.Example: Manual Modification with `set-variable`
+[source,XML,linenums]
+----
+<flow="sessionExampleFlow">
+  <set-variable variableName="token" value="1234" />
+  <http:request config-ref="flowRequestConfig" method="GET" path="/">
+    <http:headers>
+      <!-- Because no outbound properties were set before this operation, you do
+          not need the httpRequesterTransportHeaders function anymore -->
+      #[{'token': vars.token}]
+    </http:headers>
+  </http:request>
+</flow>
+----
++
+* Replace the Compatibility module's `compatibility:remove-session-variable` processors to `set-variable`, for example:
++
+.Example: MMA Output with `compatibility:remove-session-variable`
+[source,xml,linenums]
+----
+<flow="sessionExampleFlowListener">
+  <http:listener config-ref="flowListenerConfig" path="/">
+    <http:response statusCode="200">
+      <http:headers>#[migration::HttpListener::httpListenerResponseHeaders(vars)]</http:headers>
+    </http:response>
+  </http:listener>
+  <compatibility:attributes-to-inbound-properties/>
+  <logger message="#[mel:sessionVars['token']]"/>
+  <compatibility:remove-session-variable variableName="token" />
+  <compatibility:outbound-properties-to-var/>
+</flow>
+----
++
+The following manual modification replaces
+`<compatibility:remove-session-variable variableName="token" />` with
+`<set-variable variableName="token" value="1234" />` and uses the `token`
+variable in the HTTP header, `#[{'token': vars.token}]`.
++
+.Example: Manual Modification with `set-variable`
+[source,XML,linenums]
+----
+<flow="sessionExampleFlowListener">
+  <http:listener config-ref="flowListenerConfig" path="/">
+    <http:response statusCode="301">
+      <http:headers>#[migration::HttpListener::httpListenerResponseHeaders(vars)]</http:headers>
+    </http:response>
+  </http:listener>
+  <set-variable variableName="token" value="#[message.attributes.headers.token]" />
+  <logger message="#[vars.token]"/>
+  <remove-variable variableName="token" />
+</flow>
+----
+* Replace uses of the Session property in expressions with a variable, for
+example, replacing `<logger message="#[mel:sessionVars['token']]"/>` with
+`<logger message="#[vars.token]"/>`, as shown above.
+* In the connectors migrated from transports (for example, File, VM, JMS, HTTP connectors), make sure to pass these migrated variables to the operation or the response builder (for example, within `<http:response/>`) of the source.
++
+//TODO: DO WE HAVE/SHOULD WE ADD EXAMPLES FOR MORE CONNECTORS?
+The way to accomplish this varies by connector. For HTTP, you can use headers
+(`<http:headers/>`). For JMS, you can use message properties. For VM, you can
+use the body expression.
++
+* For sources that receive Session information, read the information as it was set on the previous step and set the needed variables.
+
+
+[[inbound_attachments]]
+== Inbound Attachments (Manual Post-Migration Steps)
+
+Expressions that use inbound attachments should use the DataWeave features for
+handling multipart data formats.
+
+.Example: Mule 3
+[source,MEL,linenums]
+----
+#[message.inboundAttachments.get('myAttachment').getDataSource().getInputStream()]
+#[message.inboundAttachments.get('myAttachment').getDataSource().getContentType()]
+#[message.inboundAttachments.get('myAttachment').getDataSource().getPart().getContentDispositionFilename()]
+----
+
+.Example: Mule 4 Modifications
+[source,DataWeave,linenums]
+----
+#[payload.parts.myAttachment.content]
+#[payload.parts.myAttachment.headers.'Content-Type']
+#[payload.parts.myAttachment.headers.'Content-Disposition'.filename]
+----
+
+See xref:dataweave-formats.adoc#format_form_data[Multipart (Form-Data)] in
+_Data Formats Supported by DataWeave_.
+
+[[outbound_attachments]]
+== Outbound Attachments (Manual Post-Migration Steps)
+
+Instead of configuring outbound attachments to send in the next operation of a
+flow or in the response of the source, each operation and source must make
+explicit any attachments that are sent. You can set attachments as variables
+for later reference in an expression.
+
+Refer to the documentation of each connector for details on how to declare
+attachments to be sent. For example, see
+xref:connectors::email/email-list.adoc#getting-data-from-emails[Getting Data from Emails]
+in _Listing Emails with the Email Connector_ and the section on _Attachments_
+in xref:connectors::web-service/web-service-consumer-consume.adoc[To Consume a Web Service].
+
+== Migrating Custom Metadata Types
+
+The Mule Migration Assistant (MMA) does not migrate custom metadata types to
+your migrated Mule app. So, after migrating to Mule 4, you need load the types
+into any Transform Message components that use them in your migrated app.
+
+The MMA automates part of this procedure by migrating any schema and example
+files for these types from your Studio 6 project directories for
+your Mule 3 app, such as `src/main/resources`.
+
+*Prerequisite*: Please review sections on migrating Inbound and Outbound
+properties, Session properties, Inbound and Outbound attachments,
+and on
+xref:migration-core-enricher.adoc[Migrating the Enricher to a Target Variable]
+before starting this procedure. They cover important uses of Mule event
+attributes and variables in a Mule 4 app.
+
+
+To use custom data types in your migrated Studio 7 project:
+
+. Open the migrated Mule 4 app in Studio 7.
+. Use the Transform Message component in your Studio 7 project to load the
+data structures that are defined through your custom data type files. You can
+use these steps as a general guide to this process:
+.. Double-click a Transform Message component in your Mule 4 app to open the
+the *Transform Message* tab (located in the lower part of the default
+Studio project window).
++
+The columned input pane on the left supports custom metadata types for the
+*Payload*, *Variables*, or *Attributes*.
++
+.. Determine whether to create the custom metadata type for the payload, an
+attribute, or a variable.
++
+As described in previous sections, Mule 4 attributes replace Inbound properties.
+Mule 4 event variables replace Mule 3 variables, such as Flow, Session, and
+Record variables. They also replace the Message Enricher component.
++
+https://docs.mulesoft.com/mule-runtime/4.1/dataweave-quickstart#med_large_payload[This example] (starting at step 4) loads the
+content of an example JSON file as a custom metadata type for the payload
+of a Mule message.
++
+.. In the left-most column of the *Transform Message* tab, open the
+*Select metadata type* dialog for the payload, attributes, or variables:
++
+You can click *Define metadata* for  *Payload* or *Attributes* if they are
+present, or you can simply right-click *Payload* or *Attributes*, then click
+*Set Metadata* to open the *Select metadata type* dialog. The
++
+For variables, you need to right-click *Variables*, click *New Variables*, then provide a variable name to open the *Select metadata type*.
++
+. Now load your schema and example file (or files) for the custom date type
+(or types) to the Transform Message component:
++
+.. Click *+Add* to open the *Create new type* dialog.
+.. In the dialog, provide a *Type id* for the schema or example, and click
+*Create type*.
+.. Back in the *Select metadata type* dialog that opens, select the appropriate
+type from the *Type* drop-down menu (for example, *XML* or *JSON*).
+.. Below the new type, select *Schema* or *Example*, whichever applies to your
+custom metadata type.
+.. Use the navigation button with the ellipsis (*...*) to locate the schema
+or example file to use, and click *Open* to display the structure of the file
+schema or example in the *Select metadata type* window.
++
+Migrated files are typically in `src/main/resources`. In the unusual case that
+your schema or example files were not stored in your Studio 6 project
+directories (and therefore not migrated to your Mule 4 project directory), you
+can try to find them elsewhere or recreate them, then use this step to
+store them in the Studio 7 `src/main/resources` directory for your Mule 4
+project.
++
+.. Now click *Select* to load the example or schema file to use in this
+Transform Message component.
+.. Repeat these steps for each custom metadata type used by each
+Transform Message component in your migrated app.
+
+[[domain_connectors]]
+== Domain Connectors (Manual Post-Migration Steps)
+
+In Mule 3, inbound and outbound endpoints for some transports had
+configurations that, in Mule 4, have moved to the connector. The `http`
+and `vm` transports are examples. When the connector is declared in the
+domain, the Mule Migration Assistant (MMA) that runs for the domain has no
+visibility into the app or its endpoints. So the MMA cannot complete the
+configuration of the connector, and the configuration must be completed
+manually after all the apps in the domain have migrated.
+
+.Example: Mule 3 Domain
+[source,xml,linenums]
+----
+<https:polling-connector name="pollingConnector" pollingFrequency="30000" reuseAddress="true" checkEtag="false" discardEmptyContent="false">
+    <https:tls-server path="trustStore" storePassword="mulepassword"/>
+</https:polling-connector>
+----
+
+.Example: Mule 3 App
+[source,xml,linenums]
+----
+<https:inbound-endpoint host="localhost" port="${port1}" connector-ref="pollingConnector"/>
+----
+
+.Example: Mule 4 Migrated Domain
+[source,xml,linenums]
+----
+<http:request-config name="pollingConnectorConfig">
+    <http:request-connection protocol="HTTPS">
+        <tls:context>
+            <tls:trust-store path="trustStore" password="mulepassword"/>
+        </tls:context>
+    </http:request-connection>
+</http:request-config>
+----
+
+.Example: Mule 4 Domain Modifications
+[source,xml,linenums]
+----
+<http:request-config name="pollingConnectorConfig">
+<!-- The host and port are pulled up from the app, so they won't be available when just the domain is migrated. -->
+  <http:request-connection protocol="HTTPS" host="localhost" port="${port1}">
+    <tls:context>
+      <tls:trust-store path="trustStore" password="mulepassword"/>
+    </tls:context>
+  </http:request-connection>
+</http:request-config>
+----
+
+In the Mule 3 example above, the `port` is configured on the endpoint, so
+when the connector is in a domain, it is necessary to migrate the Mule 4
+configuration manually. Review the documentation of the equivalent Mule 3 and
+Mule 4 connectors for details on migrating specific configurations.
