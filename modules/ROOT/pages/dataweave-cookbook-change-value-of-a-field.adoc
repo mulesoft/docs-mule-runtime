@@ -2,17 +2,19 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
-:keywords: studio, anypoint, transform, transformer, format, rename, xml, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, mapobject, unless, otherwise
+:keywords: studio, anypoint, transform, transformer, format, rename, xml, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, update
 
 This DataWeave example changes the values of some XML elements. Here, it changes
 the values of keys containing sensitive data to a set of asterisks (`\****`).
 //LINK TO DW 1.0 EXAMPLES:
 include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
 
-The example uses these functions:
+The example uses:
 
-* `mapObject` to go through the users in the input. When on each user, it uses two other `mapObject` functions to go through the fields in both personal information and the login information.
-* `if` and `else` to mask the values of the `ssn` and `password` keys.
+* the `update` operator to update specified fields of the payload with new values.
+* the single `.` and multi `.*` value selectors to navigate the payload and select the fields to update.
+
+Given this script, DataWeave will create a new users list, updating each `user` in the payload, with a new `user` where the `ssn` and `password` values are now `\****`.
 
 .DataWeave
 [source,dataweave,linenums]
@@ -20,18 +22,11 @@ The example uses these functions:
 %dw 2.0
 output application/xml
 ---
-users: { (payload.users mapObject (userObject) -> {
-    user: {
-         personal_information: userObject.personal_information mapObject (value, key) ->
-         {
-            (if (key ~= "ssn") (key): "****"  else (key): value)
-         },
-         login_information: userObject.login_information mapObject (value, key) ->
-         {
-            (if (key ~= "password") (key): "****" else (key): value)
-         }
-      }
-   })
+payload update {
+        case user at .users.*user -> user update {
+                case .personal_information.ssn -> "****"
+                case .login_information.password -> "****"
+        }
 }
 ----
 
@@ -98,27 +93,20 @@ users: { (payload.users mapObject (userObject) -> {
 </users>
 ----
 
+The `update` operator is the most general and easy way of changing the value of a field. However, there is also a simpler way of masking values as the example above required and doing so without focusing on the path to each sensitive field.
 
+This example uses:
 
-////
-Without explicitly defined keys:
+* the `mask` function to update all simple elements matching the selected name throughout the payload with the desired mask.
 
+.DataWeave
+[source,dataweave,linenums]
+----
 %dw 2.0
 output application/xml
 ---
-users: { (payload.users mapObject {
-    user: {
-         personal_information: $.personal_information mapObject {
-              ($$): $ unless $$ ~= "ssn" otherwise "****"
-         },
-         login_information: $.login_information mapObject {
-            ($$): $ unless $$ ~= "password" otherwise "****"
-         }
-      }
-   })
-}
-
-////
+(payload mask "ssn" with "****") mask "password" with "****"
+----
 
 
 == Related Examples
