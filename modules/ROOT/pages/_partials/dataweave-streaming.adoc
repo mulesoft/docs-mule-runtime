@@ -1,0 +1,224 @@
+# Streaming
+​
+When we mention STREAMING in data weave we refer to a way of procesing a document. We talk about secuential access only, this means no random access.
+This is very important as knowing is key to understand how to work with it and what can be done and what can not.
+​
+​
+Lets deep dive into this, what does secuential access means. So the first thing to think is secuential access of what. So what it is going to be our unit of stream.
+​
+As an example we are going to start with the simplest format where streaming is kind of natural CSV.
+​
+```CSV
+name,lastName,age
+mariano,achaval,37
+leandro,shokida,30
+pedro,achaval,4
+christian,chibana,25
+sara,achaval,2
+matias,achaval,8
+```
+​
+Now lets do something simple and transform this to json
+​
+```
+payload map (record) ->
+    {
+        FullName: record.lastName ++ "," ++ record.name,
+        Age: record.age
+    }
+```
+​
+Now this example can be stream and the unit is each record. This means that each record is going to be loaded into memory and inside each record the user can do random access. In the example `record.lastName ++ "," ++ record.name,` access first `lastName` that is forward in the document than `name` and there is no problem with this.
+​
+Now lets take a look at this other example where it returns the elements in a different orders
+​
+```
+[payload[-2], payload[-1], payload[3]]
+```
+​
+This case streaming is not going to work as the records are access in random way in the entire document.
+​
+Now not all data formats are as simple as CSV and defines the unit or stream that simple and direct and was one of the reasons that for some time we only support csv as streaming.
+​
+## JSON
+​
+We added support for json streaming in 2.2.0 Mule 4.2. but we the restriction that the root needs to be an array. In this case the unit of stream was each of the elements of the array. In 4.3 we extended to a general proposal where we support arrays that are not root.
+​
+So for example
+​
+```JSON
+​
+{
+    "name" : "Mariano",
+    "lastName": "Achaval",
+    "family": [
+        {"name": "Sara", "age": 2},
+        {"name": "Pedro", "age": 4},
+        {"name": "Matias", "age": 8}
+    ],
+    "age": 37
+}
+```
+​
+In this example we can stream `payload.family` and inside each of this items we can do random access.
+But we can not access the container object in a random access way. We can not do
+`{ a: payload.age , b: payload.family}` as `age` is after `family` and we can not go backwards.
+​
+## XML
+​
+Xml is a little bit more complicated as there are no `Arrays` where to split the document. So to do this there is a property called `collectionPath` that defines the location where collection is located in the document.
+​
+For example let's take this example
+​
+```XML
+<order>
+    <header>
+        <date>Wed Nov 15 13:45:28 EST 2006</date>
+        <customer number="123123">Joe</customer>
+    </header>
+    <order-items>
+        <order-item id="31">
+            <product>111</product>
+            <quantity>2</quantity>
+            <price>8.90</price>
+        </order-item>
+        <order-item id="31">
+            <product>222</product>
+            <quantity>7</quantity>
+            <price>5.20</price>
+        </order-item>
+        <order-item id="31">
+            <product>111</product>
+            <quantity>2</quantity>
+            <price>8.90</price>
+        </order-item>
+        <order-item id="31">
+            <product>222</product>
+            <quantity>7</quantity>
+            <price>5.20</price>
+        </order-item>
+        <order-item id="31">
+            <product>222</product>
+            <quantity>7</quantity>
+            <price>5.20</price>
+        </order-item>
+    </order-items>
+</order>
+```
+​
+In here our unit of stream is each `order-item` so for this we need to specify `collectionPath="order.order-items"`
+​
+And then we can operate do something like
+​
+```
+{
+  salesorder: {
+    itemList: in0.order."order-items".*"order-item" map {
+      ("i_" ++ $$) : {
+        id: $.@id,
+        productId: $.product,
+        quantity: $.quantity,
+        price: $.price
+      }
+    }
+  }
+}
+```
+​
+​
+## Streaming benefits
+​
+When doing streaming dataweave don't need to scan the entire document to index it it can strat processing while bytes are arriving. This means it is going to be signifcantly faster and consume much less resources.
+​
+## Bonus track
+​
+In order to help the user code in way that is stremeable. So that in their code the user doesn't do anything that *may* break the streaming we have develop an annotation processor that validates the access of a variable.
+​
+What does this mean?!? So let's say we want to *stream* our *payload*, we need to make sure that our code doesn't do any random access as we have seen previously.
+​
+So for this we have define a set of rules that makes sure that the stream is allways access in a secuential way.
+​
+1. The variable in our case `payload` can only be reference one.
+2. Index selector with negative access are not allowed.
+3. It should not be referenced in a nested lambda.
+​
+And we can make DataWeave compiler validates this for us just annotate the input variable with *@StreamCapable()*
+​
+Filter Example: *This validates ok*
+```
+%dw 2.0
+​
+@StreamCapable()
+input payload application/json streaming=true
+output application/json
+---
+payload.family filter (member) -> member.age > 3
+```
+​
+Random Example: *This validates wrong*
+​
+```
+%dw 2.0
+​
+@StreamCapable()
+input payload application/json streaming=true
+output application/json
+---
+ {
+     family: payload.family filter (member) -> member.age > 3,
+     name: payload.name
+ }
+```
+This will fail with
+​
+```
+​
+4| input payload application/json streaming=true
+         ^^^^^^^
+Parameter `payload` is not stream capable.
+Reasons:
+ - Variable payload is referenced more than once. Locations:
+---------------------------
+​
+8|      family: payload.family filter (member) -> member.age > 3,
+                ^^^^^^^
+---------------------------
+​
+9|      name: payload.name
+              ^^^^^^^ at
+4| input payload application/json streaming=true
+```
+​
+That *StreamCapable* fails doesn't mean that it is going to fail there are some cases that based on the shape of your data structures it may work. What it says is that if it doesn't fail then for sure it is going to work 100% of the times.
+​
+NOTE: *StreamCapable* Is still an experimental feature
+​
+Wrong Scope Reference Example: *This validates wrong*
+​
+​
+```
+%dw 2.0
+​
+@StreamCapable()
+input payload application/json
+​
+​
+output application/json
+---
+[1,2,3] map ((item, index) -> payload)
+```
+​
+​
+```
+4| input payload application/json
+         ^^^^^^^
+Parameter `payload` is not stream capable.
+Reasons:
+ - Variable payload is referenced in a different scope from where it was defined. Locations:
+---------------------------
+​
+9| [1,2,3] map ((item, index) -> payload)
+                ^^^^^^^^^^^^^^^^^^^^^^^^ at
+4| input payload application/json
+         ^^^^^^^
+```    
