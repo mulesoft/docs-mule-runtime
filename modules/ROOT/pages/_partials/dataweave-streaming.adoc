@@ -1,22 +1,22 @@
 = Streaming in DataWeave
 
-Streaming speeds the processing of large documents without overloading memory. DataWeave supports end-to-end streaming through a flow in a Mule application. 
+DataWeave supports end-to-end streaming through a flow in a Mule application. Streaming speeds the processing of large documents without overloading memory.
 
-Streaming enables DataWeave to process a document as its bytes arrive instead of scanning the entire document to index it. This behavior features enable DataWeave to process data faster and consume fewer resources than the default processes for reading data.
+DataWeave processes streamed data as its bytes arrive instead of scanning the entire document to index it. DataWeave can also pass streamed output data directly to a message processor without saving it to the disk. This behavior enables DataWeave and Mule to process data faster and consume fewer resources than the default processes for reading and writing data.
 
 To stream successfully, it is important to understand the following:
 
-* The basic unit of the stream is specific to the data format. The unit is a record in a CSV document, an element of an array in a JSON document, or a  collection in an XML document.
-* Streaming accesses each unit of the stream sequentially. Streaming does not support random access to the document.
+* The basic unit of the stream is specific to the data format. The unit is a record in a CSV document, an element of an array in a JSON document, or a collection in an XML document.
+* Streaming accesses each unit of the stream sequentially. Streaming does not support random access to a document.
 
 == Enable Streaming
 
 Streaming is not enabled by default. You can use two configuration properties to stream data in a supported data format:
 
-* `streaming` reader property for reading source data as a stream
-* `deferred` writer property for passing streamed data to the next message processor in a flow, without first saving it to disk
+* `streaming` property for reading source data as a stream
+* `deferred` writer property for passing an output stream directly to the next message processor in a flow
 
-To enable streaming when reading source data, you must set the `streaming` reader property to `true` on the data source. You can enable streaming on a data source through a *MIME Type* setting `outputMimeType`. You set the property in a Mule component that reads or accepts source data, such as the HTTP listener.
+To enable streaming when reading source data, you must set the `streaming` reader property to `true` on the data source. You can enable streaming on a data source through the *MIME Type* setting `outputMimeType`. You can set the property in a Mule component that accepts source data, such as an HTTP listener or an On New or Updated File operation.
 
 [source,XML,linenums]
 ----
@@ -27,7 +27,7 @@ To enable streaming when reading source data, you must set the `streaming` reade
 </flow>
 ----
 
-Notice that `streaming=true` is part of the `outputMimeType` value. Other Mule components, such as the File and FTP components, support the MIME Type setting.
+Notice that `streaming=true` is part of the `outputMimeType` value. Other Mule components, such as the File and FTP components, also support the MIME Type setting.
 
 To pass the streamed output to the next message processor, you can use the `output` directive in a DataWeave script, for example:
 
@@ -41,7 +41,7 @@ For more detail on use of the `deferred` property, see <<stream_output>>.
 [[stream_csv]]
 == Streaming CSV
 
-CSV is simplest and most natural format for streaming because of its structure. Each row below the CSV header is a streamable record. The following CSV example consists of records that contain `name`, `lastName`, and `age` values.
+CSV is simplest format for streaming because of its structure. Each row below the CSV header is a streamable record. The following CSV example consists of records that contain `name`, `lastName`, and `age` values.
 ​
 [source,CSV,linenums]
 ----
@@ -73,8 +73,6 @@ However, streaming does not work in the following script. The script requires ra
 ----
 [payload[-2], payload[-1], payload[3]]
 ----
-
-​Not all data formats are as simple as CSV.
 ​
 [[stream_json]]
 == Streaming JSON
@@ -232,15 +230,15 @@ The script produces the following XML output.
 To help you code in a streamable way and avoid mistakes that can break the streaming process, DataWeave provides an _advanced, experimental_ annotation and a related directive:
 
 * `@StreamCapable()` annotation: Use this annotation to validate whether the script can sequentially access a variable (typically the `payload` variable).
-* `input` directive: The `@streamCapable()` annotation requires the use of an input directive in the DataWeave script that identifies the MIME type of the data source, for example, `input payload application/xml`. The directive  identifies the MIME type of the Mule message's payload.
+* `input` directive: The `@streamCapable()` annotation requires the use of an input directive in the DataWeave script that identifies the MIME type of the data source, for example, `input payload application/xml`.
 
-The validator uses a set of rules to determine whether the script is written to  gain access to the stream in a sequential way. If all of the following criteria are true, the selected data is streamable:
+The validator checks a script against the following criteria:
 ​
-* The variable is referenced only once.
-* No index selector is set for negative access, such as `[-1]`.
-* No reference to the variable is found in a nested lambda.
+* The variable is referenced only once
+* No index selector is set for negative access, such as `[-1]`
+* No reference to the variable is found in a nested lambda
 
-The following example validates successfully. The script is designed to act on the <<example_json, JSON input>> from the <<stream_json, JSON streaming>> section.
+If all are true, the selected data is streamable. The following example validates successfully. The script is designed to act on the <<example_json, JSON input>> from the <<stream_json, JSON streaming>> section.
 
 [source,DataWeave,linenums]
 ----
@@ -253,7 +251,7 @@ output application/json
 payload.family filter (member) -> member.age > 3
 ----
 ​
-The validation passes because the script can gain sequential access to each field in the input array. The script returns the following output:
+The script successfully validates and returns the following output:
 
 [source,JSON,linenums]
 ----
@@ -269,12 +267,14 @@ The validation passes because the script can gain sequential access to each fiel
 ]
 ----
 
-[NOTE]
-----
-As the next sections describe, attempts to randomly access a stream fail the validation test. However, note that validation can fail in some cases when streaming works. If you write your script in a way that sequentially accesses the input variable in a given data source, streaming works, but the script might not work on all data sources that the script needs to process. For example, JSON does not place a restriction on the order of the keys in an object. If the keys in some JSON documents arrive in a different order than the script expects, streaming will fail in those cases. The annotation processor is bound by the rules of the format and cannot assume that the keys always arrive in the same order.
-----
+=== Validation Failures
+
+If any of the criteria that the valiator checks are false, the validation fails.
+The sections that follow describe validation failures.
+
+Before proceeding, note that validation can fail in some cases when streaming works. If you write a script in a way that sequentially accesses the input variable in a given data source, streaming works, but that script might not work in all cases. For example, JSON does not place a restriction on the order of the keys in an object. If the keys in some JSON documents arrive in a different order than the script expects, streaming will fail in those cases. The annotation processor follows the rules of the format and cannot assume that the keys always arrive in the same order.
 ​
-=== Error: Variable is Referenced More Than Once
+==== Error: Variable is Referenced More Than Once
 
 Validation fails if a script attempts to reference the same variable more than once.
 
@@ -315,11 +315,11 @@ Reasons:
 ----
 ​
 ​
-=== Wrong Scope Reference
+==== Error: Wrong Scope Reference
 
 Validation fails if a script attempts to reference a variable from a scope that is different from the scope in which the variable is defined.
 
-The following script fails because the `payload` variable is referenced from within the lambda expression `[1,2,3] map ((item, index) -> payload)`.
+The following script fails because the `payload` variable is referenced from within the lambda expression `[1,2,3] map ((item, index) -> payload)`. Even if the expression is `[1] map ((item, index) -> payload`, streaming fails because `payload` is in the wrong scope.
 
 [source,DataWeave,linenums]
 ----
@@ -331,8 +331,6 @@ output application/json
 ---
 [1,2,3] map ((item, index) -> payload)
 ---
-
-Even if the expression is `[1] map ((item, index) -> payload`, streaming fails because `payload` is in the wrong scope. However, if the reference is in scope, the content is streamable. For example, `[1,2,3] map ((item, index) -> item)` and `[1,2,3] map ((item, index) -> index)` are streamable.
 ​
 The example fails with the following error:
 ​
@@ -353,9 +351,9 @@ Reasons:
 [[stream_output]]
 == Streaming Output
 
-You can use the `deferred` writer property to facilitate end-to-end streaming within a flow. You can pass streamed data without first writing the entire output to disk by using the `deferred` writer property in the output directive of the DataWeave script, for example, `output application/json deferred=true`.
+After processing streamed data, you can stream the output directly to another message processor. To facilitate this behavior, use the `deferred` writer property in the output directive of the DataWeave script, for example, `output application/json deferred=true`.
 
-Building on the example in <<stream_json, JSON streaming>>, the following example streams input, uses a DataWeave script to filter and stream the output directly to a Write operation.
+Building on the example in <<stream_json, JSON streaming>>, the following flow uses a DataWeave script to filter streamed input and then streams the output directly to a Write operation.
 
 [source,DataWeave,linenums]
 ----
@@ -388,5 +386,12 @@ output application/json deferred = true
 ----
 
 . The listener (`<file:listener>`) uses `streaming=true` to stream the incoming JSON data.
-. The DataWeave script in `<ee:transform/>` filters records in the streamed data and uses the `deferred = true` property to pass the resulting records directly to the next processor in the flow, without first saving the output to disk.
-. The next component in the flow, `<file:write/>`, that accepts the streamed output directly and writes the filtered records to a file.
+. The DataWeave script in `<ee:transform/>` filters records in the streamed data and uses the `deferred = true` property to stream the resulting records directly to the next processor in the flow.
+. The next component in the flow, `<file:write/>`, receives the filtered stream directly and writes the records to a file.
+
+== See Also
+
+* xref:dataweave-formats-csv.adoc(CSV Format)
+* xref:dataweave-formats-json.adoc(JSON Format)
+* xref:dataweave-formats-xml.adoc(XML Format)
+* xref:dataweave-formats.adoc(Supported DataWeave Formats)
