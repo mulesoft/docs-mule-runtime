@@ -12,7 +12,7 @@ To facilitate simultaneous branch processing, the Async scope sends one copy of 
 
 image::async-scope-schematic.png[Async+scope+schematic]
 
-Because the Async scope is executed in a "fire and forgot" manner, the result of the processing within the scope is not available in the main flow.
+Because the Async scope is executed in a "fire and forget" manner, the result of the processing within the scope is not available in the main flow.
 
 == Async Scopes versus Subflows
 
@@ -20,7 +20,7 @@ Unlike a subflow, an Async scope:
 
 * Does not inherit the exception strategy of the main flow.
 +
-To handle errors in an Async scope, you should use the Try scope.
+To handle errors in an Async scope, use the Try scope.
 +
 * Processes messages asynchronously.
 * Does not pass data back to the main flow.
@@ -32,13 +32,47 @@ Note that even though the Async scope receives a copy of the Mule message, the p
 
 In other words, if the payload of your message is a mutable object (for example, a bean with different fields in it) and a message processor in your Async scope changes the value of one of the fields, the message processors outside of the Async scope see the changed values.
 
-This example shows the XML for the Async scope.
+
+== Example Async Scope Configuration
+
+The following XML fragment shows an example configuration of an Async scope inside an application flow. The Async scope contains a `file:read` operation that executes asynchronously once triggered, while the application continues processing the next operation in the flow, `http:request`:
 
 [source,xml,linenums]
 ----
-<async doc:name="Async">
-  <!-- One or more processors here -->
-</async>
+<!-- Main application flow -->
+<flow name="myMainFlow" >
+  <!-- HTTP Listener as message source -->
+  <http:listener doc:name="Listener" />
+  <!-- A Transform operation that executes as part of the main flow -->
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload >
+        <![CDATA[%dw 2.0
+        output application/json
+        ---
+        payload]]>
+      </ee:set-payload>
+    </ee:message>
+  </ee:transform>
+    <!-- The Async scope executes its message processors in a different thread, while the main flow continues its execution -->
+    <async doc:name="Async" >
+      <!-- A Try scope to handle errors, because the async scope does not inherit the error strategy from the flow -->
+      <try doc:name="Try" >
+        <!-- A Write operation -->
+        <file:write doc:name="Write" path="/" />
+        <!-- Error handling strategy defined in the Try scope, to handle errors during the Async scope execution -->
+        <error-handler >
+          <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
+            <!-- Some error handling logic for this strategy -->
+            ...
+          </on-error-continue>
+        </error-handler>
+      </try>
+    </async>
+  <!-- This HTTP Request operation starts executing without waiting for the Async scope to finish its execution -->
+  <http:request method="GET" doc:name="Request" />
+  ...
+</flow>
 ----
 
 == See Also
