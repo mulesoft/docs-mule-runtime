@@ -3,18 +3,18 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-The Scheduler is a flow event source that is configured to trigger at certain times to execute the Scheduler's flow. A Scheduler is either configured with a fixed repeating triggering *frequency* (such as every second), or with a more general cron *expression*. A cron expression can specify one or more specific dates and times, but more often specifies recurring dates, times, or intervals (for example the cron expression `* * * ? * *` means to trigger every second). 
-
-The flow can be configured to only allow the Scheduler event source to execute one flow instance at a time, or can allow concurrent flow instances to execute. 
+The Scheduler component is an event source that initiates execution of a flow at configured times. You can configure a fixed and repeating frequency (such as every second) or a cron expression. A cron expression can specify one or more specific dates and times, but more commonly, the expression specifies recurring dates, times, or intervals. For example, the cron expression `* * * ? * *` configures a Scheduler to start its flow every second.
 
 Consider the following when you implement a Scheduler in your Mule application:
 
 * Schedulers use the same timezone as the machine on which Mule is running. However, if an application is running in CloudHub, the Scheduler conforms to the UTC timezone, regardless of the geographic region in which the application is running.
-// TODO: MULE-14438
-* If xref:execution-engine.adoc#backpressure[back-pressure] is triggered because no resources are available at the time of the trigger, that trigger is skipped. In this case a *MULE:FLOW_BACK_PRESSURE* error is thrown indicating the flow cannot accept new events at this time. In Anypoint Studio, this error is only logged once the first time it occurs. You can capture log messages each time the Scheduler is triggered, including events that do not execute the flow, by enabling debug level logging in the Mule application.  
+* If xref:execution-engine.adoc#backpressure[back pressure] occurs because Mule lacks sufficient resources to process an event in the flow, the application skips the scheduled trigger for the event and throws a MULE:FLOW_BACK_PRESSURE error. This error indicates that the flow cannot accept new events at that time. Anypoint Studio logs this error only once, the first time it occurs.
++
+Using `maxConcurrency` on a Flow component can lead to back pressure if the component contains a Scheduler that runs too frequently or if the flow takes too long to execute. To avoid back pressure and improve performance of the application, you can try the default `maxConcurrency` setting or increase the value so that more instances of the flow can run concurrently. To avoid receiving the error message, use the Scheduler's `disallowConcurrentExecution` property (see xref:scheduler-xml-reference.adoc#scheduler-properties[<scheduler> Properties]). 
++
+To capture log messages each time the Scheduler attempts to trigger an event, you can enable the xref:logging-in-mule#change-the-log-level[DEBUG] logging level in the Mule application.
 //Enhancement request for this: MULE-14930
-* If the `maxConcurrency` attribute of a Flow component is set to `1`, then only one flow instance can execute at a time in the Mule runtime. In this case, The Mule runtime prevents new flow instances from executing while the first flow instance is still executing. Instead, the Scheduler's back-pressure does *not* queue up additional events. Instead, the flow skips new events created by the triggered Scheduler while the first flow is still executing. Once the current flow terminates, the next event triggered by the Scheduler will execute a new flow instance, and then the same blocking and event skipping pattern repeats. 
-* In a multi-worker CloudHub deployment, or in a custoemr-hosted Mule runtime cluster, the Scheduler runs (and then executes the flow) only on the primary node (that is, only in one particular Mule runtime).
+* In a multi-worker CloudHub deployment or in a customer-hosted cluster of Mule runtime engines, the Scheduler runs and executes the flow on the primary node only. That is, it runs on one specific Mule runtime engine and no others.
 
 == Example Projects
 
@@ -55,13 +55,13 @@ MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS
 
 == Cron Expressions
 
-Cron is a widely used standard for describing time and date information and repeating intervals.
+Cron is a widely used standard for describing date-time information and repeating intervals.
 
 The Scheduler keeps track of every second and creates a Mule event when the
 Quartz Cron expression matches your time-date setting. You can configure the Scheduler to trigger
 just once or at regular intervals.
 
-A *date-time expression* consists of six required settings and can include the
+A date-time expression consists of six required settings and can include the
 optional year setting. You specify the settings in the following order:
 
 . Seconds (0-59)
@@ -100,7 +100,7 @@ Note that the Scheduler component also supports Quartz Scheduler special charact
 
 //source info: +http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html+
 
-This example logs the message "hello" every second, and only allows one flow instance to execute at a time:
+This example logs the message "hello" every second and allows only one instance of the flow to execute at a time:
 
 [source,XML,linenums]
 ----
@@ -126,12 +126,12 @@ Java equivalents, such as `America/Los_Angeles` and
 
 //source info: +https://docs.oracle.com/javase/8/docs/api/java/time/ZoneId.html+
 
-== Debugging a Scheduler
+== Stop or Start a Scheduler in Debug Mode
 
-When you debug a Mule application in Anypoint Studio, each Scheduler event source appears with an arrow icon underneath to remind you that the Scheduler can be stopped and started while the Mule application is being debugged. To stop or start the Scheduler event source, right click on the Scheduler and select Stop Scheduler or Start Scheduler from the Scheduler's right-click menu.  
+In Anypoint Studio, when you run a Mule application using debug mode, an arrow icon appears at the bottom of the Scheduler component. The arrow indicates that you can start or stop the Scheduler from its right-click menu.
 
+By default, the Scheduler runs when in debug mode. If you place a break point on a message processor in the flow, the Scheduler component will start the flow and continue emitting events as scheduled until you stop it. If you set a break point before stopping the Scheduler and the Scheduler emits one or more events, the application queues those events to run through the flow after you finish stepping through the break point.
 
 == See Also
 
 * xref:scheduler-xml-reference.adoc[Scheduler XML Reference]
-
