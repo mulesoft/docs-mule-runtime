@@ -1,10 +1,10 @@
 %dw 2.0
-output application/json
 var baseUrl = "http://alainn-cosmetics.cloudhub.io/api/v1.0"
 var urlPage = "http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
 var fullUrl = "http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
 var pageIndex = 0
 var requestedPageSize = 4
+output application/json
 ---
 using (pageSize = payload.getItemsResponse.PageInfo.pageSize) {
      links: [
@@ -38,4 +38,3 @@ using (pageSize = payload.getItemsResponse.PageInfo.pageSize) {
             }
         }
      }
-}
