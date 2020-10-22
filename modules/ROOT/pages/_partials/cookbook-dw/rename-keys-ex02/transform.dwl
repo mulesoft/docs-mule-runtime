@@ -1,13 +1,12 @@
 %dw 2.0
 output application/json
+fun renameKey(key: Key) = key match {
+    case "availableSeats" -> "emptySeats"
+    case "airlineName" -> "airline"
+    else -> (key)
+}
 ---
 payload.flights map (flight) ->
 flight mapObject (value, key) -> {
- ((key) match
-		{
-			case literalMatch: "availableSeats" -> "emptySeats"
-			case literalMatch: "airlineName" -> "airline"
-			else -> (key)
-		}
-  ) : value
+    (renameKey(key)) : value
 }
