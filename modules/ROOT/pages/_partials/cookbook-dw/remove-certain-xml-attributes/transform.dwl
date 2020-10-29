@@ -10,7 +10,7 @@ var removeAttribute = (element,attrName) ->
         (
           // If the element contains attributes (key.@?),
           // remove any attribute that has the provided key,
-          // ("password").
+          // "password".
           if (key.@?)
             (key.@ - attrName)
           // Otherwise, do nothing.
