@@ -9,7 +9,7 @@ var removeAttribute = (element,attrName) ->
     (key) @(
         (
           // If the element contains attributes (key.@?),
-          // remove the attribute based on the provided key,
+          // remove any attribute that has the provided key,
           // ("password").
           if (key.@?)
             (key.@ - attrName)
@@ -17,9 +17,9 @@ var removeAttribute = (element,attrName) ->
           else {}
         )
     ) :
-    // If the value of the input object is an object,
-    // apply removeAttribute to remove any attribute
-    // with the key "password".
+    // If the value of the input object contains one or
+    // more objects, apply removeAttribute to remove any
+    // attribute with the key "password" from those objects.
     if (value is Object)
       removeAttribute(value, attrName)
     // Otherwise, return the value of the input object.
