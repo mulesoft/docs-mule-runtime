@@ -1,0 +1,153 @@
+= Decode and Encode Base64
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, xml, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+The DataWeave examples show how to convert a file stream into Base64 and to convert a Base64 string into a file stream. They use a PDF file as the input and output.
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+[[xml_config]]
+== XML Configuration Example
+
+The configuration XML in the following procedure is a Mule flow that encodes and decodes a PDF file. It reads the file from the specified local directory using the Read operation from the File module. It writes the PDF to the specified directory.
+
+You can create this example in Anypoint Studio:
+
+. Create a Mule project in Anypoint Studio.
+. Use *Add Module* in the Mule Palette to add the File module.
+. Copy and paste the following example between the `<mule/>` elements of a Mule flow in Anypoint Studio.
++
+[source,XML,linenums]
+----
+<http:listener-config name="HTTP_Listener_config"
+                      doc:name="HTTP Listener config" >
+    <http:listener-connection
+                            host="0.0.0.0"
+                            port="8081" />
+</http:listener-config>
+<file:config name="File_Config"
+             doc:name="File Config" >
+    <file:connection workingDir="/Users/me/Downloads" />
+</file:config>
+<flow name="encode-decode-base64">
+    <http:listener doc:name="Listener"
+                 path="/transform"
+                 config-ref="HTTP_Listener_config"/>
+    <file:read doc:name="Read"
+             config-ref="File_Config"
+             path="pdf-test.pdf" />
+    <ee:transform doc:name="Transform Message">
+        <ee:message>
+          <ee:set-payload><![CDATA[%dw 2.0
+import * from dw::core::Binaries
+output text/plain
+---
+toBase64(payload as Binary)]]></ee:set-payload>
+        </ee:message>
+    </ee:transform>
+    <ee:transform doc:name="Transform Message" >
+        <ee:message >
+          <ee:set-payload ><![CDATA[%dw 2.0
+import * from dw::core::Binaries
+output application/octet-stream
+---
+fromBase64(payload as String) as Binary]]></ee:set-payload>
+        </ee:message>
+    </ee:transform>
+    <file:write doc:name="Write"
+              path="/Users/me/pdf-test-result.pdf"/>
+    <set-payload
+              value='#["PDF file created in the directory specified in the Write operation."]'
+              doc:name="Set Payload" />
+</flow>
+----
++
+. Place a PDF file of your choice into a local directory on your machine.
+. Correct the input and output directories of the Read and Write operations:
++
+* In the Read operation, change the *File Path* value `/Users/me/Downloads" to the location of your PDF file.
+* In the Write operation, change the *Path* value `/Users/me/pdf-test.pdf"` to the location and file name that you want to output the file.
+. Run the project in Studio.
+
+[[ex01]]
+== Encode a PDF File to Base64
+
+You can simulate the same Read operation from the <<xml_config, XML configuration>> in a Transform Message component. This example performs Base64 encoding on a PDF file. More specifically, it converts a Base64 file stream (`application/octet-stream`) to Binary and outputs the Binary in the `text/plain` format.
+
+The example uses the following functions:
+
+*  `readUrl` from the `Core (dw::Core)` module to input a PDF file.
++
+The example assumes that the PDF file is in the `src/main/resources` directory of a Mule project in Anypoint Studio. It provides the name of the PDF file and specifies the MIME type as `application/octet-stream`.
+* `fromBase64` from the `dw::core::Binaries` module to transform a Base64 string to a binary value.
+
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+import * from dw::core::Binaries
+var myPDF = readUrl("classpath://pdf-test.pdf", "application/octet-stream")
+output text/plain
+---
+toBase64(myPDF as Binary)
+----
+
+.Output (partial results):
+[source,json,linenums]
+----
+JVBERi0xLjYNJeLjz9MNCjM3IDAgb2JqIDw8L0xpbmVhcml6ZWQgMS9MIDIwNTk3L08gNDAvRSAx
+...
+----
+
+
+[[ex02]]
+== Decode Base64
+
+You can simulate the same Write operation from the <<xml_config, XML configuration>> in a Transform Message component. This DataWeave example converts a Base64 file stream (`application/octet-stream`) to Binary and outputs the Binary in the `text/plain` format.
+
+The examples use the following functions from the `dw::core::Binaries` module:
+
+*  `readUrl` to input a PDF file.
++
+The example assumes that the PDF file is in the `src/main/resources` directory of a Mule project in Anypoint Studio. It provides the name of the PDF file and specifies the MIME type as `application/octet-stream`.
+* `fromBase64` in the `dw::core::Binaries` module to transform a Base64 string to a binary value.
+
+The script reads the input PDF as an octet-stream MIME type. From within the call to `fromBase64`, the script coerces that input to a string value before coercing the string to Base64.
+
+//NOTE that we can't automate this yet bc transforms to txt. Also need to see if
+//validator can handle PDF as input.
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+%dw 2.0
+import * from dw::core::Binaries
+var myPDF = readUrl("classpath://pdf-test.pdf", "application/octet-stream")
+var myPDFasBinary = toBase64(myPDF as Binary)
+output text/plain
+---
+fromBase64(myPDFasBinary as String) as Binary
+----
+
+.Output (partial results):
+[source,json,linenums]
+----
+%PDF-1.6
+%����
+37 0 obj <</Linearized 1/L 20597/O 40/E 14115/N 1/T 19795/H [ 1005 215]>>
+endobj
+
+xref
+37 34
+0000000016 00000 n
+...
+----
+
+== See Also
+
+* xref:dw-binaries.adoc[Binaries (dw::core::Binaries)]
+
+* xref:dataweave-selectors.adoc[DataWeave Selectors]
+
+* xref:dataweave-cookbook.adoc[DataWeave Cookbook]
