@@ -2,5 +2,5 @@
 output application/xml
 ---
 {
-	version : payload.language[1]
+	version : payload.language.name
 }
