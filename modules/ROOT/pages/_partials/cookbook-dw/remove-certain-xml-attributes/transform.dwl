@@ -1,5 +1,4 @@
 %dw 2.0
-input payload application/json
 output application/xml inlineCloseOn="empty"
 var removeAttribute = (element,attrName) ->
   element mapObject (value, key) -> {
