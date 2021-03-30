@@ -1,0 +1,183 @@
+= Correlation ID
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: tracing, correlation, id, anypoint, studio
+
+The correlation id is a string unique identification for each event.
+This id is generated when the event is created and starts to be processed by the flow.
+It helps to correlate different log entries to a particular execution.
+
+As a simple example, we could see the following flow:
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="example">
+	<http:listener config-ref="HTTP_Listener_config" path="/test"/>
+	<set-payload value="some"/>
+	<logger level="WARN" message="#[payload]"/>
+</flow>
+----
+
+After a request, the following log would appear:
+
+----
+WARN  2021-03-30 14:19:52,862 [[MuleRuntime].uber.04: [test-project-app].example.CPU_LITE @7a3620f2] [processor: example/processors/1; event: 23d22940-917c-11eb-9209-3c22fb13cde7] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+----
+
+In this case, the value `23d22940-917c-11eb-9209-3c22fb13cde7` would be the correlation id. That id is unique for this
+event, so any other log with such correlation id will be referring to the same event.
+
+This could be very useful, for example, to understand the entire history of an event that had some problem, unhandled
+error, etc... Since any error will include the correlation id of the event triggering it. As an example, suppose
+we add to the previous example a `raise-error` component:
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="example">
+	<http:listener config-ref="HTTP_Listener_config" path="/test"/>
+	<set-payload value="some"/>
+	<logger level="WARN" message="#[payload]"/>
+	<raise-error type="APP:SOME"/>
+</flow>
+----
+
+We would get a log like the following:
+
+----
+WARN  2021-03-30 14:27:36,045 [[MuleRuntime].uber.08: [test-project-app].example.CPU_LITE @19afa17] [processor: example/processors/1; event: 37f0f591-917d-11eb-9209-3c22fb13cde7] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+ERROR 2021-03-30 14:27:36,052 [[MuleRuntime].uber.08: [test-project-app].example.CPU_LITE @19afa17] [processor: example/processors/2; event: 37f0f591-917d-11eb-9209-3c22fb13cde7] org.mule.runtime.core.internal.exception.OnErrorPropagateHandler:
+********************************************************************************
+Message               : An error occurred.
+Element               : example/processors/2 @ test-project-app:test-project-app.xml:16
+Element DSL           : <raise-error type="APP:SOME"></raise-error>
+Error type            : APP:SOME
+FlowStack             : at example(example/processors/2 @ test-project-app:test-project-app.xml:16)
+
+  (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
+********************************************************************************
+----
+
+In both cases, the correlation Id logged was `37f0f591-917d-11eb-9209-3c22fb13cde7` (which is also
+different from the one before).
+
+The correlation id is also very helpful while performing a memory analysis of heap dumps.
+
+In the following sections we will explain how to modify correlation id (since 4.4.0).
+In the vast majority of cases you should not need to modify correlation id generation
+or in the middle of an execution. Perform any of this just if you really need to,
+considering the uses cases descripted in each case.
+
+=== Modifying the Correlation ID generation
+
+The runtime has 3 options from where to take the correlation id:
+1. If the source already has a correlation id from the message (e.g. HTTP listener with the `X-CORRELATION-ID` header, or JMS),
+then the runtime will take that as the correlation id of the event.
+2. If the source does not set a correlation id, then the runtime proceeds to generate one.
+
+The default way the runtime generates correlation ids is by generating a java Universally Unique IDentifier (UUID).
+There are some scenarios in which you would prefer using format or standard for the events' correlation ids. For example:
+
+- Your company has its own standard or format for correlation ids.
+- Your external system may differ in correlation id lengths, which would make mule ones incompatible, breaking traceability.
+
+To change how the correlation id generation is performed, you must use the `<configuration>` component, using the
+`correlationIdGeneratorExpression` attribute, setting an expression that generates the correlation id.
+
+[source,xml,linenums]
+----
+<configuration correlationIdGeneratorExpression="#[uuid() replace /-/ with('.')]"/>
+
+<http:listener-config name="HTTP_Listener_config">
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="example">
+	<http:listener config-ref="HTTP_Listener_config" path="/test"/>
+	<set-payload value="some"/>
+	<logger level="WARN" message="#[payload]"/>
+</flow>
+----
+
+In this example, we are modifying the correlation id generation to be generated by an uuid, but
+replacing the dashes (`-`) with dots (`.`), After this execution, the logger will now show:
+
+----
+WARN  2021-03-30 16:46:11,269 [[MuleRuntime].uber.06: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/1; event: b5a95a63.f190.4c91.880a.5b54512fa6b1] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+----
+
+Consider that, since you are setting the generator, you must be careful to define a generator that does
+not lead to create the same correlation id for two different events.
+
+=== Modifying the Correlation ID during flow execution
+
+There are also some use cases for which you would prefer to modify the correlation id of the event for a
+given scope, or set of operations. For example:
+
+- You are processing the results of a DataBase query inside a `foreach` scope, and you would like to correlate
+the event with the register you are processing.
+- You are consuming a JMS message queue and you would like to proceed using the JMS correlation ID for traceability purposes.
+
+
+// We must check this when we get studio support ?
+For these scenarios, you must use the `mule-tracing module`. You will have to add to your application the dependency to said
+module.
+
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-tracing-module</artifactId>
+    <classifier>mule-plugin</classifier>
+    <version>1.0.0</version>
+</dependency>
+----
+
+Now, you can use the `with-correlation-id` scope to modify the correlation id during the execution of the scope.
+As a very simple example:
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+	<http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="example">
+	<http:listener config-ref="HTTP_Listener_config" path="/test"/>
+	<set-payload value="some"/>
+	<logger level="WARN" message="#[payload]"/>
+    <tracing:with-correlation-id correlationId="#[correlationId ++ '-EXAMPLE']">
+        <logger level="WARN" message="#[payload]"/>
+    </tracing:with-correlation-id>
+    <logger level="WARN" message="#[payload]"/>
+</flow>
+----
+
+In this case, the output logs would be:
+----
+WARN  2021-03-30 16:46:11,269 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/1; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+WARN  2021-03-30 16:46:11,271 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/2/processors/0; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee-EXAMPLE] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+WARN  2021-03-30 16:46:11,274 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/3; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+----
+
+Also, we can set the log level for the correlation id modification to debug level,
+to get the modification log:
+
+----
+<AsyncLogger name="org.mule.runtime.module.extension.internal.runtime.operation" level="DEBUG"/>
+----
+
+In this case, after performing the request we would get the following logs:
+
+----
+WARN  2021-03-30 16:46:11,269 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/1; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+DEBUG 2021-03-30 16:58:29,548 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] org.mule.runtime.module.extension.internal.runtime.operation.ImmutableProcessorChildContextChainExecutor: Changing event correlationId from '4c355b30-9192-11eb-b79f-36548d51aeee' to '4c355b30-9192-11eb-b79f-36548d51aeee-EXAMPLE' in location example/processors/2
+WARN  2021-03-30 16:46:11,271 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/2/processors/0; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee-EXAMPLE] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+DEBUG 2021-03-30 16:58:29,566 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] org.mule.runtime.module.extension.internal.runtime.operation.ImmutableProcessorChildContextChainExecutor: Event with correlationId '4c355b30-9192-11eb-b79f-36548d51aeee-EXAMPLE' going back to '4c355b30-9192-11eb-b79f-36548d51aeee' (successful execution) in location example/processors/2
+WARN  2021-03-30 16:46:11,274 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/3; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
+----
+
+// We should add an example querying a database + processing in a foreach + setting the correlation id inside the foreach
