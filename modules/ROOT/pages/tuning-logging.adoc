@@ -1,0 +1,57 @@
+= Logging
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+Mule runtime engine (Mule) 4 uses Log4j 2 asynchronous logging by default, so the logging operation happens in a separate thread from the message processing, and the latter can continue without having to wait for the log operation to complete.
+
+Asynchronous logging poses a performance-reliability trade-off as explained in https://blogs.mulesoft.com/dev/mule-dev/mule-3-6-asynchronous-logging/[Asynchronous Logging Mule], and you may lose some messages if Mule crashes before the logging buffers flush to the disk. In this case, consider that you can have a mixed configuration of asynchronous or synchronous loggers in your app.
+Best practice is to use asynchronous logging over synchronous with a minimum logging level of `WARN` for a production application. In some cases, enable  `INFO` logging level when you need to confirm events such as successful policy installation or to perform troubleshooting.
+
+Configure your logging strategy by editing your application's `src/main/resources/log4j2.xml` file, as shown in the following example:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+   <Appenders>
+       <RollingFile name="file" fileName="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}try-transactional-propagate.log"
+                filePattern="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}try-transactional-propagate-%i.log">
+           <PatternLayout pattern="%-5p %d [%t] [event: %X{correlationId}] %c: %m%n" />
+           <SizeBasedTriggeringPolicy size="10 MB" />
+           <DefaultRolloverStrategy max="10"/>
+       </RollingFile>
+   </Appenders>
+   <Loggers>
+
+       <!-- Http Logger shows wire traffic on DEBUG. -->
+       <!--AsyncLogger name="org.mule.service.http.impl.service.HttpMessageLogger" level="DEBUG" /-->
+       <AsyncLogger name="org.mule.service.http" level="WARN"/>
+       <AsyncLogger name="org.mule.extension.http" level="WARN"/>
+
+   <!-- Mule logger -->
+       <AsyncLogger name="org.mule.runtime.core.internal.processor.LoggerMessageProcessor" level="WARN"/>
+       <AsyncRoot level="WARN">
+           <AppenderRef ref="file" />
+       </AsyncRoot>
+   </Loggers>
+</Configuration>
+----
+
+* Apply caution when logging parts of messages, especially the payload, because this bypasses streaming and causes significant disk I/O for large payloads
+
+* Avoid using the `<async>` scope to log messages
++
+Because the logging mechanism is already implemented asynchronously by the Log4j2 library in the backend, enclosing a logger into the `<async>` scope does not improve parallelism, it increases the resource usage and duplicates the numbers of threads required. Repeatedly using this pattern in an application can cause thread exhaustion, low performance, and back-pressure.
++
+[source,xml,linenums]
+----
+		<async doc:name="Async" doc:description="Don't do this">
+			<logger level="INFO" doc:name="Logger" message="Don't do this" />
+		</async>
+
+		<logger level="INFO" doc:name="Logger" message="Do this"/>
+----
+
+== See Also
+* xref:logging-in-mule.adoc[Logging in Mule]
