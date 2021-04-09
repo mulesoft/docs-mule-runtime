@@ -173,3 +173,23 @@ WARN  2021-03-30 16:58:29,568 [[MuleRuntime].uber.05: [test-project-app].example
 ----
 
 // We should add an example querying a database + processing in a foreach + setting the correlation id inside the foreach
+
+As stated before, a real scenario in which you might want to modify correlation id could be while processing the results of a database query:
+
+image::correlation-id-db.png[width=350]
+
+----
+   <flow name="correlation-id-flow">
+		<db:select config-ref="Database_Config">
+			<db:sql ><![CDATA[SELECT orderId, customerId, total from Orders  ]]></db:sql>
+		</db:select>
+		<foreach >
+			<tracing:with-correlation-id correlationId="#[payload.orderId]">
+				<logger level="INFO" message="#[correlationId]"/>
+				<http:request method="GET" url="http://a-service.com" sendCorrelationId="ALWAYS"/>
+			</tracing:with-correlation-id>
+		</foreach>
+	</flow>
+----
+
+In this case, each record obtained from the DB will be processed within the foreach scope, and the correlation id for each execution will correspond to the `orderId` of said record. This way, if there is a problem in HTTP request operation, this allows to easily track which record was responsible for it.
