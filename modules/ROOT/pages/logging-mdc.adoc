@@ -1,0 +1,112 @@
+= MDC Logging
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: tracing, correlation, id, logging, mdc, variables, anypoint, studio
+
+The idea behind MDC (_Mapped Diagnostic Context_) is to enrich logging to provide more context or information that could be available in the current event, to improve tracking.
+
+In the following example without MDC:
+
+----
+<flow name="exmapleFlow">
+    <http:listener config-ref="httpConfig" path="/modifyLoggingContext" />
+    <logger message="Example"/>
+</flow>
+----
+
+A usual logging output is:
+
+----
+INFO  2021-04-08 16:58:26,869 [[MuleRuntime].uber.15: [test-project-app].exmapleFlow.CPU_LITE @18f679] [processor: exmapleFlow/processors/1; event: b5a95a63.f190.4c91.880a.5b54512fa6b1] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: Example
+----
+
+With the Mule Tracing Module, you can add, remove and clear variables from the Logging Context for a given Mule Event, to enhance your logs. This context will endure for the entire execution of said Event.
+
+Consider the following example:
+----
+<flow name="exmapleFlow">
+    <http:listener config-ref="httpConfig" path="/modifyLoggingContext" />
+    <tracing:set-logging-variable variableName="testVar" value="Hello World!" />
+    <logger message="Example"/>
+</flow>
+----
+
+After executing the flow, the output logs are:
+----
+INFO  2021-04-08 16:58:26,882 [[MuleRuntime].uber.15: [test-project-app].exmapleFlow.CPU_LITE @18f679] [{correlationId=c85e16c0-98a4-11eb-bc34-cac765a2219b, processorPath=exmapleFlow/processors/2, testVar=Hello World!}] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: Example
+----
+
+This logging context will affect any output of a Logger Message Processor, as well as any internal logging produced by the Mule Runtime. Therefore, you could add more context to the event that is being processed in case of needing additional information for tracking down any potential issue (e.g. an unexpected error occurred).
+
+==== Installing and Setting up the Mule Tracking Module
+
+To use the MDC Logging operations, you need to add the Mule Tracing Module to your application.
+
+// Add explanation how to add the module as any other connector
+
+You also have to modify the `log4j.xml` of your application or the entire runtime (in `conf/log4j2.xml`). You will have to modify the pattern layouts from:
+
+----
+<PatternLayout pattern="%-5p %d [%t] [processor: %X{processorPath}; event: %X{correlationId}] %c: %m%n"/>
+----
+
+To this:
+
+----
+<PatternLayout pattern="%-5p %d [%t] [%MDC] %c: %m%n"/>
+----
+
+Changing `[processor: %X{processorPath}; event: %X{correlationId}]` to `[%MDC]`. This will automatically add the MDC context (which includes the correlation id as well as the processor path).
+
+==== Available operations
+
+// This will probably need to be set as a table as in other extensions
+
+* `set-logging-variable`: Sets the value to a logging variable. Attributes: `variableName` and `value` (accepts expression).
+* `remove-logging-variable`: Removes a logging variable. Attribute: `variableName`.
+* `clear-logging-variables`: removes all the logging variables. This will not remove the processor path or correlation id. Attributes: none.
+
+==== Example
+
+Consider the follwing application:
+
+image::mdc-example.png[width=350]
+
+----
+<flow name="logging-variables">
+    <http:listener config-ref="HTTP_Listener_config" path="/order"/>
+    <tracing:set-logging-variable variableName="customerId" value="#[payload.customerId]"/>
+    <tracing:set-logging-variable variableName="requestPath" value='#["$(attributes.method):$(attributes.requestPath)"]'/>
+    <logger level="INFO" message="#[output application/json --- payload]" />
+</flow>
+----
+
+After sending the following request:
+
+----
+curl --location --request GET '0.0.0.0:8081/order' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "orderId": 548102842,
+    "customerId": "ARG-12934",
+    "items": [
+        "CP-123",
+        "CP-452"
+    ]
+}'
+----
+
+The output log is:
+
+----
+INFO  2021-04-09 11:14:38,409 [[MuleRuntime].uber.05: [tracing-module].tracing-moduleFlow.CPU_LITE @34a62707] [processor: tracing-moduleFlow/processors/2; event: eb2b2461-993d-11eb-8a64-4865ee1fd814] {correlationId=eb2b2461-993d-11eb-8a64-4865ee1fd814, customerId=ARG-12934, processorPath=tracing-moduleFlow/processors/2, requestPath=GET:/order} org.mule.runtime.core.internal.processor.LoggerMessageProcessor: {
+    "orderId": 548102842,
+    "customerId": "ARG-12934",
+    "items": [
+        "CP-123",
+        "CP-452"
+    ]
+}
+----
+
