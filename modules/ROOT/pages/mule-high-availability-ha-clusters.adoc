@@ -91,28 +91,42 @@ You must use *XA transactions* to move messages between dissimilar transports th
 
 == Cluster Support for Transports
 
-All Mule transports are supported within a cluster. Because of differences in the way different transports access inbound traffic, the details of this support vary. In general, outbound traffic acts the same way inside and outside a cluster – the differences are highlighted below.
+All Mule transports are supported within a cluster. Because of differences in the way different transports access inbound traffic, the details of this support vary. In general, outbound traffic acts the same way inside and outside a cluster. Mule runtimes support three basic types of transports:
 
-Mule runtimes support three basic types of transports:
+=== Socket-based Transports
+Socket-based transports read input sent to network sockets that Mule owns. Examples include TCP, UDP, and HTTP[S].
 
-* Socket-based transports read input sent to network sockets that Mule owns. Examples include TCP, UDP, and HTTP[S].
-* listener-based transports read data using a protocol that fully supports concurrent multiple accessors. Examples include JMS and VM.
-* resource-based transports read data from a resource that allows multiple concurrent accessors, but does not natively coordinate their use of the resource. For instance, suppose multiple programs are processing files in the same shared directory by reading, processing, and then deleting the files. These programs must use an explicit, application-level locking strategy to prevent the same file from being processed more than once. Examples of resource-based transports include File, FTP, SFTP, E-mail, and JDBC.
+Socket-based transports are supported in clusters as described below:
 
-All three basic types of transports are supported in clusters in different ways, as described below.
+* Since each clustered Mule runtime runs on a different network node, each instance receives only the socket-based traffic sent to its node. Incoming socket-based traffic should be <<Clustering and Load Balancing>> to distribute it among the clustered instances.
+* Output to socket-based transports is written to a specific host/port combination. If the host/port combination is an external host, no special considerations apply. If it is a port on the local host, consider using that port on the load balancer instead to better distribute traffic among the cluster.
 
-* Socket-based
-** Since each clustered Mule runtime runs on a different network node, each instance receives only the socket-based traffic sent to its node. Incoming socket-based traffic should be <<Clustering and Load Balancing>> to distribute it among the clustered instances.
-** Output to socket-based transports is written to a specific host/port combination. If the host/port combination is an external host, no special considerations apply. If it is a port on the local host, consider using that port on the load balancer instead to better distribute traffic among the cluster.
-* Listener-based
-** Listener-based transports fully support multiple readers and writers. No special considerations apply either to input or to output.
-** Note that, in a cluster, VM transport queues are a shared, cluster-wide resource. The cluster will automatically synchronize access to the VM transport queues. Because of this, a message written to a VM queue can be processed by any cluster node. This makes VM ideal for sharing work among cluster nodes.
-* Resource-based
-** Mule HA Clustering automatically coordinates access to each resource, ensuring that only one clustered instance accesses each resource at a time. Because of this, it is generally a good idea to immediately write messages read from a resource-based transport to VM queues. This allows the other cluster nodes to take part in processing the messages.
-** There are no special considerations in writing to resource-based clustered transports:
-*** When writing to file-based transports (File, FTP, SFTP), Mule will generate unique file names.
-*** When writing to JDBC, Mule can generate unique keys.
-*** Writing e-mail is effectively listener-based rather than resource-based.
+=== Listener-based Transports
+Listener-based transports read data using a protocol that fully supports concurrent multiple accessors. Examples include JMS and VM.
+
+Listener-based transports are supported in clusters as described below:
+
+* Listener-based transports fully support multiple readers and writers. No special considerations apply either to input or to output.
+* Note that, in a cluster, VM transport queues are a shared, cluster-wide resource. The cluster will automatically synchronize access to the VM transport queues. Because of this, a message written to a VM queue can be processed by any cluster node. This makes VM ideal for sharing work among cluster nodes.
+
+=== Resource-based Transports
+Resource-based transports read data from a resource that allows multiple concurrent accessors, but does not natively coordinate their use of the resource. Examples of resource-based transports include File, FTP, SFTP, E-mail, and JDBC.
+
+Resource-based transports are supported in clusters as described below:
+
+* Mule HA Clustering automatically coordinates access to each resource only for nodes within the cluster, ensuring that only one clustered instance accesses each resource at a time. Because of this, it is generally a good idea to immediately write messages read from a resource-based transport to VM queues. This allows the other cluster nodes to take part in processing the messages.
++
+[NOTE]
+====
+If you run other applications (either Mule applications outside the cluster or non-Mule applications) that access the same resources as the nodes in the cluster, you must implement logic to lock those resources.
+
+For example, if multiple programs are processing files in the same shared directory by reading, modifying, and then deleting the files. These programs must use an explicit, application-level locking strategy to prevent the same file from being processed more than once.
+====
+
+* There are no special considerations in writing to resource-based clustered transports:
+** When writing to file-based transports (File, FTP, SFTP), Mule will generate unique file names.
+** When writing to JDBC, Mule can generate unique keys.
+** Writing e-mail is effectively listener-based rather than resource-based.
 
 == Clustering and Reliable Applications
 
@@ -165,7 +179,7 @@ There are also many hardware load balancers that can route both TCP and HTTP(S) 
 == Clustering for High Performance
 
 [NOTE]
-High performance is implemented differently on xref:runtime-manager::index.adoc[CloudHub] and xref:runtime-manager::deploying-to-pcf.adoc[Pivotal Cloud Foundry], so this section applies only for xref:runtime-manager::deploying-to-your-own-servers.adoc[on-premises deployments].
+High performance is implemented differently on xref:runtime-manager::index.adoc[CloudHub], so this section applies only for xref:runtime-manager::deploying-to-your-own-servers.adoc[on-premises deployments].
 
 If high performance is your primary goal (rather than reliability), you can configure a Mule cluster or an individual application for maximum performance using a *performance profile*. By implementing the performance profile for specific applications within a cluster, you can maximize the scalability of your deployments while deploying applications with different performance and reliability requirements in the same cluster. By implementing the performance profile at the container level, you apply it to all applications within that container. Application-level configuration overrides container-level configuration.
 
@@ -214,10 +228,6 @@ In cases of high load with endpoints that do not support load balancing, applyin
 You can also choose to define a minimum number of machines required in a cluster for it to remain in an operational state. This grants you a consistency improvement. Find more information in our xref:creating-and-managing-a-cluster-manually.adoc#quorum-management[quorum management section].
 
 
-== HA Cluster Demo
-
-To evaluate Mule's HA clustering capabilities first-hand, continue on to the xref:evaluating-mule-high-availability-clusters-demo.adoc[Mule HA Demo]. Designed to help new users evaluate the capabilities of Mule High Availability Clusters, the Mule HA Demo Bundle teaches you how to use the Mule Management Console to create a cluster of Mule runtimes, then deploy an application to run on the cluster. Further, this demo simulates two processing scenarios that illustrate the cluster’s ability to automatically balance normal processing load, and its ability to reliably remain active in a failover situation.
-
 == Best Practices
 
 There are a number of recommended practices related to clustering. These include:
@@ -233,7 +243,7 @@ There are a number of recommended practices related to clustering. These include
 == Prerequisites and Limitations
 
 * To date, MuleSoft has only tested eight node clusters. If you plan to scale beyond eight nodes.
-If you plan to use many nodes in your cluster, or you plan to store large message payloads, it is recommended that you research Hazelcast cluster scaling in the https://hazelcast.org/documentation/[Hazelcast documentation], or to contact http://support.mulesoft.com[MuleSoft Support]
+If you plan to use many nodes in your cluster, or you plan to store large message payloads, research Hazelcast cluster scaling in the https://hazelcast.org/documentation/[Hazelcast documentation] or contact https://help.mulesoft.com[MuleSoft Support].
 // COMBAK: Comenting this out per JIRA SE-6162.
 // If you need more nodes than eight, contact https://www.mulesoft.com/support-and-services/mule-esb-support-license-subscription[MuleSoft Support].
 * You must have at least two Mule runtimes in a cluster, each of which should run on different physical (or virtual) machines.
