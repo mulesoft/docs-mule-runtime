@@ -1,0 +1,234 @@
+= eval
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+
+
+[[eval1]]
+== eval&#40;fileToExecute: String, fs: Dictionary<String&#62;, readerInputs: Dictionary<ReaderInput&#62; = {}, inputValues: Dictionary<Any&#62; = {}, configuration: RuntimeExecutionConfiguration = {}&#41;: EvalSuccess &#124; ExecutionFailure
+
+*EXPERIMENTAL*
+
+Evaluates a given script with the specified context and returns the result of that evaluation
+
+
+=== Parameters
+
+[%header, cols="1,3"]
+|===
+| Name   | Description
+| fileToExecute | The name of the file to execute
+| fs | An Object with the files
+| readerInputs | The reader inputs to bind
+| inputValues | Additional literal values to bind
+| configuration | Runtime configuration
+|===
+
+=== Example
+
+This example shows how the `eval` behaves under different inputs.
+
+==== Source
+
+[source,DataWeave,linenums]
+----
+%dw 2.0
+
+ import * from dw::Runtime
+
+ var jsonValue = {
+   value: '{"name": "Mariano"}' as Binary {encoding: "UTF-8"},
+   encoding: "UTF-8",
+   properties: {},
+   mimeType: "application/json"
+ }
+
+ var jsonValue2 = {
+   value: '{"name": "Mariano", "lastName": "achaval"}' as Binary {encoding: "UTF-8"},
+   encoding: "UTF-8",
+   properties: {},
+   mimeType: "application/json"
+ }
+
+ var invalidJsonValue = {
+   value: '{"name": "Mariano' as Binary {encoding: "UTF-8"},
+   encoding: "UTF-8",
+   properties: {},
+   mimeType: "application/json"
+ }
+
+
+
+
+ var Utils = "fun sum(a,b) = a +b"
+ output application/json
+ ---
+ {
+   "execute_ok" : run("main.dwl", {"main.dwl": "{a: 1}"}, {"payload": jsonValue }),
+   "logs" : do {
+     var execResult = run("main.dwl", {"main.dwl": "{a: log(1)}"}, {"payload": jsonValue })
+     ---
+     {
+         m: execResult.logs.message,
+         l: execResult.logs.level
+     }
+   },
+   "grant" : eval("main.dwl", {"main.dwl": "{a: readUrl(`http://google.com`)}"}, {"payload": jsonValue }, {},{ securityManager: (grant, args) -> false }),
+   "library" : eval("main.dwl", {"main.dwl": "Utils::sum(1,2)", "/Utils.dwl": Utils }, {"payload": jsonValue }),
+   "timeout" : eval("main.dwl", {"main.dwl": "(1 to 1000000000000) map \$ + 1" }, {"payload": jsonValue }, {},{timeOut: 2}).success,
+   "execFail" : eval("main.dwl", {"main.dwl": "dw::Runtime::fail('My Bad')" }, {"payload": jsonValue }),
+   "parseFail" : eval("main.dwl", {"main.dwl": "(1 + " }, {"payload": jsonValue }),
+   "writerFail" : eval("main.dwl", {"main.dwl": "output application/xml --- 2" }, {"payload": jsonValue }),
+   "defaultOutput" : eval("main.dwl", {"main.dwl": "payload" }, {"payload": jsonValue2}, {},{outputMimeType: "application/csv", writerProperties: {"separator": "|"}}),
+   "onExceptionFail": do  {
+     dw::Runtime::try( () ->
+         eval("main.dwl", {"main.dwl": "dw::Runtime::fail('Failing Test')" }, {"payload": jsonValue2}, {},{onException: "FAIL"})
+     ).success
+   },
+   "customLogger":
+        eval(
+  "main.dwl",
+           {"main.dwl": "log(1234)" },
+   {"payload": jsonValue2},
+    {},
+   {
+                  loggerService: {
+                     initialize: () -> {token: "123"},
+                     log: (level, msg, context) -> log("$(level) $(msg)", context)
+                  }
+                }
+           )
+ }
+
+
+----
+
+==== Output
+
+[source,Json,linenums]
+----
+{
+  "execute_ok": {
+    "success": true,
+    "value": "{\n  a: 1\n}",
+    "mimeType": "application/dw",
+    "encoding": "UTF-8",
+    "logs": [
+
+    ]
+  },
+  "logs": {
+    "m": [
+      "1"
+    ],
+    "l": [
+      "INFO"
+    ]
+  },
+  "grant": {
+    "success": false,
+    "message": "The given required permissions: `Resource` are not being granted for this execution.\nTrace:\n  at readUrl (Unknown)\n  at main::main (line: 1, column: 5)",
+    "location": {
+      "start": {
+        "index": 0,
+        "line": 0,
+        "column": 0
+      },
+      "end": {
+        "index": 0,
+        "line": 0,
+        "column": 0
+      },
+      "content": "Unknown location"
+    },
+    "stack": [
+      "readUrl (anonymous:0:0)",
+      "main (main:1:5)"
+    ],
+    "logs": [
+
+    ]
+  },
+  "library": {
+    "success": true,
+    "value": 3,
+    "logs": [
+
+    ]
+  },
+  "timeout": true,
+  "execFail": {
+    "success": false,
+    "message": "My Bad\nTrace:\n  at fail (Unknown)\n  at main::main (line: 1, column: 1)",
+    "location": {
+      "start": {
+        "index": 0,
+        "line": 0,
+        "column": 0
+      },
+      "end": {
+        "index": 0,
+        "line": 0,
+        "column": 0
+      },
+      "content": "Unknown location"
+    },
+    "stack": [
+      "fail (anonymous:0:0)",
+      "main (main:1:1)"
+    ],
+    "logs": [
+
+    ]
+  },
+  "parseFail": {
+    "success": false,
+    "message": "Invalid input \"1 + \", expected parameter or parenEnd (line 1, column 2):\n\n\n1| (1 + \n    ^^^^\nLocation:\nmain (line: 1, column:2)",
+    "location": {
+      "start": {
+        "index": 0,
+        "line": 1,
+        "column": 2
+      },
+      "end": {
+        "index": 4,
+        "line": 1,
+        "column": 6
+      },
+      "content": "\n1| (1 + \n    ^^^^"
+    },
+    "logs": [
+
+    ]
+  },
+  "writerFail": {
+    "success": true,
+    "value": 2,
+    "logs": [
+
+    ]
+  },
+  "defaultOutput": {
+    "success": true,
+    "value": {
+      "name": "Mariano",
+      "lastName": "achaval"
+    },
+    "logs": [
+
+    ]
+  },
+  "onExceptionFail": false,
+  "customLogger": {
+    "success": true,
+    "value": 1234,
+    "logs": [
+
+    ]
+  }
+}
+
+
+----
+
