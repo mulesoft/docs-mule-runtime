@@ -172,8 +172,6 @@ DEBUG 2021-03-30 16:58:29,566 [[MuleRuntime].uber.05: [test-project-app].example
 WARN  2021-03-30 16:58:29,568 [[MuleRuntime].uber.05: [test-project-app].example.CPU_LITE @6d3b5ad] [processor: example/processors/3; event: bad0e5b0-9191-11eb-a0b3-36548d51aeee] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: some
 ----
 
-// We should add an example querying a database + processing in a foreach + setting the correlation id inside the foreach
-
 As stated before, a real scenario in which you might want to modify correlation id could be while processing the results of a database query:
 
 image::correlation-id-db.png[width=350]
@@ -193,3 +191,41 @@ image::correlation-id-db.png[width=350]
 ----
 
 In this case, each record obtained from the DB will be processed within the foreach scope, and the correlation id for each execution will correspond to the `orderId` of said record. This way, if there is a problem in HTTP request operation, this allows to easily track which record was responsible for it.
+
+==== Correlation ID Scope and Error Handling
+
+In case of an error, the correlation id within the error handler will be the same to the one corresponding to the beginning of the Flow / Try scope to which this error handler is related to. For example: 
+
+----
+<flow name="example">
+    <tracing:with-correlation-id correlationId="#[correlationId ++ '-EXAMPLE']">
+        <raise-error type="APP:SOME"/>
+    </tracing:with-correlation-id>
+    <error-handler>
+        <on-error-continue>
+		<logger message="#[correlationId]"/>
+	</on-error-continue>
+    </error-handler>
+</flow>
+----
+
+In this scenario, the correlation Id logged will be the original one at the start of the flow, since after the error is raised the execution of the correlation id scope is finished. 
+
+On the contrary, in this example: 
+
+----
+<flow name="example">
+    <tracing:with-correlation-id correlationId="#[correlationId ++ '-EXAMPLE']">
+        <try>
+            <raise-error type="APP:SOME"/>
+	    <error-handler>
+                <on-error-continue>
+		        <logger message="#[correlationId]"/>
+                </on-error-continue>
+            </error-handler>
+	</try>
+    </tracing:with-correlation-id>
+</flow>
+----
+
+Now the correaltion id to be logged is the correlation ID set by the correlation id scope (i.e. with the "-EXAMPLE" suffix). This is because the error handling is still executing within the correlation id scope. 
