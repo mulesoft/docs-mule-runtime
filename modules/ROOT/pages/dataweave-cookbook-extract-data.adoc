@@ -117,24 +117,19 @@ length (`.^contentLength`), encoding (`.^encoding`), MIME type (`.^mimeType`),
 media type (`.^mediaType`), raw  (`.^raw`), and custom (`.^myCustomMetadata`)
 metadata. For details, see <<metadata_selector>>.
 
-== Valid Keys
+== Key and Selector Syntax
 
-To be valid, a key name in a DataWeave object must start with a letter that is
-optionally followed by any combination of numbers, letters, or underscores
-(`&#95;`).
+In DataWeave, quotes around the name of an object's key are required in some cases but optional in others. Though a key is not an identifier, if the key name meets the criteria of a xref:dataweave-language-introduction#valid-identifiers[valid identifier name], quotes around the key are optional. If the key does not meet this criteria, you _must_ surround the key in quotes. For example, to correct the key syntax in `{ some-name : "somebody" }`, you can use `{ "some-name" : "somebody" }` or `{ 'some-name' : "somebody" }`. Without quotes, the key in `{ some-name : "somebody" }` produces the error `Invalid input '-', expected Namespace`.
 
-* Quotation marks around a valid key and selector are _optional_, so all of
-these examples work:
-** `{"name" : "somebody"}.name`
-** `{"name" : "somebody"}."name"`
-** `{name : "somebody"}.name`
-** `{name : "somebody"}."name"`
+If you are using a selector on a key that requires quotes, you must also surround the selector in quotes. For example, the selector `"some-name"` in `{ "some-name" : "somebody" }."some-name"` works, but the selector `some-name` in `{ "some-name" : "somebody" }.some-name` produces the error `Unable to resolve reference of: name` because the selector is not surrounded in quotes.
 
-* For _invalid_ keys, you must surround the key and selector in single-quotes
-or double-quotes. For example, for an invalid key like `some-name`,
-`{ "some-name" : "somebody" }."some-name"` works, but
-`{ some-name : "somebody" }.some-name` produces the error `Invalid input '-'`.
-Both the key and the selector require the quotation marks.
+Quotes around a selector are optional if you are using a selector on a key that does not require the quotes. For example, all of these examples work:
+
+* `{"name" : "somebody"}.name`
+* `{"name" : "somebody"}."name"`
+* `{name : "somebody"}.name`
+* `{name : "somebody"}."name"`
+
 
 [[single_value]]
 == Single-Value Selector (.myKey)
@@ -1100,6 +1095,48 @@ INFO  2019-04-22 14:10:14,540 [[MuleRuntime].cpuLight.08:
  org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
  { "myRawData": "5403e5a202c594871d59898b13054be5" }
 ----
+
+
+The following example uses the HTTP Listener source (`listener`) to get the XML payload received via a POST request, then uses the Transform Message component (`ee:transform`) to get the encoding value of the XML payload, by returning the raw data (`(payload.^raw as String) scan /encoding='([A-z0-9-]+)'/)`). The Logger component (`logger`) returns the `payload` in a JAVA format.
+
+//STUDIO FLOW: MANUAL TESTING REQUIRED
+.Mule App XML in Anypoint Studio:
+[source,XML,linenums]
+----
+<http:listener-config name="HTTP_Listener_config" >
+    <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+<flow name="test-flow">
+	<http:listener path="/test" config-ref="HTTP_Listener_config"/>
+	<ee:transform>
+		<ee:message>
+		<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+((payload.^raw as String) scan /encoding='([A-z0-9-]+)'/)[0][1]]]></ee:set-payload>
+		</ee:message>
+	</ee:transform>
+	<logger level="INFO" message="#[payload]"/>
+</flow>
+----
+
+Using your preferred REST client or API testing tool, send a POST request with the XML body:
+[source,XML,linenums]
+----
+<?xml version='1.0' encoding='ISO-8859-1'?>
+<test>
+</test>
+----
+
+The Logger message returns the extracted encoding value `ISO-8859-1`:
+
+//STUDIO CONSOLE OUTPUT: MANUAL TESTING REQUIRED
+.Console Output in Anypoint Studio:
+[source,txt,linenums]
+----
+INFO  2021-05-12 12:25:41,618 [[MuleRuntime].uber.03: [xmlmodule].Flow.CPU_INTENSIVE @de48fc8] [processor: Flow/processors/2; event: 4fe7f6a0-b336-11eb-909c-f01898ad2638] org.mule.runtime.core.internal.processor.LoggerMessageProcessor: ISO-8859-1
+----
+
 
 [[caret_custom_metadata]]
 === Custom Metadata Selector (.^myCustomMetadata)
