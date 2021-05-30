@@ -388,37 +388,56 @@ DataWeave supports the `update` operator, which enables you to update specified 
 
 _Introduced in DataWeave 2.3.0. Supported by Mule 4.3 and later._
 
-The following example shows use of the `update` operator, assume that you receive the next object as input:
-[source,json,linenums]
+Before Mule 4.3, the following syntax is necessary to increase the `age` value by one without using the `update` operator or recreating the `Object` value of `myInput`:
+
+[source,weave,linenums]
 ----
-{
+%dw 2.0
+var myInput = {
     "name": "Ken",
     "lastName":"Shokida",
     "age": 30
 }
-----
-
-Prior to Mule 4.3, to increase the age value by one without using the `update` operator or recreating the object again, the way to accomplish this was using the following DataWeave syntax:
-
-[source,weave,linenums]
-----
-payload mapObject ((value,key) ->
+output application/json
+---
+myInput mapObject ((value,key) ->
     if(key as String == "age")
        {(key): value as Number + 1}
     else
        {(key): value} )
 ----
 
-Using the `update` operator it is simplified to:
+In Mule 4.3 and later, the `update` operator is available to simplify the syntax:
 
 [source,weave,linenums]
 ----
-payload update {
+%dw 2.0
+var myInput = {
+    "name": "Ken",
+    "lastName":"Shokida",
+    "age": 30
+}
+output application/json
+---
+myInput update {
     case age at .age -> age + 1
 }
 ----
 
-As shown in the previous example with the `update` operator there is no need for casting or going through all the key value pairs. The update syntax is as follows:
+Both DataWeave scripts return the same result:
+
+[source,JSON,linenums]
+----
+{
+  "name": "Ken",
+  "lastName": "Shokida",
+  "age": 31
+}
+----
+
+As the `update` example shows, casting or iterating through all the key-value pairs is not necessary. 
+
+The `update` syntax is as follows:
 
 [source,weave,linenums]
 ----
@@ -428,16 +447,16 @@ As shown in the previous example with the `update` operator there is no need for
 }
 ----
 
-* `value_to_update` represents the original value that is going to be updated.
-* `update_expression` is the selector expression that is going to match a given value of the `value_to_update`
-* `variable_name` is the name of the variable that is going to bind to the matched `update_expression` existing value.
+* `value_to_update` represents the original value to update.
+* `update_expression` is the selector expression that matches a value in the `value_to_update`. 
+* `variable_name` is the name of the variable to bind to the matched `update_expression` value.
 * `new_value` is the expression with the new value.
-* `[if(<conditional_expression>)]?` If `conditional_expression` is true then the value is update. This section is optional and only required for Optional update.
-* `[!]` marks the selector as an upsert. When marking the expression with `!` if the expression doesn't match anything, the `update` operator creates all the required elements and inserts the new value.
+* `[if(<conditional_expression>)]?` If the `conditional_expression` returns `true`, the script updates the value. This condition is required only for an optional update.
+* `[!]` marks the selector as an upsert. If the expression doesn't match anything, marking an expression with `!` makes the `update` operator create all the required elements and insert the new value.
 * `update_expression` supports multiple `case` expressions.
 
 [NOTE]
-The `update` operator doesn't mutate the existing value but rather create a new one with the updated expressions.
+The `update` operator doesn't mutate the existing value. Instead, the operator creates a new value with the updated expressions.
 
 === Selector Expressions
 
@@ -445,14 +464,15 @@ Use selector expressions with the `update` operator to specify the fields to upd
 
 ==== Value Selector
 
-This matching selector allows to match any field value of a given object.
+This matching selector can check for matches to any value within an object.
 
 The following example updates a field at the root level and a field in a nested level using the value selector:
 
-.Input
-[source,json,linenums]
+.Source
+[source,weave,linenums]
 ----
-{
+%dw 2.0
+var myInput = {
     "name": "Ken",
     "lastName":"Shokida",
     "age": 30,
@@ -461,15 +481,9 @@ The following example updates a field at the root level and a field in a nested 
         "zipCode": "AB1234"
     }
 }
-----
-
-.Source
-[source,weave,linenums]
-----
-%dw 2.0
 output application/json
 ---
-payload update {
+myInput update {
     case age at .age -> age + 1
     case s at .address.street -> "First Street"
 }
@@ -653,24 +667,19 @@ payload map ((user) ->
 
 === Upserting
 
-The `update` operator enables you to insert a field if it is not present by using the `!` symbol at the end of the selector expression. When the field is not present the value `null` is going to be bound to the variable. 
+The `update` operator enables you to insert a field that is not present already by using the `!` symbol at the end of the selector expression. When the field is not present, the operator binds a `null` value to the variable. 
 
-The following example updates the category based on the name of the user:
-
-.Input
-[source,json,linenums]
-----
-[{"lastName": "Doe"}, {"lastName": "Parker", "name": "Peter" }]
-----
+The following example appends the specified key-value pair to the first object in the `myInput` array:
 
 .Source
 [source,weave,linenums]
 ----
 %dw 2.0
+var myInput = [{"lastName": "Doe"}, {"lastName": "Parker", "name": "Peter" }]
 output application/json
 ---
-payload  map ((user) ->
-    user update {
+myInput  map ((value) ->
+    value update {
         case name at .name! -> if(name == null) "JOHN" else upper(name)
     }
 )
