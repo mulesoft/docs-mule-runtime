@@ -89,3 +89,50 @@ You can find information on using a variable with any enricher listed on these p
 * xref:non-mel-expressions-configuration-reference.adoc[Default enrichers] are loaded at runtime
 * Schema documentation for the http://www.mulesoft.org/docs/site/current/schemadocs/schemas/mule_xsd/elements/enricher.html[enricher element]
 * API documents for https://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/enricher/MessageEnricher.html[org.mule.core.enricher.MessageEnricher]
+
+== Mule XML Example
+
+The Mule flow in the following example shows how to use a Message Enricher (`<enricher/>`) to modify content of a Mule variable. It uses Set Variable to set the initial value of the Mule variable called `greeting`. It also shows how to use Set Variable and Transform Message to enrich the value of `greeting` and how to pass the value of the Mule variable to the payload. In addition, it demonstrates differences between the scope of a payload and variable that are defined or modified within the scope of the Processor Chain.
+
+[source,xml]
+----
+<http:listener-config name="HTTP_Listener_Config" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="enrich-message">
+	<http:listener config-ref="HTTP_Listener_Config" path="/hello" doc:name="HTTP"/> <!--1-->
+	<set-variable variableName="greeting" value="Hello" doc:name="Set Outer Variable"/> <!--2-->
+	<logger message="#['Initial Greeting: ' + flowVars.greeting]" level="INFO" doc:name="Log Initial Greeting"/> <!--3-->
+	<enricher target="#[flowVars.greeting]" source="#[flowVars.greeting + '!!!']" doc:name="Message Enricher"> <!--4-->
+		<processor-chain doc:name="Processor Chain"> <!--5-->
+			<set-variable variableName="greeting" value="#[flowVars.greeting + ' World']" doc:name="Set Inner Variable"/> <!--6-->
+			<dw:transform-message doc:name="Transform Message: Change greeting Variable"> <!--7-->
+			   <dw:input-payload mimeType="application/java" /> <!--8-->
+				<dw:set-variable variableName="greeting">
+           <![CDATA[%dw 1.0
+%output application/java
+---
+"Oh, " ++ flowVars.greeting ++ " Traveler"]]></dw:set-variable>
+			</dw:transform-message>
+			<set-payload value="#['some arbitrary payload']" doc:name="Set Inner Payload"/> <!--9-->
+      <logger message="#[payload]" level="INFO" doc:name="Log Inner Payload"/> <!--10-->
+		</processor-chain>
+	</enricher>
+	<logger message="#[payload]" level="INFO" doc:name="Log Payload (null)"/> <!--11-->
+	<logger message="Final greeting value: [#[flowVars.greeting]]" level="INFO" doc:name="Log Outer Variable"/> <!--12-->
+	<set-payload value="#[flowVars.greeting]" doc:name="Set Payload (to value of greeting variable)"/> <!--13-->
+	<logger message="#[payload]" level="INFO" doc:name="Log Final Payload"/> <!--14-->
+</flow>
+----
+<1> HTTP listener is configured to trigger the flow with `localhost:8081/hello`.
+<2> Set Variable sets the initial value of the outer `greeting` variable to `"Hello"`.
+<3> Logger prints a message with the value of the outer `greeting` variable, `Initial Greeting: Hello`.
+<4> Message Enricher adds exclamation points to `greeting` by setting `source` to `#[flowVars.greeting + '!!!']`.
+<5> Components within Processor Chain modify `greeting` and set an arbitrary payload value.
+<6> Within the Processor Chain component, Set Variable creates a 'greeting' variable that appends a string to the original 'greeting' variable: `flowVars.greeting + ' World'`.
+<7> Transform Message adds text around the inner 'greeting' variable: `'Oh, ' + greeting + ' Traveler'`.
+<8> Transform Message also adds a MIME type for the input payload, which avoids the message `MimeType was not resolved '*/*' delegating to Java.`
+<9> Set Payload sets an arbitrary payload value, `some arbitrary payload`, which applies within the context of the enricher. Unlike a Mule variable, the scope of this Mule payload is limited to the Processor Chain.
+<10> Logger within Processor Chain prints a message with the inner payload: `some arbitrary payload`.
+<11> Logger outside the scope of Processor Chain prints a message with the value of the _outer_ payload, `null`.
+<12> Logger prints a message that includes the final `greeting` variable, `Oh, Hello World Traveler!!!`. The full message is `'Final greeting value: [Oh, Hello World Traveler!!!]'` because the `message` field is set to `"'Final greeting value: [#[flowVars.greeting]]'"`.
+<13> Set Payload uses `#[flowVars.greeting]` to set the value of the final `greeting` variable (`Oh, Hello World Traveler!!!`) as the payload.
+<14> Logger prints the final payload, `Value of payload: Oh, Hello World Traveler!!!`.
