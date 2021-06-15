@@ -3,7 +3,7 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-This DataWeave example uses the `map` function to return the country code and calling code stored in a CSV file to the specified input phone numbers.
+This DataWeave example uses the `filter` function to return the country code stored in a CSV file to the specified input phone numbers.
 //LINK TO DW 1.0 EXAMPLES:
 include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
 
@@ -12,8 +12,8 @@ Given the following JSON input phone numbers as the payload:
 [source,JSON,linenums]
 ----
 [
-   "54112724555",
-   "16298765432"
+   "54-112724555",
+   "1-6298765432"
 ]
 ----
 
@@ -39,7 +39,7 @@ CALLING_CODE,COUNTRY_CODE
 .,.
 ----
 
-The following DataWeave script reads the input payload phone numbers, and uses the function `lookupCountrCode` to search the country code and calling code in the variable `country_code` Subsequently, uses the `map` function to match the country code and calling code to the phone number, and returns the filtered results in an array of JSON objects:
+The following DataWeave script reads the input payload phone numbers, and uses the function `lookupCountryCode` to search the country code in the variable `country_code` Subsequently, uses the `filter` function to match the country code to the phone number, and returns the filtered results in an array of JSON objects:
 
 //MANUAL TESTING REQUIRED FOR NOW (NEED TO TEST WITH XLSX FILE)
 .DataWeave Script:
@@ -48,18 +48,13 @@ The following DataWeave script reads the input payload phone numbers, and uses t
 %dw 2.0
 output application/json
 
-var codeByCode = vars.country_code groupBy ((item, index) -> item.CALLING_CODE)
-/**
-* Returns the country code or null if not found
-*/
-fun lookupCountrCode(phoneNumber:String): String | Null =
-    //map the each sub part to a country code or null
-    (0 to 6 map ((index) ->  codeByCode[phoneNumber[0 to index]])
-            //Filter non null and take the first this will return null if the array is empty
-            filter ((item, index) -> item != null))[0]
-
+fun lookupCountryCode(phoneNumber: String): String = do {
+    var callingCode = (phoneNumber splitBy("-"))[0]
+    --- 
+    (vars.country_code filter ((item, index) -> item.CALLING_CODE == callingCode) map ((item, index) -> item.COUNTRY_CODE))[0]
+}
 ---
-payload map ((item, index) -> lookupCountrCode(item))
+payload map ((item, index) -> { phone: item, countryCode: lookupCountryCode(item)})
 ----
 
 //MANUAL TESTING REQUIRED (FOR NOW)
@@ -67,18 +62,14 @@ payload map ((item, index) -> lookupCountrCode(item))
 [source,JSON,linenums]
 ----
 [
-  [
-    {
-      "CALLING_CODE": "54",
-      "COUNTRY_CODE": "ARG"
-    }
-  ],
-  [
-    {
-      "CALLING_CODE": "1",
-      "COUNTRY_CODE": "US"
-    }
-  ]
+  {
+    "phone": "54-112724555",
+    "countryCode": "AR"
+  },
+  {
+    "phone": "1-6298765432",
+    "countryCode": "US"
+  }
 ]
 ----
 
