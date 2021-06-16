@@ -1,0 +1,134 @@
+= Read and Write a Flat File
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, xml, json, dataweave, data weave, datamapper, dwl, dfl, dw, flat file
+
+The following DataWeave examples show you how to read the contents of a flat file, and also how to write a flat file following the specified schema.
+
+When you work with flat files, configure the flat file schema to use either for the write or read operations. The flat file schema defines the structure of a flat file, and this enables Mule to write and read in said format.
+
+== Example of Reading a Flat File
+
+The following example application consists of:
+
+. A Scheduler component that triggers the flow.
+. A File Read operation that reads a flat file from the specified path.
+. A Transform component that transforms the content read from the flat file to JSON format.
+. A Logger component that outputs the current payload.
+
+image:mruntime-read-flat-file.png[Example Mule application]
+
+.Application XML File
+[source,xml,linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+  <file:config name="File_Config" doc:name="File Config" />
+  <configuration-properties doc:name="Configuration properties" file="flatfileconfig.properties" />
+  <flow name="ReadFlatfileFlow" >
+    <scheduler doc:name="Scheduler">
+      <scheduling-strategy>
+        <fixed-frequency frequency="10000" />
+      </scheduling-strategy>
+    </scheduler>
+    <file:read doc:name="Read flat file" config-ref="File_Config"
+    path="${fileReadPath}"
+    outputMimeType='application/flatfile; schemapath=${schemaPath}'/> //<1>
+    <ee:transform doc:name="Transform to JSON"  >
+      <ee:message >
+        <ee:set-payload ><![CDATA[%dw 2.0
+        output application/json
+        ---
+        payload]]>
+        </ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <logger level="INFO" doc:name="Logger" message='#[payload]' />
+  </flow>
+</mule>
+----
+
+<1> Note that the File Read operation configures the following attributes:
++
+* `path`: The path of the file to read.
+* `outputMimeType`: The output MIME type of the content, in this case `application/flatfile`.
+* `schemapath`: Reader property that specifies the path to the flat file schema. (`.ffs` file).
+
+//link to exchange
+
+== Example of Writing a Flat File
+
+The following example application contains:
+
+. A Scheduler component that triggers the flow.
+. A Set Payload component that sets a JSON object as the payload.
+. A Transform component that transforms a JSON payload to the specified flat file format.
+. A Logger component that outputs the current payload.
+. A File Write operation that outputs the payload to a flat file in the specified target path.
+
+image:mruntime-write-flat-file.png[Example Mule application]
+
+Application XML File
+[source,xml,linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+  <file:config name="File_Config" doc:name="File Config" />
+  <configuration-properties doc:name="Configuration properties" file="flatfileconfig.properties" /> //<1>
+  <flow name="WriteFlatFile" >
+    <scheduler doc:name="Scheduler" >
+    	<scheduling-strategy >
+        <fixed-frequency frequency="10000" />
+    	</scheduling-strategy>
+    </scheduler>
+    <set-payload value='#[{&#10;  "IDN": {&#10;    "Record Type": "IDN",&#10;    "ID Number": 12345678&#10;  },&#10;  "NAM": {&#10;    "Record Type": "NAM",&#10;    "Name": "Max Mule"&#10;  },&#10;  "AGE": {&#10;    "Record Type": "AGE",&#10;    "Age": 34&#10;  }&#10;}]' doc:name="Set Payload" />
+    <ee:transform doc:name="Transform to flat file">
+    	<ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+        output application/flatfile schemaPath = "${schemaPath}"
+        ---
+        {
+        NAM: {
+          Name: payload.NAM.Name	},
+        AGE: {
+          Age: payload.AGE.Age
+        },
+        IDN: {
+          "ID Number": payload.IDN.'ID Number'
+        }
+        }]]>
+      </ee:set-payload> //<2>
+    	</ee:message>
+    </ee:transform>
+    <logger level="INFO" doc:name="Logger" message='#[payload]'/>
+    <file:write doc:name="Write flat file" config-ref="File_Config" path="${fileWritePath}" /> //<3>
+	</flow>
+</mule>
+----
+
+<1> If you want to test this example, ensure that you create a properties file with the necessary values.
+<2> Note that the Transform component specifies the following writer properties in the script header:
++
+* `output`: The output MIME type of the transformation, in this case `application/flatfile`.
+* `schemapath`: Writer property that specifies the path to the flat file schema. (`.ffs` file).
+<3> The File Write operation specifies the `path` property to define where to write the file.
+
+== See Also
+
+* xref:dataweave-formats-flatfile.adoc[Flat File Format]
+* xref:dataweave-flat-file-schemas.adoc[Flat File Schemas]
+* xref:dataweave-cookbook-set-reader-writer-props[Set Reader and Writer Properties]
+* xref:configuring-properties.adoc[Configure Properties]
