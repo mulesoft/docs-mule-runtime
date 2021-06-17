@@ -5,7 +5,7 @@ endif::[]
 :keywords: esb, deploy, configuration, cluster, ha, high availability, downtime
 
 [IMPORTANT]
-Clustering is not available in CloudHub, see xref:runtime-manager::cloudhub-fabric.adoc[CloudHub Fabric] for details on how workers can be shared or doubled to scale your application and provide high availability.
+For clustering in CloudHub, see xref:runtime-manager::cloudhub-fabric.adoc[Clustering] for details about how workers can be shared or doubled to scale your application and provide high availability.
 
 Mule Enterprise Edition supports scalable clustering to provide high availability (HA) for applications.
 
@@ -68,10 +68,19 @@ If multiple instances of the same application are deployed, they will fail becau
 
 == Prerequisites
 
-* You must have at least two Mule runtime engines in a cluster, each one running on different machines.
+* A cluster requires at least two Mule runtime engine instances, each one running on different machines.
 * Mule high availability (HA) requires a reliable network connection between servers to maintain synchronization between the nodes in the cluster.
-* You must keep the following ports open to set up a Mule cluster: TCP port `5701` and UDP port `54327` (only for Multicast).
-* If you configure your cluster to use multicast, you need to enable the multicast IP address: `224.2.2.3`. Multicast is used to discover new cluster members.
+* Keep the ports configured for the Mule cluster open.
+** If you configure your cluster through Runtime Manager and you use the default ports, keep TCP ports `5701`, `5702`, and `5703` open.
+** If you configure custom ports instead, keep the custom ports open.
+** Ensure communication between nodes is open through port `5701`.
++
+Verify the firewall rules in your network to ensure that two-way communication between nodes is enabled.
+
+If you enable multicast for your cluster, the following requirements also apply in addition to the previous prerequisites:
+
+* Keep UDP port `54327` open.
+* Enable the multicast IP address: `224.2.2.3`.
 
 == High Availability
 
@@ -137,6 +146,7 @@ You must use XA transactions to move messages between dissimilar connectors that
 All Mule connectors are supported within a cluster. Because of differences in the way different connectors access inbound traffic, the details of this support vary. In general, outbound traffic acts the same way inside and outside a cluster. Mule runtimes support three basic types of connectors:
 
 === Socket-based Connectors
+
 Socket-based connectors read input sent to network sockets that Mule owns. Examples include TCP, UDP, and HTTP[S].
 
 Socket-based connectors are supported in clusters as described below:
@@ -145,6 +155,7 @@ Socket-based connectors are supported in clusters as described below:
 * Output to socket-based connectors is written to a specific host/port combination. If the host/port combination is an external host, no special considerations apply. If it is a port on the local host, consider using that port on the load balancer instead to better distribute traffic among the cluster.
 
 === Listener-based Connectors
+
 Listener-based connectors read data using a protocol that fully supports concurrent multiple accessors. Examples include JMS and VM.
 
 Listener-based connectors are supported in clusters as described below:
@@ -153,6 +164,7 @@ Listener-based connectors are supported in clusters as described below:
 * Note that, in a cluster, VM connector queues are a shared, cluster-wide resource. The cluster will automatically synchronize access to the VM connector queues. Because of this, any cluster node can process a message written to a VM queue. This makes VM ideal for sharing work among cluster nodes.
 
 === Resource-based Connectors
+
 Resource-based connectors read data from a resource that allows multiple concurrent accessors, but does not natively coordinate their use of the resource. Examples of resource-based connectors include File, FTP, SFTP, E-mail, and JDBC.
 
 Resource-based connectors are supported in clusters as described below:
@@ -227,10 +239,19 @@ See xref:runtime-manager::deployment-strategies.adoc[Deployment Strategies] for 
 
 If high performance is your primary goal (rather than reliability), you can configure a Mule cluster or an individual application for maximum performance using a performance profile. By implementing the performance profile for specific applications within a cluster, you can maximize the scalability of your deployments while deploying applications with different performance and reliability requirements in the same cluster. Performance profiles that you configure at the container level apply to all applications within the container. Application-level configuration overrides container-level configuration.
 
+=== Considerations For Setting the Performance Profile
+
 Setting the performance profile has two effects:
 
 * It disables distributed queues, using local queues instead to prevent data serialization/deserialization and distribution in the shared data grid.
 * It implements the object store without backups, to avoid replication.
++
+[WARNING]
+When one node goes down, the data associated to it is lost.
+
+Setting the performance profile does not affect memory sharing. In cluster mode, Mule always distributes and shares the object stores between nodes.
+
+=== Configure the Performance Profile
 
 To configure the performance profile at the _container_ level, add the following to `mule-cluster.properties`, to the system properties (from the command line), or to `wrapper.conf`:
 
@@ -273,21 +294,29 @@ In cases of high load with endpoints that do not support load balancing, applyin
 
 You can also choose to define the minimum number of machines that a cluster requires to remain in an operational state. This configuration grants you a consistency improvement in the overall performance.
 
+== Encrypt Communication Between Cluster Nodes
+
+You can encrypt traffic between cluster nodes by defining the `mule.cluster.network.encryption.key` property, either in the `wrapper.conf` file, or as a system property.
+
+When you define an encryption key, all communication between cluster nodes is encrypted using the defined key and the AES encryption algorithm.
+
 [[cluster_fips]]
-== Clustering in FIPS mode
+== Enable Clustering in FIPS Mode
 
-To enable clustering in FIPS mode, Mule Runtime must run in FIPS mode. See xref:fips-140-2-compliance-support.adoc[FIPS Compliant support] for more information about this.
+To enable clustering in FIPS mode, complete the following tasks:
 
-If you are running in FIPS mode, then a key for the cluster must be defined. You can define the key by setting the `mule.cluster.network.encryption.key` property (`wrapper.conf` or system property). If you are using a clustered environment in FIPS mode and not setting the encryption key, the application will fail to deploy with a message `Cluster key must be defined in FIPS mode.`. It is not necessary to run in FIPS mode to define the encryption key and encrypt all communications. But if the runtime is running in FIPS mode, then the encryption key must be defined.
-
-With the encryption key defined, all communications between cluster nodes will be encrypted using an AES encryption algorithm, with the defined key.
+* Run Mule runtime engine in FIPS mode. +
+See xref:fips-140-2-compliance-support.adoc[FIPS-Compliant Support] for configuration instructions.
+* Encrypt communication between cluster nodes. +
+Define the `mule.cluster.network.encryption.key` property, either in the `wrapper.conf` file or as a system property.
 
 === Warnings
 
-* The encryption key for all the clustered nodes must be the same for this feature to work.
-* Take into account that the use of a clustered environment in FIPS mode downgrades performance because all the communications between nodes will be encrypted (and decrypted).
+* If you don't define the encryption key, the application fails to deploy with the message `Cluster key must be defined in FIPS mode.`.
+* If you don't use the same encryption key for all the clustered nodes, this feature won't work.
+* Running a clustered environment in FIPS mode causes a negative impact in performance, because all the communication between nodes is encrypted (and decrypted).
 
-== Best Practices
+== Clustering Best Practices
 
 There are a number of recommended practices related to clustering. These include:
 
