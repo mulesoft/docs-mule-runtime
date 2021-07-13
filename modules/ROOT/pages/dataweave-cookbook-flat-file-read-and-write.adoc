@@ -1,0 +1,309 @@
+= Read and Write a Flat File
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, xml, json, dataweave, data weave, datamapper, dwl, dfl, dw, flat file
+
+The following examples show you how to read the contents of a flat file, and also how to write a flat file following the specified schema. Each example consists of a Mule application that uses DataWeave to read and write flat files.
+
+When you work with flat files, configure the flat file schema to use for reading and writing flat file content. The flat file schema defines the structure of a flat file, and this enables Mule to write and read in this format.
+
+These example applications are configured to work with the sample flat file data and the example flat file schema provided in xref:dataweave-flat-file-schemas#full_schema_ex[Flat File Schemas].
+
+== Example of Reading a Flat File
+
+The following example application consists of:
+
+. A Scheduler component that triggers the flow
+. A File Read operation that reads a flat file from the specified path
+. A Transform Message component that transforms the content read from the flat file to JSON format
+. A Logger component that outputs the current payload
+
+image:mruntime-read-flat-file.png[Example Mule application]
+
+.Application XML File
+[source,xml,linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+  <file:config name="File_Config" doc:name="File Config" >
+    <file:connection workingDir="${fileWorkingDir}" />
+  </file:config>
+  <configuration-properties doc:name="Configuration properties" file="flatfileconfig.properties" />
+  <flow name="ReadFlatfileFlow" >
+    <scheduler doc:name="Scheduler">
+      <scheduling-strategy>
+        <fixed-frequency frequency="10000" />
+      </scheduling-strategy>
+    </scheduler>
+    <file:read doc:name="Read flat file" config-ref="File_Config"
+    path="${fileReadPath}"
+    outputMimeType='application/flatfile; schemapath=${schemaPath}'/> //<1>
+    <ee:transform doc:name="Transform to JSON"  >
+      <ee:message >
+        <ee:set-payload ><![CDATA[%dw 2.0
+        output application/json
+        ---
+        payload]]>
+        </ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <logger level="INFO" doc:name="Logger" message='#[payload]' />
+  </flow>
+</mule>
+----
+
+<1> Note that the File Read operation configures the following attributes:
++
+* `path`: The path of the flat file to read
+* `outputMimeType`: The output MIME type of the content, in this case, `application/flatfile`
+* `schemapath`: The reader property that specifies the path to the flat file schema (`.ffs` file)
+
+
+[[json-transformation-output]]
+After its execution, the example application generates the following output:
+
+[source,json,linenums]
+----
+{
+  "Batch": [
+    {
+      "TDR": [
+        {
+          "Record Type": "BAT",
+          "Sequence Number": 2,
+          "Amount": 32876,
+          "Account Number": "0123456789",
+          "Batch Function": "D",
+          "Type": "CR"
+        },
+        {
+          "Record Type": "BAT",
+          "Sequence Number": 3,
+          "Amount": 87326,
+          "Account Number": "0123456788",
+          "Batch Function": "D",
+          "Type": "CR"
+        }
+      ],
+      "BCF": {
+        "Record Type": "BAT",
+        "Sequence Number": 4,
+        "Batch Transaction Count": 2,
+        "Batch Transaction Amount": 120202,
+        "Unique Batch Identifier": "A000000001",
+        "Batch Function": "T",
+        "Type": "CR"
+      },
+      "BCH": {
+        "Record Type": "BAT",
+        "Company Name": "ACME RESEARCH",
+        "Sequence Number": 1,
+        "Unique Batch Identifier": "A000000001",
+        "Batch Function": "H"
+      }
+    },
+    {
+      "TDR": [
+        {
+          "Record Type": "BAT",
+          "Sequence Number": 6,
+          "Amount": 3582,
+          "Account Number": "1234567890",
+          "Batch Function": "D",
+          "Type": "DB"
+        },
+        {
+          "Record Type": "BAT",
+          "Sequence Number": 7,
+          "Amount": 256,
+          "Account Number": "1234567891",
+          "Batch Function": "D",
+          "Type": "CR"
+        }
+      ],
+      "BCF": {
+        "Record Type": "BAT",
+        "Sequence Number": 8,
+        "Batch Transaction Count": 2,
+        "Batch Transaction Amount": 3326,
+        "Unique Batch Identifier": "A000000002",
+        "Batch Function": "T",
+        "Type": "DB"
+      },
+      "BCH": {
+        "Record Type": "BAT",
+        "Company Name": "AJAX EXPLOSIVES",
+        "Sequence Number": 5,
+        "Unique Batch Identifier": "A000000002",
+        "Batch Function": "H"
+      }
+    }
+  ],
+  "RQF": {
+    "Record Type": "RQF",
+    "File Batch Count": 2,
+    "File Transaction Count": 8,
+    "File Transaction Amount": 116876,
+    "Unique File Identifier": "A000000001",
+    "Type": "CR"
+  },
+  "RQH": {
+    "Record Type": "RQH",
+    "File Creation Time": "10:10:00",
+    "File Creation Date": "2018-09-01",
+    "Currency": "USD",
+    "Unique File Identifier": "A000000001"
+  }
+}
+----
+
+== Example of Writing a Flat File
+
+The following example application contains:
+
+. A Scheduler component that triggers the flow
+. A File Read operation that reads a file containing the JSON output from the previous example
+. A Transform Message component that transforms the JSON payload to the specified flat file format
+. A Logger component that outputs the current payload
+. A File Write operation that outputs the payload to a flat file in the specified target path
+
+image:mruntime-write-flat-file.png[Example Mule application]
+
+
+.Application XML File
+[source,xml,linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+  <file:config name="File_Config" doc:name="File Config" >
+    <file:connection workingDir="${fileWorkingDir}" />
+  </file:config>
+  <configuration-properties doc:name="Configuration properties" file="flatfileconfig.properties" />
+  <flow name="WriteFlatFile" >
+    <scheduler doc:name="Scheduler" >
+    	<scheduling-strategy >
+        <fixed-frequency frequency="10000" />
+    	</scheduling-strategy>
+    </scheduler>
+    <file:read doc:name="Read JSON file" config-ref="File_Config" path="${jsonFileReadPath}"/>
+    <ee:transform doc:name="Transform to flat file"> //<1>
+    	<ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/flatfile schemaPath = "flatfileschema.ffs"
+%dw 2.0
+---
+{
+	RQH: {
+		"Record Type": payload.RQH."Record Type",
+		"File Creation Date": payload.RQH."File Creation Date" as Date {format: "yyyy-MM-dd"},
+		"File Creation Time": payload.RQH."File Creation Time" as Time,
+		"Unique File Identifier": payload.RQH."Unique File Identifier",
+		Currency: payload.RQH.Currency
+	},
+	Batch: payload.Batch map ( batch , indexOfBatch ) -> {
+		BCH: {
+			"Record Type": batch.BCH."Record Type",
+			"Sequence Number": batch.BCH."Sequence Number",
+			"Batch Function": batch.BCH."Batch Function",
+			"Company Name": batch.BCH."Company Name",
+			"Unique Batch Identifier": batch.BCH."Unique Batch Identifier"},
+		TDR: batch.TDR map (tdr, indexOfTdr) ->
+			{
+			"Record Type": tdr.TDR."Record Type",
+			"Sequence Number": tdr.TDR."Sequence Number",
+			"Batch Function": tdr.TDR."Batch Function",
+			"Account Number": tdr.TDR."Account Number",
+			"Amount": tdr.TDR.Amount,
+			"Type": tdr.TDR.'Type'
+			},
+		BCF: {
+			"Record Type": batch.BCF."Record Type",
+			"Sequence Number": batch.BCF."Sequence Number",
+			"Batch Function": batch.BCF."Batch Function",
+			"Batch Transaction Amount": batch.BCF."Batch Transaction Amount",
+			"Type": batch.BCF.'Type',
+			"Batch Transaction Count": batch.BCF."Batch Transaction Count",
+			"Unique Batch Identifier": batch.BCF."Unique Batch Identifier"}
+		},
+	RQF: {
+		"Record Type": payload.RQF."Record Type",
+		"File Batch Count": payload.RQF."File Batch Count",
+		"File Transaction Count": payload.RQF."File Transaction Count",
+		"File Transaction Amount": payload.RQF."File Transaction Amount",
+		Type: payload.RQF.Type,
+		"Unique File Identifier": payload.RQF."Unique File Identifier"
+	}
+}
+]]>
+      </ee:set-payload>
+    	</ee:message>
+    </ee:transform>
+    <logger level="INFO" doc:name="Logger" message='#[payload]'/>
+    <file:write doc:name="Write flat file" config-ref="File_Config" path="${fileWritePath}" /> //<2>
+	</flow>
+</mule>
+----
+
+<1> Note that the Transform component specifies the following writer properties in the script header:
++
+* `output`: The output MIME type of the transformation, in this case, `application/flatfile`
+* `schemapath`: The writer property that specifies the path to the flat file schema (`.ffs` file)
+<2> Note that the File Write operation specifies the `path` property to define where to write the flat file
+
+After its execution, the example application generates the following output:
+
+----
+RQH201809011010A000000001USD
+BAT000001HACME RESEARCH                 A000000001
+BAT000000D          0000000000
+BAT000000D          0000000000
+BAT000004T0000120202CR000002A000000001
+BAT000005HAJAX EXPLOSIVES               A000000002
+BAT000000D          0000000000
+BAT000000D          0000000000
+BAT000008T0000003326DB000002A000000002
+RQF0002000008000000116876CRA000000001
+----
+
+== Test the Examples Locally
+
+If you want to test the examples locally, follow these steps to create and configure your example Mule application:
+
+. Create a new *Mule Project* in Anypoint Studio.
+. Copy the XML code of the application you want to test into the *Configuration XML* view of your project.
+. Use xref:studio::add-modules-in-studio-to.adoc[Add Modules] to add the Anypoint Connector for File (File Connector) to your project.
+. Create a file named `flatfileconfig.properties` in the `src/main/resources` folder of your Mule application, and set its content with the following properties:
++
+----
+fileReadPath=flatfile
+schemaPath=flatfileschema.ffs
+fileWritePath=flatfilenew
+jsonFileReadPath=flatFileJson.json
+fileWorkingDir=#[mule.home ++ "/apps/<your_app_name>/"]
+----
+** Replace `<your_app_name>` with the name of the Mule project you created.
++
+This step sets the working directory for the File Connector relative to the `src/main/resources` folder of your Mule application.
+. Create a file named `flatfile` in the `src/main/resources` folder of your Mule application, and set its content with the xref:dataweave-flat-file-schemas.adoc#flat-file-sample-data [flat file sample data] from the DataWeave flat file schema example.
+. Create a file named `flatfileschema.ffs` in the `src/main/resources` folder of your Mule application, and set its content with the xref:dataweave-flat-file-schemas.adoc#full_schema_ex[full schema example] from the DataWeave flat file schema example.
+. Create a file named `flatFileJson.json` in the `src/main/resources` folder of your Mule application and set its content with the <<json-transformation-output, JSON transformation output>> from the example that reads a flat file.
+
+== See Also
+
+* xref:dataweave-formats-flatfile.adoc[Flat File Format]
+* xref:dataweave-flat-file-schemas.adoc[Flat File Schemas]
+* xref:dataweave-cookbook-set-reader-writer-props[Set Reader and Writer Properties]
+* xref:configuring-properties.adoc[Configure Properties]
