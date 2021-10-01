@@ -1,288 +1,38 @@
-= What's New in Mule 4.3
+= What's New in Mule 4.4
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-The 4.3 version of the Mule runtime engine provides a huge performance boost to your applications, while continuing to expedite application development on Anypoint Platform and to offer a resilient runtime for use cases that are vital to the functioning your organization. 
+Mule runtime engine 4.4 is mainly focused on fixing issues, and also includes some new features.
 
-MuleSoft recommends that you migrate your applications to Mule 4.3 to benefit from all the improvements that this new version provides.
+== Feature Flags
+Mule 4.4 incorporates a feature flagging mechanism, which enables you to disable certain features that change core functionality in Mule to avoid backward compatibility issues.
 
-[[threading_model]]
-== Threading Model
-Mule 4.3 handles threads differently than Mule 4.2 and 4.1.
+See xref:mule-runtime::feature-flagging.adoc[Feature Flagging] for additional information and configuration instructions.
 
-In earlier versions, Mule owned and managed three different thread pools, each dedicated to a different Processing Type (CPU_LIGHT, IO, CPU_INTENSIVE). Tasks were submitted to these pools using the Proactor design pattern.
+== Correlation ID Management
+Mule 4.4 enables you to modify the Correlation ID associated with a Mule event. You can also change the algorithm Mule uses to generate each Correlation ID.
 
-Starting with Mule 4.3, those thread pools have been combined into one unique thread pool, even though the proactor pattern is still applied.
+See xref:mule-runtime::correlation-id[Correlation ID] for additional information and configuration instructions.
 
-See xref:execution-engine.adoc[Execution Engine] for complete details about the new threading model and upgrade instructions.
+== Improved Logging Capabilities
+Mule 4.4 incorporates Mapped Diagnostic Context (MDC), which enriches logging and improves tracking by providing more context or information in the logs for Mule events.
 
-[[dataweave]]
+By using the Mule Tracing module, you can add, remove, and clear variables from the logging context for a given Mule event.
+
+See xref:mule-runtime::logging-mdc.adoc[MDC Logging] for additional information and configuration instructions.
+
 == DataWeave Updates
-The Mule 4.3.0 release includes DataWeave 2.3.0 features.
 
-=== The update Syntax
+//Link to What's new in DW article? 
+// The Mule 4.4 release includes DataWeave 2.4.0 features.
 
-This feature adds an easy way to update single values in nested data structures without requiring you to understand functional recursion.
-
-The following array of objects serves as the input payload to DataWeave source.
-
-.Input:
-[source,json,linenums]
-----
-[
-   {
-       "ID" : 4128506,
-       "name": "Ken",
-       "age": 30
-   },
-   {
-       "ID" : 1823940,
-       "name": "Tomo",
-       "age": 70
-   },
-   {
-       "ID": 9086582,
-       "name": "Kajika",
-       "age": 10
-   }
-]
-----
-
-The following DataWeave script uses the `map` function to iterate over the elements in the input array of objects. It uses the new `update` operator to modify two of the key-value pairs in each object: it concatenates (`++`) the string `" (Christian)"` to the value of a `"name"` key, if the value is `"Tomo"`, and it increases the value of all `"age"` keys by `1`.
-
-.Source:
-[source,weave,linenums]
-----
-%dw 2.0
-output application/json
----
-payload map ((user) ->
-   user update {
-       case name at .name if(name == "Tomo") -> name ++ " (Christian)"
-       case age at .age -> age + 1
-   }
-)
-----
-
-The JSON output shows that the string `" (Christian)"` is appended to the value `"Tomo"` and that the `"age"` values are incremented by `1`. Note that the values of the `"ID"` keys remain the same, as do the `"name"` key values that do not match `"Tomo"`.
-
-.Output:
-[source,json,linenums]
-----
-[
- {
-   "ID": 4128506,
-   "name": "Ken",
-   "age": 31
- },
- {
-   "ID": 1823940,
-   "name": "Tomo (Christian)",
-   "age": 71
- },
- {
-   "ID": 9086582,
-   "name": "Kajika",
-   "age": 11
- }
-]
-----
-
-For complete documentation, see xref:dw-operators.adoc#update-operator[Update Operator].
-
-=== Streaming Features and Enhancements
-* XML Streaming: +
-The DataWeave reader for the XML format now supports streaming. You need to specify the `collectionPath` and `streaming` reader properties to activate streaming.
-+
-When streaming, the XML parser can start processing content without having all the XML content, which is particularly helpful when dealing with large content.
-+
-See xref:dataweave-formats-xml.adoc[XML Format] for details.
-
-* Improved JSON Streaming: +
-The JSON reader now supports streaming the entire JSON document, instead of arrays only.
-+
-See xref:dataweave-formats-json.adoc[JSON Format] for details.
-
-=== Literal Types
-This feature adds DataWeave support for literal types. A literal type is a type that represents exactly one value, which means, for example, that DataWeave can represent the `String` value `"hello"` with the type `hello`. This feature makes function overloading very dynamic and when combined with `Union` types, it enables DataWeave to represent an enumeration of literal values as a type, for example:
-
-[source,weave,linenums]
-----
-type Weekdays = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday"
-type Days = Weekdays | "Saturday" | "Sunday"
-
-fun greeting(day : "Monday") = "Best of luck in this new work week!"
-fun greeting(day : "Friday") = "YAY, it's Friday! Have an awesome day!"
-fun greeting(day: Weekdays) = "Have a nice day at work!"
-fun greeting(day: Days) = "We hope you have a great day!"
-----
-
-The `greeting` function provides:
-
-* a general message (`"We hope you have a great day!"`) on weekends (Saturdays and Sundays only).
-* a work- specific message (`"Have a nice day at work!"`) on Tuesdays through Thursdays.
-* customized messages for the start and end of the week (Mondays and Fridays).
-
-Note that DataWeave uses the first function it finds that accepts the arguments of the function call, based on the order in which the functions are declared in the script.
-
-For complete documentation, see xref:dataweave-type-system.adoc#literal-types[Literal Types].
-
-=== Period and DateTime Consistency
-
-This feature adds an easy way to operate with periods, transform the result into different units, and decompose the period into its different parts.
-
-The following example shows how to deconstruct a `Duration` value. It defines a `period` variable in the header that subtracts one `DateTime` value from another. The script decomposes the result of the operation by selecting the `hours`, `minutes`, and `secs` values from the resulting `period` value.
-
-.Source:
-[source,weave,linenums]
-----
-%dw 2.0
-output application/json
-var period = (|2010-12-10T12:10:12| - |2010-12-10T10:02:10|)
----
-{
-   hours:  period.hours,
-   minutes:  period.minutes,
-   secs:  period.secs,
-}
-----
-
-The JSON output shows the resulting number of `hours`, `minutes`, and `secs` values selected from `period`.
-
-.Output:
-[source,json,linenums]
-----
-{
-  "hours": 2,
-  "minutes": 8,
-  "secs": 2
-}
-----
-
-For complete documentation, see xref:dataweave-types.adoc#dw_type_dates_period[Period].
-
-=== Custom MIME Types
-
-This feature adds a way to define the output MIME type separately from the output data format. It also provides a simpler way of defining output and input formats:
-
-[source,json,linenums]
-----
-%dw 2.0
-output json
----
-{
-	Hello: “there”
-}
-----
-
-For documentation, see xref:dataweave-formats.adoc#set_mime_types[Setting MIME Types].
-
-=== Performance Improvements
-
-DataWeave improves the performance of memory usage, functions (like `groupBy`), and the internal execution engine in this release.
-
-* Elimination of common subexpressions: +
-Common subexpression elimination is included to optimize scripts. Now, DataWeave optimizes the scripts by defining internal variables to represent subexpressions that are repeated, thereby replacing the repeated executions of that subexpression with a single execution.
-+
-.Source
-[source,weave,linenums]
-----
-%dw 2.0
-output json
----
-{
-   code: payload.message.code,
-   message : payload.message.value,
-   user : payload.message.users[0].name,
-   contact: payload.message.users[0].email
-}
-----
-+
-Internally, the script in the example above is treated as shown the following example, where variables are defined for each repeated expression so that they execute only once.
-+
-.Internal Representation
-[source,weave,linenums]
-----
-%dw 2.0
-output json
-
-var fakeVariable1 = payload.message
-var fakeVariable2 = fakeVariable1.users[0]
----
-{
-   code: fakeVariable1.code,
-   message : fakeVariable1.value,
-   user : fakeVariable2.name,
-   contact: fakeVariable2.email
-}
-----
-
-* Memory management improvements: +
-Memory management is now centralized. Several memory management strategies are included, such as pooling direct memory or using heap memory exclusively.
-
-=== DataWeave Modules
-
-DataWeave introduces the Types (`dw::core::Types`) module to support type introspection. This new module includes a number of functions and new types. See xref:dw-types.adoc[Types (dw::core::Types)] for details.
-
-DataWeave also introduces a number of new functions in existing modules:
-
-* xref:dw-core.adoc[Core] (`dw::Core`) module: `entriesOf`, `keysOf`, `namesOf`, `valuesOf`.
-* xref:dw-arrays.adoc[Arrays] (`dw::core::Arrays`) module: `firstWith`
-* xref:dw-objects.adoc[Objects] (`dw::core::Objects`) module: `everyEntry`, `someEntry`, and `takeWhile`; `dropWhile` also includes a new function that iterates over and ignores items in an array until a condition becomes true.
-* xref:dw-objects.adoc[Strings] (`dw::core::Strings`) module: `withMaxSize` enables you to specify a maximum size for a given value. A value that exceeds the size limit will be truncated. If the size is no greater than the limit, the value remains the same.
-
-Deprecations: +
-The `entrySet`, `keySet`, `nameSet`, `valueSet` functions in the Objects module are deprecated in this release and replaced with the functions `entriesOf`, `keysOf`, `namesOf`, `valuesOf` in the Core module.
-
-=== Intersection Type
-
-DataWeave introduces the `Intersection` type. The `Intersection` type appends `Object` types.
-
-The syntax for intersection type is:
-----
-TypeA & TypeB & ...
-----
-
-For documentation, see xref:dataweave-type-system.adoc[Type System]
-
-=== Improvements to Parsing Error Messages
-
-Parsing error messages now reflect more accurately missing tokens, incomplete definitions, and other common issues. Tips and examples of how to solve the issues are also included.
-
-=== New DataWeave Reader and Writer Properties
-
-DataWeave introduces a number of new and enhanced reader and writer properties for supported DataWeave formats.
-
-* Binary (`application/octet-stream`) format: `encoding`
-* DataWeave (`application/dw`) format: `onlyData` writer property and all the reader properties (`externalResources`, `javaModule`, and `onlyData`)
-* JSON (`application/json`) format: `writeAttributes`
-* XML (`application/xml`) format:  `escapeCR` writer property and several reader properties (`collectionPath`, `maxAttributeSize`, `optimizeFor`, `supportDtd`, `streaming`)
-* YAML (`application/yaml`) format: `maxEntityCount` reader property
-
-For descriptions, see the links to these formats in xref:dataweave-formats.adoc[Supported Data Formats].
-
-[[core_components]]
 == Core Components
-The following Core components have been improved, adding new functionality and capabilities.
 
-* Until Successful component: +
-Max Retries (`maxRetries`) and Milliseconds Between Retries (`millisBetweenRetries`) now support a number or an expression that resolves to a number.
-+
-For complete documentation, see xref:until-successful-scope.adoc[Until Successful Scope].
+Mule 4.4 introduces the Mule Tracing Module (available in Studio 7.11), which enables correlation ID management capabilities as well as improved logging options.
 
-* Batch Aggregator component adds the `preserveMimeTypes` attribute: +
-Aggregated records are passed into the aggregator as an array containing each record’s payload. However, the MIME types associated with those payloads are not preserved by default. You can preserve record’s MIME types by specifying the `preserveMimeTypes` attribute in a batch aggregator. This change makes it easier to handle records from a payload that is in a structured text format, such as JSON or XML.
-+
-For complete documentation, see xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing].
-
-
-== API Gateway
-
-API Gateway now includes a `disablePolicies` annotation. Setting it to `true` enables you to block the application of policies to the requestor.
-
-Also, the release introduces several enhancements to resiliency, including a better backoff mechanism and improvements of the policy deployer mechanism.
+See xref:connectors::tracing/index.adoc[Tracing Module] for the complete documentation of this module.
 
 == See Also
 
-* xref:release-notes::mule-runtime/mule-4.3.0-release-notes.adoc[Mule Runtime 4.3.0 Release Notes]
+* xref:release-notes::mule-runtime/mule-4.4.0-release-notes.adoc[Mule Runtime 4.4.0 Release Notes]
