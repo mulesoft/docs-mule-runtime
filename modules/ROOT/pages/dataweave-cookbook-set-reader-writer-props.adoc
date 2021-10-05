@@ -1,0 +1,178 @@
+= Set Reader and Writer Configuration Properties
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, transform, transformer, format, dataweave, data weave, output structure, mime type, mime
+// :page-aliases: 4.3@mule-runtime::dataweave-cookbook-set-reader-writer-props.adoc
+
+DataWeave provides configuration properties for data formats, such as JSON (`application/json`), XML (`application/xml`), and (`application/csv`). The properties change the behavior of DataWeave readers and writers for those formats. For example, the default separator for a CSV reader is a comma (`,`). You can use the format's `separator` property to specify a different separator for CSV content.
+
+//LINK TO DW 1.0 EXAMPLES:
+include::partial$dataweave1-links.adoc[tag=dataweave1Examples]
+
+== Use a Writer Property in an Output Directive
+
+The following example shows how to append writer properties to the DataWeave `output` directive. The script uses `indent = false` to compress the JSON output into a single line.
+
+[[ex01]]
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+include::partial$cookbook-dw/set-reader-writer-props-ex01/transform.dwl[]
+----
+
+.Output JSON:
+[source,json,linenums]
+----
+include::partial$cookbook-dw/set-reader-writer-props-ex01/out.json[]
+----
+
+The following examples also append writer configuration properties to the `output` directive:
+
+* xref:dataweave-formats-avro.adoc#examples[Avro example] that uses `schemaUrl`
+* xref:dataweave-formats-excel.adoc#example2[Excel (XLSX) example] that uses `header=true`
+* xref:dataweave-formats-flatfile#examples[Flat File] example that sets a `schemaPath`
+* xref:dataweave-cookbook-remove-certain-xml-attributes.adoc[XML] example that uses `inlineCloseOn="empty"` to close any empty XML elements
+
+== Use Reader and Writer Properties in DataWeave Functions
+
+The DataWeave `read`, `readUrl`, and `write` functions accept one or more comma-separated property configurations within curly braces.
+
+In the header of the following script, the value of `myVar` is a `read` function that inputs an XML sample with an empty child element (`<ex1></ex1>`). The function passes an XML reader property `{nullValueOn: "empty"}` that converts the value of the empty element to `null`.
+
+In the body of the script, a `write` function accepts the value of `myVar` as input. The function passes the JSON writer properties `{skipNullOn:"objects", writeAttributes:true}` to skip the object with the `null` value (`<ex1>null</ex1>`) and to write the attribute and value of `<ex3 a='greeting'>hello</ex3>`.
+
+
+[[ex01]]
+.DataWeave Script:
+[source,dataweave,linenums]
+----
+include::partial$cookbook-dw/set-reader-writer-props-ex02/transform.dwl[]
+----
+
+.Output JSON:
+[source,json,linenums]
+----
+include::partial$cookbook-dw/set-reader-writer-props-ex02/out.json[]
+----
+
+The following examples pass reader properties to `readUrl`:
+
+* xref:dataweave-formats-xml.adoc#example1[XML example]
+* xref:dataweave-formats-ndjson.adoc#example2[ndjson example]
+
+[[ex03]]
+== Use a Reader Property through a Connector Operation
+
+Connector operations that read input data provide an `outpuMimeType` field that you can use to identify the _input_ MIME type. This field also accepts one or more reader properties, which is useful for helping DataWeave read the input correctly.
+
+By default, the DataWeave reader treats a comma (`,`) as a separator. However, assume that a CSV input is separated by the pipe (`|`) but that the content also contains commas. You can set a CSV reader property to recognize the pipe as the separator.
+
+.Pipe-separated CSV Input
+[source,csv,linenums]
+----
+id | name | role
+1234 | Shokida,Mr. | dev
+2345 | Achaval,Mr. | arch
+3456 | Felisatti,Ms. | mngr
+4567 | Chibana,Mr. | dev
+----
+
+The following example uses the Read operation in the File connector to read the pipe-separated (`|`) CSV input, and it uses a DataWeave script in the Transform Message component to output a row of the input in comma-separated format.
+
+.Mule Flow:
+[source,xml,linenums]
+----
+<flow name="ex-use-csv-reader-props" >
+	<scheduler doc:name="Scheduler" >
+		<scheduling-strategy >
+			<fixed-frequency frequency="90" timeUnit="SECONDS"/>
+		</scheduling-strategy>
+	</scheduler>
+	<file:read doc:name="Read" config-ref="File_Config" path="staff.csv"
+	           outputMimeType='application/csv; separator=|; header=true'/>
+	<ee:transform doc:name="Transform Message" >
+		<ee:message>
+			<ee:set-payload><![CDATA[%dw 2.0
+output application/csv header = false
+---
+payload[1]]]></ee:set-payload>
+		</ee:message>
+	</ee:transform>
+	<logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+The Scheduler component (`<scheduler/>`) in the example generates a Mule event each time it triggers the flow.
+
+The Read operation (`<file:read/>`) uses `outputMimeType='application/csv; separator=|; header=true'` to identify the input MIME type (`application/csv`), the CSV separator (`|`), and the header setting (`true`).
+
+The script in the Transform Message component (`<ee:transform-message/>`) returns the second row from the input CSV (`2345 , Achaval\,Mr. , arch`). The script uses `payload[1]` to select that row because DataWeave treats each row in the CSV as an index of an array. The output is comma-separated because the default CSV separator is a comma. The script omits the CSV header from the output by using the `output` directive (`output application/csv header = false`).
+
+The Logger component (`<logger/>`), which is set to `payload`, writes the comma-separated output as INFO in its `LoggerMessageProcessor` message: `2345 , Achaval\,Mr. , arch`. To avoid treating the comma before "Mr." as a separator, the CSV output escapes the comma with a backslash (`Achaval\,Mr.`).
+
+The following examples pass reader properties through the `outputMimeType` field:
+
+* xref:dataweave-formats-csv.adoc#example2[CSV example] that uses `streaming=true; header=true`
+* xref:dataweave-formats-json.adoc#example3[JSON example] that uses `streaming=true`
+
+[[ex04]]
+== Use a Mule Variable as a Configuration Value
+
+The following Mule flow transforms comma-separated CSV data into pipe-separated (`|`) CSV data. Instead of setting a literal value in the script, the example selects the pipe value from a xref:about-mule-variables.adoc[Mule variable], which is part of a Mule event that travels through data-processing components in the flow.
+
+The Scheduler component (`<scheduler/>`) in the example generates a Mule event each time it triggers the flow.
+
+The Set Variable component (`<set-variable/>`) creates a Mule variable named `delimiter` with the value `'|'`. In Studio, the value is created as an *fx* expression (`value="#['|']"`), rather than a simple string (`value="'|'"`).
+
+The Transform Message component (`<ee:transform-message/>`) contains a DataWeave script that reads comma-separated CSV input and uses the Mule variable to write pipe-separated CSV output.
+
+The Logger component (`<logger/>`), which is set to `payload`, writes the pipe-separated output as INFO in its `LoggerMessageProcessor` message: `macaroni | rigatoni | ravioli | spaghetti`.
+
+.Mule Flow:
+[source,xml,linenums]
+----
+<flow name="ex-use-mule-var-as-prop-config-val" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="45" timeUnit="SECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <set-variable value="#['|']" doc:name="Set Variable" variableName="delimiter" />
+  <ee:transform doc:name="Transform Message" >
+    <ee:message>
+      <ee:set-payload><![CDATA[%dw 2.0
+var myVar = read("macaroni , rigatoni , ravioli , spaghetti", "application/csv" , {"header":false, separator:','})
+output application/csv with binary
+---
+write(myVar, "application/csv", {"header":false, "separator":vars.delimiter})]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+</flow>
+----
+
+To provide comma-separated input for the example, the script in the Transform Message component uses a xref:dw-core-functions-read.adoc[read] function as a value to a DataWeave variable, `myVar`:
+
+`var myVar = read("macaroni , rigatoni , ravioli , spaghetti", "application/csv" , {"header":false, separator:','})`
+
+To write pipe-separated output, the DataWeave xref:dw-core-functions-write.adoc[write] function in the body of the script changes the comma-separated input to pipe-separated output. To select the pipe value from the Mule variable (`delimiter`), the function passes the writer property configuration `"separator":vars.delimiter` as an argument:
+
+`write(myVar, "application/csv", {"header":false, "separator":vars.delimiter})`
+
+The script uses the following DataWeave `output` directive in the script's header: `output application/csv with binary`. It is necessary to append the `with binary` setting (xref:dataweave-formats.adoc#set_mime_types[introduced in Mule 4.3.0]) to invoke the binary writer because the `write` function returned CSV output. Without the setting, DataWeave would attempt to write CSV again and produce the following issue: `CSV Structure should be an Array<Object> or Object but got String, while writing CSV.`
+
+Note that if you want to see pipe-separated content from the Tranform Message component's *Preview* screen in the Studio UI, you must create sample data for it:
+
+. Double-click the Transform Message component from the *Message Flow* area of the Studio app.
+. Right-click *delimiter: _String_* in the *Context* tab, which is located on the bottom left of the configuration UI for the component.
+. Select *Edit Sample Data* to open a *vars-delimiter* tab.
+. Replace any content in the *vars-delimiter* with the following sample data for the `delimiter` value: `"|"`. You must put the delimiter in quotation marks.
+
+For further guidance with sample data, see xref:transform-preview-transformation-output-studio-task.adoc[Previewing the Output of a Transformation].
+
+== See Also
+
+* xref:dataweave-formats.adoc[DataWeave Formats]
+* xref:about-components.adoc[Core Components]
+* xref:dataweave-cookbook.adoc[DataWeave Cookbook]

@@ -1,0 +1,849 @@
+= Value Constructs for Types
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+// :page-aliases: 4.3@mule-runtime::dataweave-types.adoc
+
+DataWeave represents data using values, each of which has a data type associated with it. There are many types, such as strings, arrays, Booleans, numbers, objects, dates, times, and others. Each type supports several ways of creating its values. This topic explores many of the ways you can create them.
+//LINK TO DW 1.0 LANDING PAGE IN MULE 3.9 DOCS:
+include::partial$dataweave1-links.adoc[tag=dataweave1LandingPage]
+
+
+The types that DataWeave provide are bundled into modules that also contain the related functions.
+
+Types in the `dw::Core` module (Core types) are available without having to import the Core module. Other modules need to be imported for their functions and types to be available.
+
+It is important for you to know the values that are possible for each DataWeave type, how to create those values, and the common patterns used:
+
+* Conditional elements that use `if` expressions for <<conditional_elements_array, arrays>> and <<conditional_elements_object, objects>>.
+* <<string_interpolation>>
+* <<date_decomposition>> for accessing different parts of a date
+* <<date_format>>
+* <<dynamic_keys>> and <<dynamic_elements>>, which allow you to access parts of an object dynamically
+* Use of <<dw_type_regex>> expressions
+
+[[dw_type_array]]
+== Array (dw::Core Type)
+
+An array can hold elements of any supported type. Here is an example of an array:
+
+.Example: DataWeave Array
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var x = "words"
+---
+[ "My", "three", x ]
+----
+
+[[conditional_elements_array]]
+=== Conditional Elements
+
+Arrays can define elements that appear (or not) based on a condition.
+
+Conditional elements take the form `(value) if condition`, for example:
+
+.Example: if Condition
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+[(1) if true, (2) if false]
+----
+
+.Output
+[source,json,linenums]
+----
+[1]
+----
+
+[[dw_type_boolean]]
+== Boolean (dw::Core Type)
+
+A `Boolean` is defined by the keywords `true` and `false`.
+
+[[dw_type_cdata]]
+== CData (dw::Core Type)
+
+XML defines a custom type named `CData`, which inherits from and extends `String`. It is used to identify a CDATA XML block. It can be used to tell the writer to wrap the content inside CDATA or to check if the input string arrives inside a CDATA block.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml encoding="UTF-8"
+---
+{
+  users:
+  {
+    user : "Mariano" as CData,
+    age : 31 as CData
+  }
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user><![CDATA[Mariano]]></user>
+  <age><![CDATA[31]]></age>
+</users>
+----
+
+
+[[dw_type_dates]]
+== Date and Time (dw::Core Types)
+
+Dates in DataWeave follow the https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[ISO-8601 standard] and literals are defined between `|` characters.
+
+The language has the following native date types:
+
+* `Date`
+* `DateTime`
+* `LocalDateTime`
+* `LocalTime`
+* `Period`
+* `Time`
+* `TimeZone`
+
+[[dw_type_dates_date]]
+=== Date
+
+A `Date` represented by `Year`, `Month`, and `Day`, specified as `|uuuu-MM-dd|`. The `Date` type has no time component.
+
+.Example
+[source,dataweave,linenums]
+----
+|2003-10-01|
+----
+
+[[dw_type_dates_datetime]]
+=== DateTime
+
+A Date and Time within a TimeZone. It is the conjunction of `Date` + `Time` + `TimeZone`.
+
+.Example
+[source,dataweave,linenums]
+----
+|2003-10-01T23:57:59-03:00|
+----
+
+[[LocalDateTime]]
+=== LocalDateTime
+
+A `DateTime` in the current `TimeZone`.
+
+.Example
+[source,dataweave,linenums]
+----
+|2003-10-01T23:57:59|
+----
+
+[[dw_type_dates_localtime]]
+=== LocalTime
+
+A `Time` in the current `TimeZone`.
+
+[[dw_type_dates_period]]
+=== Period
+
+`Period` represents an amount of time. The type takes the following form:
+
+- `P[n]Y[n]M[n]DT[n]H[n]M[n]S`
+- `P<date>T<time>``
+
+Where the [n] is replaced by the value for each of the date and time elements that follow the [n].
+
+`Period` has two subcategories:
+
+* `DatePeriod` +
+ A date-based amount of time, for example, 1 year, 2 months, 3 days. Because these expressions are date-based, they cannot be converted to milliseconds. For example, a month does not specify whether it is a month of 31 days or not, nor does a year specify whether it is a leap year. The data expresses just an amount of date. In DataWeave, the syntax is `|P1Y|`.
+
+* `Duration` +
+A time-based amount of time, for example, 1 second, 2 hours, or 2 days, each of which can be represented in seconds or milliseconds. In DataWeave, the syntax is `|PT1H|`.
+
+`P` is the duration designator placed at the start of the duration representation.
+
+- `Y` is the year designator (e.g. `|P1Y|`)
+- `M` is the month designator (e.g. `|P1M|`)
+- `D` is the day designator (e.g. `|P1D|`)
+
+`T` is the time designator that precedes the time components of the representation.
+
+- `H` is the hour designator (e.g. `|PT1H|`)
+- `M` is the minute designator (e.g. `|PT1M|`)
+- `S` is the second designator (e.g. `|PT1S|`)
+
+`DatePeriod` is useful for date manipulation, such as addition or subtraction. +
+The following example shows how to subtract one year from a date using `DatePeriod`. The return type is a new `Date` value:
+
+.Source
+[source,dataweave,linenums]
+----
+output application/dw
+---
+|2003-10-01| - |P1Y|
+----
+
+.Output
+[source,dataweave,linenums]
+----
+|2002-10-01|
+----
+
+`Duration` is useful as a result of a `Date` to `Date` subtraction so the amount of time between those two dates can be inferred. +
+The following example shows how subtracting one `Date` value from another returns a `Duration` value:
+
+.Source
+[source,dataweave,linenums]
+----
+output application/dw
+---
+|2003-11-01| - |2003-10-01|
+----
+
+.Output
+[source,dataweave,linenums]
+----
+|PT744H|
+----
+
+[[period_coercion]]
+==== Period Coercion
+
+Because a `DatePeriod` value is date-based, it can be coerced to `Number` date-based units, such as `years` or `months`. +
+The following example shows how to coerce a `DatePeriod` value to a `Number` value by using different units:
+
+.Source
+[source,dataweave,linenums]
+----
+output application/json
+---
+{
+ years:  |P1Y12M| as Number {unit: "years"},
+ months: |P8Y12M| as Number {unit: "months"}
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "years": 2,
+  "months": 108
+}
+----
+
+[[duration_coercion]]
+==== Duration Coercion
+
+Because `Duration` is time-based, this type can be coerced to a `Number` with different time-based units, such as `nanos`, `milliseconds`, `seconds`, `hours`, and `days`.
+
+The following example shows how to coerce a `Duration` to a `Number` by using different units:
+
+.Source
+[source,dataweave,linenums]
+----
+output application/json
+var period = (|2010-12-10T12:10:12| - |2010-09-09T10:02:10|)
+---
+{
+ nanos: period as Number {unit: "nanos"},
+ millis: period as Number {unit: "milliseconds"},
+ seconds: period as Number {unit: "seconds"},
+ hours: period as Number {unit: "hours"},
+ days: period as Number {unit: "days"}
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "nanos": 7956482000000000,
+  "millis": 7956482000,
+  "seconds": 7956482,
+  "hours": 2210,
+  "days": 92
+}
+----
+
+==== Deconstruct
+
+A `Duration` can be deconstructed into `hours`, `minutes` and `secs`.
+
+The following example shows how to deconstruct a `Duration` value:
+
+.Source
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var period = (|2010-12-10T12:10:12| - |2010-12-10T10:02:10|)
+---
+{
+   hours:  period.hours,
+   minutes:  period.minutes,
+   secs:  period.secs,
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "hours": 2,
+  "minutes": 8,
+  "secs": 2
+}
+----
+
+
+
+[[dw_type_dates_time]]
+=== Time
+
+A time in a specific `TimeZone`, specified as `|HH:mm:ss.SSS|`.
+
+.Example
+[source,dataweave,linenums]
+----
+|23:59:56|
+----
+
+[[dw_type_dates_timezone]]
+=== TimeZone
+
+The `Time` relative to Greenwich Mean Time (GMT). A `TimeZone` must include a `+` or a `-`. For example, `|03:00|` is a time, while `|+03:00|` is a `TimeZone`.
+
+.Example
+[source,dataweave,linenums]
+----
+|-08:00|
+----
+
+[[date_decomposition]]
+=== Date Decomposition
+
+To access the different parts of the date, special selectors must be used.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var myDate = |2003-10-01T23:57:59.700-03:00|
+---
+{
+  year: myDate.year,
+  month: myDate.month,
+  day: myDate.day,
+  hour: myDate.hour,
+  minutes: myDate.minutes,
+  seconds: myDate.seconds,
+  milliseconds: myDate.milliseconds,
+  nanoseconds: myDate.nanoseconds,
+  quarter: myDate.quarter,
+  dayOfWeek: myDate.dayOfWeek,
+  dayOfYear: myDate.dayOfYear,
+  offsetSeconds: myDate.offsetSeconds
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "year": 2003,
+  "month": 10,
+  "day": 1,
+  "hour": 23,
+  "minutes": 57,
+  "seconds": 59,
+  "milliseconds": 700,
+  "nanoseconds": 700000000,
+  "quarter": 4,
+  "dayOfWeek": 3,
+  "dayOfYear": 274,
+  "offsetSeconds": -10800
+}
+----
+
+[[date_format]]
+=== Date and Time Formats
+
+To enable you to format dates and times, DataWeave supports formatting characters, such as the `u` (for the year), `M`, and `d` in the date format `uuuu-MM-dd`. These characters are based on the Java 8 `java.time.format` package.
+
+For examples, see xref:dataweave-cookbook-format-dates.adoc[Format Dates and Times].
+
+=== Timezone IDs
+
+In addition to accepting time zone values, such as `-07:00`, DataWeave also accepts IDs such as `America/Buenos_Aires`, `America/Los_Angeles`, `Asia/Tokyo`, and `GMT`.
+
+For examples and a list of supported IDs, see xref:dataweave-cookbook-change-time-zone.adoc#timezone-ids[Time Zone IDs] and xref:dataweave-cookbook-format-dates.adoc[Change a Time Zone].
+
+[[dw_type_enum]]
+== Enum (dw::Core Type)
+
+This type is based on the https://docs.oracle.com/javase/7/docs/api/java/lang/Enum.html[Enum Java class].
+It must always be used with the `class` property, specifying the full Java class name of the class, as shown in this example.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/java
+---
+"Male" as Enum {class: "com.acme.GenderEnum"}
+----
+
+[[dw_type_iterator]]
+== Iterator (dw::Core Type)
+
+The `Iterator` type is based on the https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html[Iterator Java class], that iterates through arrays. `Iterator` contains a collection and includes methods to iterate through and filter it.
+
+Note that like the Java class, the iterator is designed to be consumed only once. For example, if a logger consumes the value, the value is no longer readable by subsequent elements in the flow.
+
+[[dw_type_null]]
+== Null (dw::Core Type)
+
+DataWeave defines a `Null` data type for `null` values. It is important to note that `null`
+is the value, while `Null` is the type. DataWeave functions do not recognize `Null` as
+a `null` value.
+
+You can determine whether a DataWeave function accepts `null` values by
+looking in the DataWeave reference documentation for a function signature
+that accepts a Null type. For example, the
+xref:dw-core-functions-flatten.adoc#flatten2[flatten] function has two function
+signatures, one of which is `flatten(Null): Null`. The signature indicates that
+`flatten` can accept `null` values. The xref:dw-core-functions-plusplus.adoc[++]
+(concatenate) function, which lacks a signature for handling value so the `Null`
+type, does not accept `null`.
+
+* `flatten([[1],2,[null],null])` returns `[1,2,null,null]`
+* `"a" &#43;&#43; null` returns the error
+`Unable to call &#96;&#43;&#43;&#96; with (&#96;String&#96;, &#96;Null&#96;)`.
+
+
+[[dw_type_number]]
+== Number (dw::Core Type)
+
+There is only one Number type that supports both floating point and integer numbers. There is no loss of precision in any operation, the engine always stores the data in the most performant way that does not compromise precision.
+
+DataWeave provides a mechanism for formatting numeric values and for coercing dates and strings to numbers. The language also provides operators that act on numeric values and includes many functions that take numeric values as arguments.
+
+* xref:dataweave-types-coercion.adoc##defining-dataweave-types-for-type-coercion[Type Coercion with DataWeave] shows how to format a number.
+* xref:dw-core-functions-mapobject.adoc[mapObject] provides an example that coerces a string to a number and formats the number.
+* <<period_coercion>> and <<duration_coercion>> include date coercion examples.
+* xref:dw-operators.adoc[Operators] describes operators that act on numeric values.
+* xref:dw-core-functions-avg.adoc[avg] is one of many DataWeave functions that accepts a numeric value. The `Number` type appears in its function signature, `avg(Array<Number>): Number`, which indicates that the function accepts an array of numeric values and returns a numeric value.
+* The xref:dw-numbers.adoc[Numbers] module provides helper functions that work on numbers.
+
+[[dw_type_object]]
+== Object (dw::Core Type)
+
+Represents any object as a collection of `Key:value` pairs, where a `Key` is
+composed of a `Name` and `Attributes`.
+
+The `Name` type is composed of a `String` as the local name and the `Namespace`.
+`Attributes` is composed of an Array of `Name:value` pairs. Note that the `Key`
+is not a `String`, so it is not possible to compare keys. However, you can get
+the local name by performing an `as String` type coercion on any value of type
+`Key`.
+
+.Example
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  name: "Annie"
+}
+----
+
+=== Single Value Objects
+
+If an object has only one `key:value` pair, the enclosing curly braces `{ }` are not required:
+
+.Example
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+---
+name: "Annie"
+----
+
+[[conditional_elements_object]]
+=== Conditional Elements
+
+Objects can define conditional key-value pairs based on a conditional expression. Conditional elements have the form `(key:value) if` condition.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml encoding="UTF-8"
+---
+file: {
+  name: "transform",
+  (extension: "zip") if payload.fileSystem?
+}
+----
+
+This example outputs an additional field called "extension" only when the fileSystem property is present in payload (this field may contain any value, not just `true`).
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+  <extension>zip</extension>
+</file>
+----
+
+If absent:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+</file>
+----
+
+[[dynamic_keys]]
+=== Dynamic Keys
+
+To specify a key through an expression, you need to wrap the expression in parentheses.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var dynamicKey = "language"
+---
+{
+  (dynamicKey): "Data Weave"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "language": "Data Weave"
+}
+----
+
+[[dynamic_elements]]
+=== Dynamic Elements
+
+Dynamic elements allow you to add the result of an expression as `key:value` pairs of an object. That expression must be either an `object` or an `array of objects`.
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var x = [
+  {b: "b"},
+  {c: "c", d: "d"}
+]
+var y = {e: "e"}
+---
+{
+  a: "a",
+  (x),
+  (y)
+}
+----
+
+The _evaluation parentheses_ around the variables in the body of the script above (`(x)` and `(y)`) enable the object constructor curly braces (`{ }`) surrounding the body of the script to act on the values of the variables. Specifically, the object constructor curly braces extract the key-value pairs from the values of `x` and `y` and convert them into a collection of key-value pairs within an object. Without the parentheses (for example, if you use `x` instead of `(x)`), the script returns an error.
+
+The object constructor curly braces require a data construct that contains one or more key-value pairs, specifically an object, such as `{ "a":"one", "b":"two"}`, or an array of objects, such as `[{"a":"one"},{"b":"two"}]` so that it can produce a valid object. Because the first element within the object constructor curly braces is the key-value pair `a: "a"`, the object constructor curly braces leave the pair as the first element in the output object, without any modifications. However, the object constructor curly braces extract the outer-level key-value pairs in the evaluated expressions `(x)` and `(y)` and append those key-value pairs to the output object.
+
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": "a",
+  "b": "b",
+  "c": "c",
+  "d": "d",
+  "e": "e"
+}
+----
+
+=== Conditional XML Attributes
+
+You might want your output to only include certain XML attributes based on a condition. Conditional elements have the form `(key:value) if condition`
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  name @(
+    (company: "Acme") if false,
+    (transform: "Anything") if true
+  ): "DataWeave"
+}
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<name transform="Anything">DataWeave</name>
+----
+
+=== Dynamic XML Attributes
+
+You might want to include a changing set of key:value pairs in a specific location as XML attributes.
+
+.Input
+[source,json,linenums]
+----
+{
+  "company": "Mule",
+  "product": "DataWeave"
+}
+----
+
+.Transform
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+transformation @((payload)): "Transform from anything to anything"
+----
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<transformation company="Mule" product="DataWeave">Transform from anything to anything</transformation>
+----
+
+[[dw_type_regex]]
+== Regex (dw::Core Type)
+
+Regular Expressions are defined between `/`. For example `/\d+/` represents multiple numerical digits from 0-9. These may be used as arguments in certain operations that act upon strings, like Matches or Replace, or on operations that act upon objects and arrays, such as filters.
+
+[[dw_type_string]]
+== String (dw::Core Type)
+
+A string can be defined by the use of double quotes or single quotes.
+
+[source,dataweave,linenums]
+----
+{
+  doubleQuoted: "Hello",
+  singleQuoted: 'Hello',
+}
+----
+
+[[escape-chars-string]]
+=== Escaping Special Characters
+
+Use the backslash (`\`) to escape special characters in an input string:
+
+* `$`: You need to escape any use of of `$` in a string. Otherwise, DataWeave
+treats the `$` as an unnamed parameter for a function and returns the error
+`Unable to resolve reference of $.`.
+* `"`: For a string that is surrounded by double quotes, you need to escape any
+double quote that is part of the string, for example, `"a\"bcdef"`. Here, the
+second double-quote is part of the string that starts with an `a` and ends
+with `f`.
+* `'` For a string that is surrounded by single quotes, you need to escape any
+single quote that is part of the string: for example, `+'abcd\'e"f'+`. In this example, the
+second single quote is part of the string that starts with an `a` and ends
+with `f`. Notice that you do not need to escape the double quote in this case.
+* `\``: For a string that is surrounded by backticks (supported in DataWeave 2.0), you must escape any backtick that is part of the string: for example, ``abc\`def``.
+* `\`: Because the backslash is the character you use to escape other special
+characters, you need to escape it with a separate backslash to use it in
+a string, for example,`\\`.
+* `\n`: For inserting a new line.
+* `\t`: For inserting a tab.
+* `\u`: For inserting a unicode character, such as `\u25c4`.
+
+[[string_interpolation]]
+=== String Interpolation
+
+String interpolation allows you to embed variables or expressions directly in a string. The expression need to be enclosed (`$( <expression> )`), and it should always return String type or something that is coercible to String.
+
+[source,dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var name = "Shoki"
+---
+{
+    Greeting: "Hi, my name is $name",
+    Sum: "1 + 1 = $(1 + 1)"
+}
+----
+
+.Output
+[source,json,linenums]
+----
+{
+  "Greeting": "Hi, my name is Shoki",
+  "Sum": "1 + 1 = 2"
+}
+----
+
+[[dw_type_tryresult]]
+== TryResult (dw::Runtime Type)
+
+Evaluates the delegate and returns an object with the result or an error message. See the `try` example. A successful `TryResult` contains the `result` field and a `success` value of `true`. An unsuccessful `TryResult` contains the `error` field  and a `success` value of `false`.
+
+.Definition
+[source,dataweave,linenums]
+----
+{
+  success: Boolean,
+  result?: T,
+  error?: {
+    kind: String,
+    message: String,
+    stack?: Array<String>,
+    location?: String
+  }
+}
+----
+
+[[dw_type_url]]
+== URI Types (dw::core::URL)
+
+Functions in the URI function module can return a URI data type.
+
+.Definition:
+[source,dataweave,linenums]
+----
+{
+  isValid: Boolean,
+  host?: String,
+  authority?: String,
+  fragment?: String,
+  path?: String,
+  port?: Number,
+  query?: String,
+  scheme?: String,
+  user?: String,
+  isAbsolute?: Boolean,
+  isOpaque?: Boolean
+}
+----
+
+The URI type consists of the following fields:
+
+* `isValid`: Boolean that indicates whether the URI is valid. Invalid characters
+   include `&lt;`, `&gt;`, and blank spaces.
+* `host`: String representing the host name (for example,
+  `+my.company.com+` from `+http://my.company.com:8080/hello+`)
+* `authority`: String representing the authority, which includes the host
+   and port (for example, `+my.company.com:8080+` from
+  `+http://my.company.com:8080/hello+`). Returns the port only if it is
+  explicitly specified in the URI.
+* `fragment`: String representing the subordinate resource after the `#` in
+              the URI (for example, `footer` in the URI
+              `+"https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#footer"+`).
+* `path`: String representing a path following the host or authority (for example,
+          `/hello` in `+http://my.company.com:8080/hello+`) .
+* `port`: Number representing an explicit port in the URI (for example, `8080`
+          in `+http://my.company.com:8080/hello+`). If no port is specified
+          (for example, `+http://my.company.com/hello+`), the value of the
+          `port` field is `null`.
+* `query`: String identifying a query portion of a URI (for example,
+           `field=value` in '+http://my.company.com:1234/hello/?field=value+').
+* `scheme`: String identifying the URI scheme, such as `https` or `http`,
+            which appears before a colon (`:`).
+* `user`: String representing user information in a URI (for example, the
+          `myname` in `+http://myname@www.mycompany.com+`).
+* `isAbsolute`: Boolean value of `true` if the URI contains a scheme,
+                `false` if the URI does not (for example, a relative URI such as
+                `/path/to/somewhere`).
+* `isOpaque`: Boolean value of `true` if the URI lacks a scheme followed by
+              forward slashes (`/`).
+              `+mailto:somebody@somewhere.com+` returns `true`.
+
+The following DataWeave script uses the `parseURI` function to return and
+access values to fields from a URI type. Note that fields with `null`
+values (for example, the URI defined by `uriDataTypeEx`) are not returned
+unless you explicitly select them.
+
+.DataWeave Script
+[source,dataweave,linenums]
+----
+%dw 2.0
+import * from dw::core::URL
+var uriDataTypeEx = "https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#footer"
+var queryStringsEx = 'http://my.company.com:1234/hello/?field=value'
+output application/json
+---
+{
+    'myUriDataTypeEx': parseURI(uriDataTypeEx),
+    // queryStringsEx has a query string:
+    'myQueryStringsEx': parseURI(queryStringsEx).query,
+    // uriDataTypeEx lacks a query string:
+    'myQueryStringNullEx': parseURI(uriDataTypeEx).query,
+    // The URI includes the port number:
+    'myAuthorityEx': parseURI('http://localhost:8080/test').authority
+}
+----
+
+.Output
+[source,JSON,linenums]
+----
+{
+  "myUriDataTypeEx": {
+    "isValid": true,
+    "raw": "https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#footer",
+    "host": "en.wikipedia.org",
+    "authority": "en.wikipedia.org",
+    "fragment": "footer",
+    "path": "/wiki/Uniform_Resource_Identifier",
+    "scheme": "https",
+    "isAbsolute": true,
+    "isOpaque": false
+  },
+  "myQueryStringsEx": "field=value",
+  "myQueryStringNullEx": null,
+  "myAuthorityEx": "localhost:8080"
+}
+----
+
+== DataWeave Type References
+
+You can find more data type documentation in the reference pages for the
+DataWeave function modules:
+
+ * xref:dw-core-types.adoc[Core Types (dw::Core)]
+ * xref:dw-dataformat-types.adoc[DataFormat Types (dw::extension::DataFormat)]
+ * xref:dw-diff-types.adoc[Diff Types (dw::core::Diff)]
+ * xref:dw-mule-types.adoc[Mule Types (Mule)]
+ * xref:dw-multipart-types.adoc[Multipart Types (dw::module::Multipart)]
+ * xref:dw-runtime-types.adoc[Runtime Types (dw::Runtime)]
+ * xref:dw-timer-types.adoc[Timer Types (dw::core::Timer)]
+ * xref:dw-url-types.adoc[URL Types (dw::core::URL)]
+
+
+== See Also
+
+* xref:dataweave-language-introduction.adoc[DataWeave Scripts]
+
+* https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange (List of Projects that use DataWeave)]
