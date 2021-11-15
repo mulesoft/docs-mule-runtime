@@ -9,6 +9,8 @@ Consider having 1 million records processed by a batch application with three st
 
 Additionally, batch processing requires having enough memory available to process the threads in parallel, which means moving the records from persistent storage into RAM in a fixed-size block. The larger your records and their quantity, the more available memory you need for batch processing.
 
+== Batch Block Size
+
 By default, the batch block size is set to 100. It is a good balancing point between performance and working memory requirements based on analysis across a set of representative batch use cases with various record sizes. However, the optimal value for each application depends on its use case. +
 You can configure this property for the batch job. If you believe that in your particular case, custom size is best suited, make sure to run comparative tests with different values to find the optimum size in your use case. The following example shows the batch block size:
 
@@ -16,6 +18,45 @@ You can configure this property for the batch job. If you believe that in your p
 ----
 <batch:job jobName="test-batch" blockSize="${batch.block.size}">
 ----
+
+== Max Concurrency
+
+The maximum number of threads used for processing within a Batch scope defaults to 2 times the number of cores that the JVM detects. On fractional core deployments, such as CloudHub and Anypoint Runtime Fabric, the JVM detects a _non-fractional_ number of cores. You can manually increase or lower the automated concurrency setting. The Max Concurrency setting enables you to set an upper limit on the number of threads to use for a batch job instance that, for example, has insufficient records to warrant more threads.
+
+The following example overrides the automated `maxConcurrency` default to a setting that is loaded from a property:
+
+[source,xml,linenums]
+----
+<batch:job jobName="an-example-batch" maxConcurrency="${batch.block.maxConcurrency}">
+----
+
+== Batch Aggregators
+
+One million round trips across a network impacts performance, whether on single or multiple threads. Communication with SaaS systems can easily consume the quota of API calls. Instead of processing records one by one, you can improve performance by using the Batch Aggregator scope to perform bulk operations on arrays of records. The scope uses an Aggregator Size setting to limit the number of records in each array. 
+
+When determining the number of records to process in an array of records, you must take into account the maximum number of records permitted by operations on the system with which the communication takes place. It is important to conduct performance testing on your Aggregator Size setting _and on lower values_. Your logic must handle any number of records up to and including the value of your setting because the number of records that the system receives can be lower than your specified value. For example, if there are 120 records, and your Aggregator Size setting is 50, the last submission is 20 records.
+
+The following example shows a Batch Step scope with a Batch Aggregator scope that is set to a fixed size of `50`:
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step_PushToXYZ" >
+  <batch:aggregator doc:name="Batch Aggregator" size="50">
+     <!-- code for an array of 50 (or fewer) records -->
+  </batch:aggregator>
+</batch:step>
+----
+
+If the aggregator contains an operation that streams data, you can activate the scope's Streaming option (`streaming="true"`) instead of using an Aggregator Size setting (`size="50"`).
+
+
+== Multiple Concurrent Instances of a Batch Job
+
+Many use cases for Batch Job scopes process only one request (batch job instance) at a time, but some cases simultaneously execute two or more batch job instances. To tune the thread pool sharing in such cases, you can set one of the following scheduling strategies, each of which is tracked separately by its batch instance ID: 
+
+* `ORDERED_SEQUENTIAL`: Default scheduling strategy that limits the impact of concurrent instances by processing the instances in the order they are triggered. This strategy is useful when nonsequential processing of the same batch job can cause issues, such as data inconsistency, or reach resource limitations. 
+
+* `ROUND_ROBIN`: Scheduling strategy that shares the threads with batch job instances that are "in flight". 
 
 == See Also
 * xref:batch-processing-concept.adoc[Batch Processing]
