@@ -56,11 +56,36 @@ $MULE_HOME/tools/upgrade-tool upgrade -n ./<newMuleDistributionPath>
 
 === Solving Conflicts with Mule Configuration Files
 
-During the upgrade process, the Mule upgrade tool checks if there are differences between the configuration files of the current and the new Mule distributions. If there are differences, the tool logs an error message for each configuration file with conflicts, creates the `upgrade-tool/mule-configs-files/conf` folder, and includes all the configuration files from the current distribution in this location adding the suffix `_TO_FIX` to the files with conflicts.
+Before performing the upgrade, the tool compares configuration files from the current Mule distribution with the ones from the new distribution to detect whether there are changes between them and therefore to prevent changes to be lost.
 
-To fix the conflicts and continue with the upgrade process, place the configuration files with the final content to use during the upgrade inside the `upgrade-tool/mule-configs-files/conf` folder.
+If changes are detected in the NEW distribution, the following actions will be performed by the tool:
 
-You can compare the differences in the original config files with conflicts of the current and new distribution by exploring the `upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_OLD_DISTRO` and `upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_NEW_DISTRO` folders.
+* The upgrade command execution will fail showing an error message
+* Config files with conflicts will be logged into the log output
+* The config files inside the `${MULE_HOME}/conf` directory will be copied to `${MULE_HOME}/upgrade-tool/mule-config-files/conf` adding to the config files with conflicts the suffix `_TO_REVIEW`
+* As a reference to identify what are the changes in the config files of the NEW distribution without the needing to consider the user changes in the `${MULE_HOME}/conf` config files, the original content of the configuration files of the OLD and NEW distributions will be available at the following paths:
+  * `${MULE_HOME}/upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_OLD_DISTRO/`
+  * `${MULE_HOME}/upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_NEW_DISTRO/`
+
+At this point, human intervention is needed to resolve the conflicts, follow these suggested steps to resolve them:
+
+* Assuming that the file `wrapper.conf` is in conflict, there will be a file named `${MULE_HOME}/upgrade-tool/mule-configs-files/conf/wrapper_TO_REVIEW.conf`
+* To identify what were the changes added in the new distro compare with [diff tools](https://en.wikipedia.org/wiki/Comparison_of_file_comparison_tools) the `${MULE_HOME}/upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_OLD_DISTRO/wrapper.conf` against `${MULE_HOME}/upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_NEW_DISTRO/wrapper.conf`
+* Once these changes were reviewed take one of the following approaches:
+  * Adopt new changes: Use [diff tools](https://en.wikipedia.org/wiki/Comparison_of_file_comparison_tools) to compare and merge the content of the file `${MULE_HOME}/upgrade-tool/mule-configs-files/conf/wrapper_TO_REVIEW.conf` with the new added changes of the `${MULE_HOME}/upgrade-tool/mule-configs-files/ORIGINAL_CONFIG_FILES_NEW_DISTRO/wrapper.conf`. Once the merge is finished rename `${MULE_HOME}/upgrade-tool/mule-configs-files/conf/wrapper_TO_REVIEW.conf` removing the `_TO_REVIEW` suffix.
+  * Discard new changes: Rename `${MULE_HOME}/upgrade-tool/mule-configs-files/conf/wrapper_TO_REVIEW.conf` removing the `_TO_REVIEW` suffix. Bear in mind that this approach could lead to the usage of deprecated settings in the updated Mule distribution
+* Follow the same previous steps till all the config files with the `_TO_REVIEW` suffix are resolved.
+* Finally, retry the upgrade command 
+* When the upgrade finish successfully the `${MULE_HOME}/upgrade-tool/mule-config-files` folder will be deleted to have a clean environment for new Mule Distribution upgrades. 
+                 
+In case a Mule Distribution upgrade that have config files conflicts is needed to be done without user interaction, follow these suggested steps:
+
+* In an environment were user interaction can be done and the same distributions versions are available: 
+  * Review and resolve all the conflicts as explained in the previous section
+* In the new environment where shouldn't be user interaction:
+  * Before running the upgrade command copy the files from `${MULE_HOME_WITH_USER_INTERACTION}/upgrade-tool/mule-configs-files/conf/` to `${MULE_HOME_WITHOUT_USER_INTERACTION}/upgrade-tool/mule-configs-files/conf/`
+  * Run the upgrade command
+  * The upgrade will finish without user interaction
 
 == Roll Back an Upgrade
 
