@@ -3,48 +3,11 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-== Overview
+Mule batch processing is designed to handle very large data sets and to perform almost real-time data integration that recovers from crashes and continues processing a job from a point of failure. However, _verbose_ logs for issues that occur in large data sets can become enormous and severely impact performance. 
 
-Handling errors inside a batch job can be complicated considering the huge amount of data this scope is designed to take. +
-When processing 1 million records, it's almost impossible to log everything. Logs would become huge, unreadable, and would take a massive toll on the performance of your processing. +
-On the other hand, logging too little would make it impossible for you to know what went wrong. And considering that if out of those 1 million records, 30 thousand of them failed, not knowing what’s wrong with them can turn your debugging task very problematic. This trade-off is not simple to overcome.
+To limit this impact, Mule uses INFO-level logging by default, as described in <<default_logging>>. For cases in which you require more verbose log messages, you can change the mode to DEBUG. This mode is helpful for debugging and is feasible for some cases that involve smaller data sets. 
 
-== Logs of Failing Records Inside a Batch Step
-
-When processing a batch job instance, a processor inside a batch step may fail or raise an error. When this occurs – perhaps because of corrupted or incomplete record data – Mule logs the stack traces following this logic:
-
-. Mule gets the exception's full stack trace.
-. Mule strips that stack trace from any messages. +
-Even if all records raise the same error, the messages being processed would probably contain specific information related to those records. For example, if I'm pushing leads to my Salesforce account and one record fails because the lead was already uploaded, another repeated lead would have different record information, but the error is the same.
-. Mule verifies if the stack trace was already logged in the current step. +
-If this was the first time the runtime encountered this error, it logs the error and showing a message like this:
-+
-[source,text,linenums]
-----
-com.mulesoft.mule.runtime.module.batch.internal.DefaultBatchStep: Found exception processing record on step 'batchStep1' for job instance 'Batch Job Example' of job 'CreateLeadsBatch'.
-
-This is the first record to show this exception on this step for this job instance. Subsequent records with the same failures will not be logged for performance and log readability reasons:
-----
-+
-Mule logs on a "by step" basis. If another step also raises the same error, the runtime logs it again for that step.
-. When the batch job reaches the On Complete phase, Mule displays an error summary with every error type, and how many times it happened in each batch step. +
-The error summary for a batch job with two batch steps that raised a `batch.exception` type:
-+
-[source,text,linenums]
-----
-************************************************************************************************************************
-*             - - + Exception Type + - -             *         - - + Step + - -        *       - - + Count + - -       *
-************************************************************************************************************************
-* com.mulesoft.mule.runtime.module.batch.exception.B *            batchStep1           *                10             *
-* com.mulesoft.mule.runtime.module.batch.exception.B *            batchStep2           *                9              *
-************************************************************************************************************************
-----
-+
-Here we can see that the first step failed ten times and the second failed nine.
-
-Mule logs batch errors using this behavior as its default configuration, which only logs INFO level messages to get a balanced trade-off between logging efficiency for large chunks of data. +
-However, your motivation to use batch processing might not be its ability to handle large datasets, but its capacity to recover from a crash and keep processing a batch job from where it was left off when performing "near real-time" data integration. Or you may need more verbose log levels for debugging. +
-For those cases, you can set the batch category to DEBUG level in your application's log4j configuration like this:
+The following property is available for setting the logging mode:
 
 [source,text,linenums]
 ----
@@ -58,8 +21,44 @@ If you are using CloudHub or Runtime Manager, you can add the following package 
 com.mulesoft.mule.runtime.module.batch
 ----
 
-[CAUTION]
-Use the DEBUG level with care. Definitively not advised for production environments unless you’re sure that your jobs will not handle significantly large data sets.
+Avoid using the DEBUG mode in a production environment when processing very large data sets.
+
+== Logs of Failing Records Inside a Batch Step
+
+When processing a batch job instance, a processor inside a batch step can fail or raise an error, for example, because of corrupted or incomplete record data. By default, Mule uses the INFO log level to log stack traces according to the following logic when issues occur:
+
+. Mule gets the exception's full stack trace.
+. Mule strips the stack trace from error messages in the log. +
+Even if all records raise the same error, the messages being processed would probably contain specific information related to those records. For example, if I'm pushing leads to my Salesforce account and one record fails because the lead was already uploaded, another repeated lead would have different record information, but the error is the same.
+. Mule verifies if the stack trace was already logged in the current step. +
+The first time the runtime encounters this error, Mule logs the error and produces a message like this one:
++
+[source,text,linenums]
+----
+com.mulesoft.mule.runtime.module.batch.internal.DefaultBatchStep: Found exception processing record on step 'batchStep1' for job instance 'Batch Job Example' of job 'CreateLeadsBatch'.
+
+This is the first record to show this exception on this step for this job instance. Subsequent records with the same failures will not be logged for performance and log readability reasons:
+----
++
+Mule logs on a "by step" basis. If another step also raises the same error, the runtime logs it again for that step.
+. When the batch job reaches the On Complete phase, Mule displays an error summary with every error type and the number of occurrences in each batch step. +
+The error summary for a batch job with two batch steps that raised a `batch.exception` type:
++
+[source,text,linenums]
+----
+************************************************************************************************************************
+*             - - + Exception Type + - -             *         - - + Step + - -        *       - - + Count + - -       *
+************************************************************************************************************************
+* com.mulesoft.mule.runtime.module.batch.exception.B *            batchStep1           *                10             *
+* com.mulesoft.mule.runtime.module.batch.exception.B *            batchStep2           *                9              *
+************************************************************************************************************************
+----
++
+Here, the first step failed ten times and the second failed nine.
+
+Mule logs batch errors using this behavior as its default configuration, which only logs INFO level messages to get a balanced trade-off between logging efficiency for large chunks of data. +
+However, your motivation to use batch processing might not be its ability to handle large datasets, but its capacity to recover from a crash and keep processing a batch job from where it was left off when performing "near real-time" data integration. Or you may need more verbose log levels for debugging. +
+
 
 == DataWeave Functions for Error Handling
 
