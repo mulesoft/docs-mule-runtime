@@ -1,17 +1,12 @@
-= Refining Batch Steps Processing
+= Using Batch Processing Components
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 :page-aliases: batch-aggregator-concept.adoc, filter-records-batch-faq.adoc
 
-You can refine the work that a batch step performs upon the records it processes.
+You can set up and configure batch scopes to perform common batch processing use cases and to enhance the performance of batch jobs for cases in which the defaults require adjustment.
 
-* You can set *filters* upon batch steps to only accept some records for processing.
-* You can *aggregate* records in groups, sending them as bulk upserts to external sources or services.
-
-This document outlines how and when to use batch filters and the batch commit.
-
-== Batch Filters
+== Filtering the Records to Process within a Batch Step Scope
 
 You can apply one or more filters as attributes to any number of batch steps. +
 Imagine a batch job whose first batch step checks if a Salesforce contact exists for a record, and a second batch step that updates each existing Salesforce contact with new information. You can apply a filter to the second batch step to ensure it only processes records that didn't fail during the first batch step. +
@@ -82,19 +77,11 @@ See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for mor
 . Accept Policy
 . Accept Expression
 
-== Batch Aggregation
-
-Aggregation is useful for bulk uploading one or more arrays of records to an external server, such as a database server. Within the scope, you can add an operation, such as a bulk update, insert, or upsert operation, to load the records in bulk, instead of running an operation separately on each record. See <<aggregator_bulk_update>> for an example.
-
-You can also modify records within the Batch Aggregator scope, just as you can modify them with processors in the Batch Step scope. The modifications can take place sequentially or through random access to specific records. See <<aggregator_modify_records>>.
-
-NOTE::
-When using an aggregator, do not attempt to process Guava data types, such as `ImmutableMap`. Instead, use a Java Map to avoid serialization issues.
-
-To learn how processing within the Batch Aggregation scope differs from processing within the Batch Step scope, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
 
 [[aggregator_bulk_update]]
 == Performing Bulk Uploads from a Batch Aggregator Scope
+
+Aggregation is useful for bulk uploading one or more arrays of records to an external server, such as a database server. Within the Batch Aggregator scope, you can add an operation, such as a bulk update, insert, or upsert operation, to load the records in bulk, instead of running an operation separately on each record.
 
 You can process records in arrays of a fixed size or stream a single array of records from the batch job instance. For example, you can configure a Bulk Update operation in the Anypoint Connector for Database (Database Connector) to update 200 processed records on the server. Alternatively, you can stream all the records in the instance to the server. For information about configuring bulk operations for Database Connector, see xref:db-connector::database-execute-bulk.adoc[].
 
@@ -128,8 +115,14 @@ The following example streams updates to a database:
 </batch:job>
 ----
 
+To learn how processing within the Batch Aggregation scope differs from processing within the Batch Step scope, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
+
 [[aggregator_modify_records]]
-=== Modifying Records within a Batch Aggregator
+== Modifying Records within a Batch Aggregator
+
+You can modify records within the Batch Aggregator scope, just as you can modify them with processors in the Batch Step scope. The modifications can take place sequentially or through random access to specific records.
+
+=== Sequential Processing within a Batch Aggregator
 
 The following example performs sequential access to records. Using Groovy within a xref:scripting-module::index.adoc[Scripting module], the example modifies the payload of each record from the xref:for-each-scope-concept.adoc[For Each] scope's iteration and creates a variable for each collected record.
 
@@ -164,6 +157,8 @@ Sequential access to records assumes the following:
 You can also use the For Each scope when randomly accessing records by their iteration number.
 For Each exposes a `records` variable, which is an immutable list that For Each uses to keep track of the iteration. You can use this variable to randomly access records in the list from the Batch Aggregator scope.
 
+=== Randomly Accessing Records within a Batch Aggregator
+
 To demonstrate random access when using fixed-size aggregation, the following example specifies the index of a record in the For Each list of records. Instead of sequentially accessing each record, using the `records` variable with an index of a record selects a single record from the list. The example uses the Scripting module to modify the payload of the selected record and creates a variable for that record:
 
 [source,xml,linenums]
@@ -185,9 +180,6 @@ To demonstrate random access when using fixed-size aggregation, the following ex
 	</batch:process-records>
 </batch:job>
 ----
-
-[[modify_records_streaming_aggregator]]
-== Modifying Records while Streaming within the Batch Aggregator
 
 You can configure a Batch Aggregator scope to stream its content. Setting aggregator to stream the records (`streaming="true"`) enables you to process an array of all the records in the job instance without running out of memory, no matter how many or how large the records are.
 
@@ -232,8 +224,9 @@ You can modify the records in the stream. However, only sequential access to rec
 </batch:job>
 ----
 
+To learn how processing within the Batch Aggregation scope differs from processing within the Batch Step scope, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
 
-==== Tips
+=== Tips on Streaming within the Batch Aggregator
 
 * *Streaming from SaaS providers:* In general, you likely wouldn't use batch streaming when sending data through an Anypoint Connector to a SaaS provider like Salesforce, because SaaS providers often have restrictions on accepting streaming input. Use streaming batch processing when writing to a file such as CSV, JSON, or XML.
 
@@ -241,7 +234,7 @@ You can modify the records in the stream. However, only sequential access to rec
 
 * *Batch streaming and access to items:* The biggest drawback to using batch streaming is that you have limited access to the items in the output. In other words, with a _fixed-size commit_, you get an unmodifiable list, thus allowing you to access and iteratively process its items; with _streaming commit_, you get a one-read, forward-only iterator.
 
-=== Batch Aggregator Characteristics
+== Batch Aggregator Characteristics
 
 * The batch aggregator scope can only exist in batch steps which, in turn, are only usable within the batch process phase of a batch job. You cannot use batch aggregators during the On Complete phase of a batch job.
 * An aggregator can only wrap the final element within the batch step in which it resides.
@@ -255,6 +248,9 @@ To make sure that the connector you are using supports record-level errors, chec
 * The batch aggregator scope does not support job-instance-wide transactions. You can define a transaction inside a batch step that processes each record in a separate transaction. Think of it as a step within a step. +
 Such a transaction must start and end within the step's boundaries.
 * You cannot share a transaction between a batch step and a batch aggregator that exists within the step. Any transaction that the batch step starts, ends before the batch aggregator begins processing. In other words, a transaction cannot cross the barrier between a batch step and the batch aggregator scope it contains.
+
+NOTE::
+When using an aggregator, do not attempt to process Guava data types, such as `ImmutableMap`. Instead, use a Java Map to avoid serialization issues.
 
 == Preserving the MIME types of the Aggregated Records
 
@@ -384,7 +380,7 @@ You set the size through the Batch Job scope, for example:
 </batch:job>
 ----
 
-== Setting a Max Concurrency Limit
+== Setting a Max Concurrency Limit on Batch Job Instances
 
 The Max Concurrency (`maxConcurrency`) property limits the number of blocks that the batch job can process concurrently. The records inside the block are processed sequentially.
 
