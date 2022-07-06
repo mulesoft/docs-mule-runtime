@@ -82,60 +82,54 @@ See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for mor
 . Accept Policy
 . Accept Expression
 
-== Batch Aggregator
+== Batch Aggregation
 
-A Batch Aggregator scope enables you to pull records from the stepping queue and then process and return them as an array of records. This functionality is useful, for example, for bulk uploading records to an external server, such as a database server. Within the scope, you can add an operation, such as a bulk update, insert, or upsert opertion, to load records in bulk, instead of running an operation separately on each record individually. 
+Aggregation is useful, for example, for bulk uploading one or more arrays of records to an external server, such as a database server. Within the scope, you can add an operation, such as a bulk update, insert, or upsert operation, to load the records in bulk, instead of running an operation separately on each record. See <<aggregator_bulk_update>> for an example.
 
-The Batch Aggregator scope pulls records from the stepping queue into arrays. You can process arrays of a fixed size or stream a single array of records from the batch job instance. For example, you can configure a Bulk Update operation in the Anypoint Connector for Database (Database Connector) to update 200 processed records on the server. Alternatively, you can stream all the records in the instance to the server. For information about configuring bulk operations for DataBase Connector, see xref:TODO.adoc. 
-
-The following example updates a database with an array of 200 records:
-
-[source,xml,linenums]
-----
-<batch:aggregator size="200">
-    <db:bulk-update config-ref="Database_Config">
-</batch:aggregator>
-----
-
-The following example streams records to the server:
-
-[source,xml,linenums]
-----
-<batch:aggregator streaming="true">
-    <db:bulk-update config-ref="Database_Config"> 
-</batch:aggregator>
-----
-
-This example does not change the records. However, it is possible to modify records in within the Batch Aggregator scope, just as you can modify them with processors in the Batch Step scope. Records are mutable, meaning that you can access the payloads and variables of the records. When aggregating a fixed number of records, access to each record can take place sequentially or through random access. When streaming records, Mule allows only sequential access to records. See <<modify_records_fixed_size>> and <<modify_records_streaming_aggregator>>.
-
+You can also modify records within the Batch Aggregator scope, just as you can modify them with processors in the Batch Step scope. The modifications can take place sequentially or through random access to specific records. See <<aggregator_modify_records>>.
 
 NOTE::
 When using an aggregator, do not attempt to process Guava data types, such as `ImmutableMap`. Instead, use a Java Map to avoid serialization issues.
 
-[[modify_records_fixed_size]]
-=== Modifying Records of a Fixed Size within the Batch Aggregator 
+[[aggregator_bulk_update]]
+=== Performing Bulk Uploads from a Batch Aggregator Scope
 
-You can configure a batch aggregator scope to process fixed-size groups of records inside a batch aggregator scope.
+You can process records in arrays of a fixed size or stream a single array of records from the batch job instance. For example, you can configure a Bulk Update operation in the Anypoint Connector for Database (Database Connector) to update 200 processed records on the server. Alternatively, you can stream all the records in the instance to the server. For information about configuring bulk operations for DataBase Connector, see xref:db-connector::database-execute-bulk.adoc[].
 
-You can configure the batch aggregator scope to upsert, for example, 100 records at a time.
+The following example updates a database in arrays of 200 records per update:
 
 [source,xml,linenums]
 ----
 <batch:job jobName="batchJob">
 	<batch:process-records >
 		<batch:step name="batchStep">
-			<batch:aggregator size="100">
-				...
-			</batch:aggregator>
+      <batch:aggregator size="200">
+        <db:bulk-update config-ref="Database_Config">
+      </batch:aggregator>
+    </batch:step>
+  </batch:process-records>
+</batch:job>
+----
+
+The following example streams updates to a database:
+
+[source,xml,linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="batchStep">
+		  <batch:aggregator streaming="true">
+		    <db:bulk-update config-ref="Database_Config">
+		  </batch:aggregator>
 		</batch:step>
 	</batch:process-records>
 </batch:job>
 ----
 
-When using a fixed-size aggregator, you can replace, change, or store the payload and variable data of each record.
+[[aggregator_modify_records]]
+=== Modifying Records within a Batch Aggregator
 
-As stated above, since a record is mutable, by adding a foreach scope you can iterate through a fixed-size aggregator block, you can sequentially go over each record's data and persistently store each record's payload and variables. This method of accessing records within the batch aggregator is called sequential access. +
-You can, for example, for example, use the Groovy scripting module to modify the payload and create a variable for each collected record. +
+The following example performs sequential access to records. Using Groovy within a xref:scripting-module::index.adoc[Scripting module], the example modifies the payload of each record from the xref:for-each-scope-concept.adoc[For Each] scope's iteration and creates a variable for each collected record.
 
 [source,xml,linenums]
 ----
@@ -157,15 +151,18 @@ You can, for example, for example, use the Groovy scripting module to modify the
 </batch:job>
 ----
 
-The sequential access method assumes that:
+//TODO: NEED TO EXPLAIN THE FOLLOWING BULLET POINTS.
+Sequential access to records assumes the following:
 
-. The aggregator size matches the amount of aggregated records.
+. The aggregator size matches the number of aggregated records.
 . There is a direct correlation between the aggregated records and the items in the list.
 
-You can also access random records by specifying the iteration number of the foreach, saving you the need to iterate through all records. +
-The foreach scope exposes a `records` variable. This variable is an immutable list used by foreach to keep track of the iteration and provides a random access list that is accessible across the batch aggregator.
+//TODO: HOW WOULD ANYONE KNOW THE "iteration number" of the record? Is that the index of the record
+// in the list, or what?
+You can also use the For Each scope when randomly accessing records by their iteration number.
+For Each exposes a `records` variable, which is an immutable list that For Each uses to keep track of the iteration. You can use this variable to randomly access records in the list from the Batch Aggregator scope.
 
-You can carry out the same result as the example above by specifying an arbitrary index number for the records list instead of sequentially accessing each record. You can, for example, create a variable and modify the payload of the first record as shown below.
+To demonstrate random access when using fixed-size aggregation, the following example specifies the index of a record in the For Each list of records. Instead of sequentially accessing each record, using the `records` variable with an index of a record selects a single record from the list. The example uses the Scripting module to modify the payload of the selected record and creates a variable for that record:
 
 [source,xml,linenums]
 ----
@@ -186,8 +183,6 @@ You can carry out the same result as the example above by specifying an arbitrar
 	</batch:process-records>
 </batch:job>
 ----
-
-Using random access, you can change a record's payload at any given index position in the commit block.
 
 ==== Considerations for Defining a Block Size
 
@@ -224,9 +219,9 @@ You set the size through the Batch Aggregator component, for example:
 
 
 [[modify_records_streaming_aggregator]]
-=== Modifying Records while Streaming within the Batch Aggregator 
+=== Modifying Records while Streaming within the Batch Aggregator
 
-You can configure a Batch Aggregator scope to stream its content. Setting aggregator to stream the records (`streaming="true"`) enables you to process an array of all the records in the job instance without running out of memory, no matter how many or how large the records are. 
+You can configure a Batch Aggregator scope to stream its content. Setting aggregator to stream the records (`streaming="true"`) enables you to process an array of all the records in the job instance without running out of memory, no matter how many or how large the records are.
 
 For example, if you need to write millions of records to a CSV file, you can process the records as a streaming batch aggregator.
 
