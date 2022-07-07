@@ -235,11 +235,30 @@ Total Records processed: 1000. Successful records: 1000. Failed Records: 0
 [[variable_propagation]]
 === Variable Propagation
 
-Each record in a batch job instance inherits variables from the input to the Batch Job scope. You can access the values of these variables from within a Batch Step component but not within the Batch Aggregator scope.
+Each record in a batch job instance inherits event variables from the input to the Batch Job scope. You can access and change the value of these variables in the Batch Step and Batch Aggregator scopes, which run during the Process phase, and you can create new variables within these scopes. For each record within this phase, the variables (and modifications to them) are propagated through the different Batch Step and Aggregator scopes within a Batch Job scope. For example, if record R1 sets a variable `varName: "hello"`, record R2 sets `varName: "world"`, and record R3 does not set this variable, then in the next step, R1 has the value `"hello"`, R2 the value `"world"`, and R3 has no value for that variable.
+//TODO: does the variable _exist_ (without a value set) in R3 though? Or does it not exist?
 
-Every record has its own set of variables, so new variables or modifications of already-existing variables during the processing of a given record will not be visible while processing another record. For each record, those variables (and modifications) are propagated through the different Batch Steps. For example, if record R1 sets a variable `varName: "hello"`, record R2 sets `varName: "world"`, and record R3 does not set this variable, then in the next step, R1 will see the value `"hello"`, R2 the value `"world"` and R3 will not see any value for that variable.
+Though new and updated variables retain any changes that take place during the Process phase, the variables do not propagate to the On Complete phase, nor do any changes to the values of variables during the Process phase. Only variables inherited from the triggering event to the Batch Job scope propagate to the On Complete phase, and standard variables that are part of the batch job report are also present in this phase. It is also possible to create a variable in the On Complete phase that persists through the phase but not after the phase completes. In the On Complete report, you find the final set variables for a batch job instance, for example:
 
-In the On Complete phase, none of these variables (not even the original ones) are visible. Only the final result is available in this phase. Moreover, since the Batch Job Instance executes asynchronously from the rest of the flow, no variable set in either a Batch Step or the On Complete phase will be visible outside the Batch Scope.
+----
+INFO  2022-07-06 22:45:41,903 [[MuleRuntime].uber.02:
+[w-batch-take6].batch-management-work-manager @4545e128]
+[processor: w-batch-take6Flow/processors/3/route/1/processors/1;
+event: 09762430-fdb8-11ec-9154-147ddaaf4f97]
+org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
+{myVariable=TypedValue[value: 'myVariable was created BEFORE the step',dataType: 'SimpleDataType{type=java.lang.String, mimeType='*/*; charset=UTF-8'}'], batchJobInstanceId=TypedValue[value: '098ba800-fdb8-11ec-9154-147ddaaf4f97',
+dataType: 'SimpleDataType{type=java.lang.String, mimeType='*/*'}'],
+myOnCompleteVar=TypedValue[value: 'Hello On Complete Variable', dataType: 'SimpleDataType{type=java.lang.String, mimeType='*/*; charset=UTF-8'}']}
+----
+
+Variables in the report object example follow:
+
+* `myVariable` is an example of a variable created before reaching the Batch Job scope. This variable retains the value it had when it entered the scope. Any changes to the value during the Process phase are not retained in the On Complete phase.
+* `batchJobInstanceId` is a standard variable that identifies a batch job instance.
+* `myOnCompleteVar` is an example of a variable created within the On Complete phase. It appears in the report but does not persist after the On Complete phase ends.
+
+Downstream from the Batch Job scope, only `myVariable` persists. Like the records and their attributes, the variables of the records are completely consumed within the Batch Job scope. The batch job instance executes asynchronously from the rest of the flow, so no variable created within the Process or On Complete phases persists outside of the Batch Job scope.
+
 
 //TODO: THIS SECTION COULD/SHOULD MOVE TO A REFERENCE
 === Scheduling Strategy
