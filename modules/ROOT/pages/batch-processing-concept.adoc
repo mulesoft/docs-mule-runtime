@@ -5,7 +5,7 @@ endif::[]
 :keywords: connectors, anypoint, studio, batch, batch processing
 :page-aliases: batch-job-concept.adoc, batch-execution-order-faq.adoc
 
-Mule batch processing components are designed for reliable, asynchronous processing of larger-than-memory data sets. Within an application, a batch job splits incoming messages into individual records, processes the records asynchronously from the main flow within blocks that run in parallel, and then reports on the results. When processing takes place, the batch job can access and modify records, and it can push the processed output to other systems or queues. For details about Mule batch processing scopes and batch processing behavior, see <<batch_phases>>.
+Mule batch processing components are designed for reliable, asynchronous processing of larger-than-memory data sets.
 
 [NOTE]
 ====
@@ -19,157 +19,150 @@ Common use cases for batch processing include:
 * Synchronizing data sets between business applications, such as syncing contacts between NetSuite and Salesforce.
 * Extracting, transforming and loading (ETL) information into a target system, such as uploading data from a flat file (CSV) to Hadoop. //TODO: WE NEED AN EXAMPLE THAT SHOWS HOW TO DO THIS
 * Handling large quantities of incoming data from an API into a legacy system. //TODO: WE NEED AN EXAMPLE THAT SHOWS HOW TO DO THIS
-* TODO: OTHER IMPORTANT USE CASES?
+* Routing records to the appropriate processors: Accept Policies and Accept Expression on Batch Step scopes are xref:batch-filters-and-batch-aggregator.adoc#batch_filters[filters] that enable you to route successful and failed records to different processors, or to provide a DataWeave expression that determines which records to accept or skip.
+* Recovering from record processing failures and handling the failed records. //TODO: ADD LINK
 
-Batch jobs allow for the description of a reliable process that automatically splits up source data and stores it into persistent queues, which makes it possible to process large data sets while providing reliability. In the event that the application is redeployed or Mule crashes, the job execution is able to resume at the point it stopped.
+== Architecture
 
-image::batch-main3.png[]
+A set of Mule batch processing components prepare records for processing in batches, run processors on those records, and issue a report on the results of the processing. Record preparation and reporting take place within the Batch Job scope. Processing takes place within one or more Batch Step scopes and, optionally, a Batch Aggregator scope within a Batch Step scope.
 
-The job is then expressed in terms of processing individual records, providing
-semantics for record level variables, aggregation, and error handling.
+image:mruntime-batch-job-overview.png[Flow with Batch Scopes and Processors]
 
-== Basic Architecture
+The processors you place within the scopes act on records. Each record has the structure of a Mule event, so the processors can access, modify, and route record payloads. Processors can also work on other parts of the record, such their variables or attributes. The Batch Job scope consumes the records, so record processing outside of the Batch Step scope is not possible.
 
-The heart of Mule's batch processing lies within the batch job. A batch job is a scope that splits large messages into records that Mule processes asynchronously. In the same way flows process messages, batch jobs process records.
-
-image::batch-processing-concept-d1bdd.png[]
-
-The Batch XML structure was modified on Mule 4.0. The example below shows abbreviated details to highlight batch elements.
+The following example outlines the XML structure of a Mule flow that performs batch processing and returns a report with the results of that processing. In the example, the `<processor placeholder />` entries within the flow and batch processing scopes are placeholders that represent processors, such as connector operations, Mule core components, and so on, which process Mule messages, records, and the batch processing report.
 
 [source,xml,linenums]
 ----
-<flow name="flowOne">
-  <batch:job jobName="batchJob">
-    <batch:process-records>
-
-      <batch:step name="batchStep1">
-        <event processor/>
-        <event processor/>
-      </batch:step>
-
-      <batch:step name="batchStep2">
-        <event processor/>
-        <event processor/>
+<flow name="mule-flow" >
+  <!-- processor that triggers the flow -->
+  <message source placeholder /><!--1-->
+  <!-- message processors -->
+  <processor placeholder /><!--2-->
+  <processor placeholder />
+  <!-- Batch Job scope -->
+  <batch:job name="Batch_Job"/><!--3-->
+    <!-- record processing occurs within process-records -->
+    <batch:process-records ><!--4-->
+      <!-- Batch Step scope -->
+      <batch:step name="Batch_Step"/><!--5-->
+        <!-- processors that act on records -->
+        <processor placeholder />
+        <processor placeholder />
+        <!-- Batch Aggregator scope -->
+        <batch:aggregator /><!--6-->
+          <!-- processor that acts arrays of records -->
+          <processor placeholder />
+        </batch:aggregator>
       </batch:step>
     </batch:process-records>
+    <!-- another Batch Step scope -->
+    <batch:step name="Batch_Step1"/><!--7-->
+      <!-- processor that acts on records -->
+      <processor placeholder />
+    </batch:step>
+    <!-- processing of a batch job report takes place in on-complete -->
+    <batch:on-complete><!--8-->
+      <!-- processor for result of a batch job -->
+      <processor placeholder />
+    </batch:on-complete>
   </batch:job>
 </flow>
+</mule>
 ----
 
-A batch job contains one or more batch steps that act upon records as they move through the batch job.
+<1> The message source triggers the Mule flow. Common message sources are listeners, such as an HTTP listener, the Scheduler, and connector operations that poll for new files.
+<2> Processors located upstream of the Batch Job scope retrieve and, if necessary, prepare a message for the Batch Job scope to consume. For example, an HTTP request operation might retrieve data to process, and a DataWeave script in a Transform Message component might transform the data into a <<valid_input, valid format>> for the Batch Job scope to receive.
+<3> When the Batch Job scope receives a message from an upstream processor in the flow, the <<phase_load_dispatch, Load and Dispatch phase>> begins. In this phase, the scope prepares the input for processing as records, which includes creating a batch job instance in which processing takes place.
+<4> The batch job instance executes when the flow reaches `<process-records/>`. At this point, the <<phase_process, Process phase>> begins. This phase processes records.
+<5> Each Batch Step scope contains one or more processors that act upon a record to transform, route, enrich data, or otherwise process the records. You can use also use connector operation to pass processed records one-by-one to an external server. The only unsupported processors are those that perform a request-response operation, such as an HTTP request, which returns a response.
+<6> A Batch Aggregator scope is optional. You can add only one to a Batch Step scope. Processors within an aggregator must be able to accept an array of record objects as input. The aggregator is useful for loading an array of processed records to an external server. It is also possible to use scopes, such as For Each, that iterate over an array so that other processors can process the records individually. The Batch Aggregator scope requires a <<batch_aggregator_processing, `streaming` or `size`>> setting to indicate how to process records.
+<7> Additional Batch Step scopes are optional. This example does not contain a Batch Aggregator scope.
+<8> After records pass through all Batch Step scopes, Mule completes the batch job instance and reports the results, indicating which records succeed and which failed during processing. You can retrieve or log the result with a Logger or other processor within `<batch:on-complete />`.
 
-Each batch step in a batch job contains processors that act upon a record to transform, route, enrich, or otherwise process data contained within it. By leveraging the functionality of existing Mule processors, the batch step offers a lot of flexibility regarding how a batch job processes records. See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
+[[valid_input]]
+== Valid Input to the Batch Job Scope
 
-A batch job executes when the flow reaches the process-records section of the batch job. When triggered, Mule creates a new batch job instance.
-When the job instance becomes executable, the batch engine submits a task for each record block to the
-I/O pool to process each record. Parallelism occurs automatically, at the record
-block level. The Mule runtime engine uses its autotuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).
+When triggered by an upstream event in the flow, the Batch Job scope performs an implicit split operation on the Mule message input. The operation accepts any Java Iterables, Iterators, or Arrays, as well as JSON and XML payloads. The scope cannot split any other data format.
 
-When the batch job starts executing, Mule splits the incoming message into records, stores them in a persistent queue, and queries and schedules those records in blocks of records to process. By default, the runtime stores 100 records in each batch step. You can customize this size according to the performance you require. See xref:batch-filters-and-batch-aggregator.adoc[Refining Batch Steps Processing] for more information.
-
-After all the records have passed through all batch steps, the runtime ends the batch job instance and reports the batch job result indicating which records succeeded and which failed during processing.
-
-=== Mule Message Splitting Process
-
-The batch job performs an implicit split operation on the Mule message that recognizes any Java Iterables, Iterators, and Arrays, as well as JSON and XML payloads. The batch job cannot split any other data format. If you are working with a data format that is not compatible with the splitting process, transform the payload to a supported format before it enters the batch job.
-
-=== Error Handling
-
-Batch jobs can handle any record-level failure that might occur in processing to prevent the failure of a complete batch job. Further, you can set or remove variables on individual records so that during batch processing, Mule can route or otherwise act upon records in a batch job according to a variable (assigned above). See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for more information.
-
-
-=== Batch Job vs. Batch Job Instance
-
-Though defined in context the above, it’s worth elaborating upon the terms _batch job_ and _batch job instance_ as they relate to each other.
-
-* A batch job is the scope element in an application in which Mule processes a message payload as a batch of records. The term batch job is inclusive of all three phases of processing: Load and Dispatch, Process, and On Complete.
-* A batch job instance is an occurrence in a Mule application whenever a Mule flow executes a batch job. Mule creates the batch job instance in the Load and Dispatch phase. Every batch job instance is identified internally using a unique String known as batch _job instance id_.
-
-This identifier is useful if you want, for example, to pass the local job instance ID to an external system for referencing and managing data, improve the job’s custom logging, or even send an email or SMS notifications for meaningful events around that specific batch job instance. See xref:batch-job-instance-id.adoc[Batch Job Instance ID] to learn more about this identifier and how to customize it.
+If you are working with a data format that is not compatible with the splitting process, transform the payload to a supported format before it enters the Batch Job scope.
 
 [[batch_phases]]
 == Phases of Batch Job Processing
 
 Each batch job is divided into separate phases:
 
-* <<phase_load_dispatch>> Splits the input into record, and creates and starts execution of a batch job instance for that input. This phase takes place within the Batch Job scope.
+* <<phase_load_dispatch>>: Splits <<valid_input, valid input>> into records and prepares the records for processing. This phase takes place within the Batch Job scope.
++
 * <<phase_process>>: Processes records in batches using one or more Batch Step scope and, optionally, Batch Aggregator scopes. To process the records within these scopes, you need to configure other processors, such as connector operations and Mule components, within these batch scopes.
 * <<phase_on_complete>>: Issues a report on the result of processing the instance. This phase takes place within the On Complete area of the Batch Job scope.
 
 [[phase_load_dispatch]]
 === Load and Dispatch
 
-This first phase is implicit. When an upstream event in the flow triggers the Batch Job scope, Mule splits the input into records, loads the records into a persistent queue, and starts execution of the instance. This process takes place implicitly, so you do not configure anything to make it occur. However, it is useful to understand the tasks Mule completes during this phase.
+When an upstream event in the flow triggers the Batch Job scope, the Load and Dispatch phase begins. In this phase:
 
-. Mule splits input to the scope using DataWeave. The input is a serialized message payload that Mule splits into a collection of records.
+. Mule creates a new batch job instance that persists through each phase of a batch job.
 +
-Note that each record is mutable and has a payload and the same set of attributes or variables that it inherits from the input.
+[[batchJobInstanceId]]
+Mule exposes each batch job instance through the `batchJobInstanceId` variable. You can use `vars.batchJobInstanceId` to access the identifier for an instance in any batch processing phase. The auto-generated identifier is a UUID, but you can change it to a more readable name. For details, see xref:batch-job-instance-id.adoc[].
 +
-This step creates a unique batch job instance. Mule exposes each batch job instance through the `batchJobInstanceId` variable. This variable becomes accessible within every phase batch processing phase for that instance so that you can track operations on records within each instance. The auto-generated identifier is a UUID, but you can change it to a more readable name. For details, see xref:batch-job-instance-id.adoc[].
+. Mule uses DataWeave to split input to the scope into records and stores the records in a persistent queue. The input is a serialized message payload that Mule splits into a collection of records. During the Process phase, Batch Step scopes pull records from this queue, which is called a _record stepping queue_.
 +
-. Mule creates and associated a persistent queue with the new batch job instance.
+This activity is "all or nothing," which means that Mule either successfully generates and queues a record for every item from the input, or the entire event fails with an error type, such as `MULE:EXPRESSION` message, and an error message, such as `"Expecting Array or Object but got String." evaluating expression: "payload".`
 +
 In Anypoint Runtime Manager, the queue name is prefixed with `BSQ`, for example:
 +
 image:mruntime-batch-bsq.png[Batch step queue transaction log]
 +
-. For each item generated by the splitter, Mule creates a record and stores it in the queue. This activity is "all or nothing," which means that Mule either successfully generates and queues a record for every item, or the entire event fails during this phase.
 . Mule presents the batch job instance and queue of records to its first Batch Step scope for processing.
 
-Each operation within this phase blocks other execution within the flow until it completes. The logs identify them as `BLOCKING` operations.
-
-After this phase completes, the flow continues to execute without waiting for batch processing in the next phase to finish processing the records.
+Each operation within this phase blocks other execution within the flow until it completes. The logs identify them as `BLOCKING` operations. After this phase completes, the flow continues to execute without waiting for batch processing operations in the next phase to execute or finish processing  records they receive.
 
 [[phase_process]]
 === Process Phase
 
-The Process phase begins after the Load and Dispatch phase finishes loading records to the queue and starts a batch job instance. All processing takes place within one or more Batch Step scopes within a Batch Job scope and optionally, within a Batch Aggregator scope within one or more of the Batch Step scopes. Processing during this phase is asynchronous from the Mule flow and does not block other, downstream processing within the flow.
-+
-During this phase only, you can access and modify records using the Mule variables `payload`, `attributes`, and `vars`. The records are consumed during this phase, and there are some special propagation rules for variables (see <<variable_propagation>>).
+The Process phase begins after the Load and Dispatch phase finishes loading records to the queue and starts execution of a batch job instance. In this phase, Mule pulls records from the queue to build record blocks of the configured batch block size (100 records per block, by default). Then Mule sends the blocks to the Batch Step scope.
 
-//QUESTION: IS THIS THE SAME QUEUE AS THE STEPPING QUEUE DISCUSSED BELOW?
-//QUESTION: IS THERE A SEPARATE STEPPING QUEUE FOR EACH BATCH JOB INSTANCE? OR IS IT SHARED ACROSS INSTANCES?
-When the Process phase of the batch job instance begins, Mule pulls records from the queue to build record blocks of the configured batch block size. Then Mule sends the record blocks to the Batch Step scope and processes the blocks within the scope asynchronously.
+Within the Batch Step scope, processing takes place parallel at the block level, but records within each block process sequentially by default. Mule uses its auto-tuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).
 
-Within the Batch Step scope, processing at the block level takes place parallel, but records within each block process sequentially by default. After processing all the records in a block, the Batch Step scope sends the records to the stepping queue, where the records await processing by the next Batch Step scope within the Batch Job scope, if another is present. This process continues until every record passes through every Batch Step scope. At the end of this phase, all records are consumed. They are not available for further processing by downstream processors in the Mule flow.
+During this phase, processors within the scopes can access and modify records using the Mule variables `payload`, `attributes`, and `vars`. There are some special propagation rules for variables (see <<variable_propagation>>).
 
-Note that it is possible to configure a Batch Step scope to filter the records to process or not within the scope. For details, see xref:batch-filters-and-batch-aggregator.adoc[] for more information.
+After processing all the records in a block, a Batch Step scope sends the records back to the record stepping queue, where the records await processing by any Aggregator scope within the Batch Step scope or by the next Batch Step scope, if another is present. This process continues until every record passes through every Batch Step scope. At the end of this phase, all records are consumed. They are not available for further processing by downstream processors in the Mule flow.
 
-As a record is processed, it keeps track of each batch step it completes.
+image::mruntime-batch-step-process.png[Record Stepping Queue for Batch Steps]
 
-image::batch-diagram.jpg[batch+diagram]
+As a record is processed, it keeps track of each Batch Step scope it completes.
 
 [[batch_aggregator_processing]]
 By default, a batch job instance does not wait for all its queued records to finish processing in one batch step before pushing them to the next step. Configuring a Batch Aggregator scope (aggregator) changes this behavior:
 
 * Behavior when the Batch Aggregator scope sets a fixed size:
 +
-In this scenario, the aggregator pulls records from the stepping queue into arrays a fixed size. After processing records in an array, the aggregator sends the records back to the stepping queue for further downstream processing. A processor within the aggregator must be able to receive the array of records as input.
+In this scenario, the aggregator pulls records from the record stepping queue into arrays a fixed size. After processing records in an array, the aggregator sends the records back to the record stepping queue for further downstream processing. A processor within the aggregator must be able to receive the array of records as input.
 +
 image:mruntime-batch-job-process-aggregator-fixed.png[Batch job process with Aggregator with fixed size]
 +
-<1> The Batch Job scope builds blocks of records limited by the block size configuration (100 per block, by default). This scope sends blocks of records from each batch job instance for processing within a batch step, the first batch step the scope contains if there is more than one step. If fewer records are available than the configured size, the Batch Job scope sends all records from a given batch job instance to the batch step instead of waiting for more to arrive.
 /////////
 //TODO: THIS MAY NOT BE 100% CLEAR.
 // (1) CAN THE RECORDS IN THE BLOCK BE FROM A DIFFERENT INSTANCE? (I think not.)
-// (2) WILL THE BATCH STEP EVER WAIT? FOR EXAMPLE, if the block size is 3 but there are 10 records, would _only the last block contain 1 record? Or is it possible for other blocks to contain fewer records than the set size. Everything depends on what's available in the stepping queue for a given instance when the step goes to pick up the records? (Sounds like the latter is true, but need to check.)
+// (2) WILL THE BATCH STEP EVER WAIT? FOR EXAMPLE, if the block size is 3 but there are 10 records, would _only the last block contain 1 record? Or is it possible for other blocks to contain fewer records than the set size. Everything depends on what's available in the record stepping queue for a given instance when the step goes to pick up the records? (Sounds like the latter is true, but need to check.)
 /////////
-<2> Each Batch Step scope within a Batch Job scope receives one or more record blocks and starts processing them in parallel.
-<3> After processing a record, the Batch Step scope sends the record to the Batch Aggregator scope for further processing.
-<4> The Batch Aggregator scope places records one or more arrays according to its `size` configuration.
-<5> After processing records in a given array, the Batch Aggregator scope sends all the records back to the stepping queue.
+<1> Each Batch Step scope within a Batch Job scope receives one or more record blocks and starts processing them in parallel.
+<2> After processing a record, the Batch Step scope sends the record to the Batch Aggregator scope for further processing.
+<3> The Batch Aggregator scope places records one or more arrays according to its `size` configuration. If fewer records are available from the queue than the configured size, the scope pulls them into the scope for processing. This scenario can occur, for example, when the size setting does not divide evenly into the number of records. The last set of records is smaller than the other sets.
+<4> After processing records in a given array, the Batch Aggregator scope sends all the records back to the record stepping queue.
 
-* Behavior with Batch Aggregator scope is configured to stream records:
+* Behavior when the Batch Aggregator scope is configured to stream records:
 +
-In this scenario, the Batch Job scope sends the processed records to its Batch Aggregator scope. The Batch Aggregator scope loads and processes all records for an instance from the stepping queue and continues  until all records from the current batch step are aggregated and processed.
+In this scenario, the Batch Job scope sends the processed records to its Batch Aggregator scope. The Batch Aggregator scope loads and processes all records for an instance from the record stepping queue and continues  until all records from the current batch step are aggregated and processed.
 +
 image:mruntime-batch-job-process-aggregator-streaming.png[Batch job process with Aggregator configured for Streaming]
 +
-<1> The batch job builds record blocks of the configured block size and sends them to their corresponding batch step for processing.
-<2> Each batch step receives one or more record blocks and starts processing them in parallel.
-<3> After the batch step processes a record, the batch step sends the record to the aggregator for further processing.
-<4> The aggregator continues processing records until there are no more records in the stepping queue that are waiting to be processed by the current batch step.
-<5> The aggregator sends all the aggregated records to the stepping queue.
+<1> Each Batch Step scopes receives one or more record blocks and starts processing them in parallel.
+<2> After the batch step processes a record, the batch step sends the record to the aggregator for further processing.
+<3> The Batch Aggregator scope continues processing records until there are no more records in the record stepping queue that are waiting to be processed by the current batch step.
+<4> The aggregator sends all the aggregated records to the record stepping queue.
 
 Mule persists a list of all records that succeed or fail to process through each batch step. If an event processor in a batch step fails to process a record, Mule continues processing the batch, skipping over the failed record in each subsequent batch step.
 
@@ -261,7 +254,7 @@ Downstream from the Batch Job scope, only `myVariable` persists. Like the record
 
 
 //TODO: THIS SECTION COULD/SHOULD MOVE TO A REFERENCE
-=== Scheduling Strategy
+== Scheduling Strategies
 
 A Mule application can contain several batch job definitions. Each definition
 has its own scheduling strategy. A *Scheduling Strategy* enables you to control
@@ -287,6 +280,9 @@ Note that none of these strategies guarantee that records will be executed in or
 The strategies do not control the execution order of records in the batch job,
 nor do they depend on the number of records each instance contains.
 
+== Error Handling
+
+Batch jobs can handle any record-level failure that might occur in processing to prevent the failure of a complete batch job. Further, you can set or remove variables on individual records so that during batch processing, Mule can route or otherwise act upon records in a batch job according to a variable (assigned above). See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for more information.
 
 == See Also
 
