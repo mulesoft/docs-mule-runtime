@@ -1,4 +1,4 @@
-= Configuring Batch Processing Scopes
+= Configuring Batch Processing Components
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
@@ -6,24 +6,22 @@ endif::[]
 
 You can set up and configure Mule batch processing components to perform common batch processing use cases and to enhance the performance of batch jobs for cases in which the defaults require adjustment.
 
-//TODO: NEEDS EDITING
 [[batch_filters]]
-== Filtering the Records to Process within a Batch Step Scope
+== Filtering Records to Process within a Batch Step Component
 
-You can apply one or more filters as attributes to any number of batch steps. +
-Imagine a batch job whose first batch step checks if a Salesforce contact exists for a record, and a second batch step that updates each existing Salesforce contact with new information. You can apply a filter to the second batch step to ensure it only processes records that didn't fail during the first batch step. +
-By having batch steps accept only some records for processing, you streamline the batch job so the Mule runtime engine can focus only on the relevant data for a particular batch step.
+You can apply one or more record filters as attributes to any number of Batch Step components. For example, assume that the first Batch Step component within a given Batch Job component checks for a Salesforce contact in each record and the second updates the contact information in those records. To ensure that the second Batch Step component processes only records that succeeded in the first step, you can configure a filter on the second Batch Step component. The filter streamlines processing so that Mule focuses on only the relevant data for a given step.
+// TODO: IVAN, NEED EXAMPLE WHERE ONLY RECORDS THAT SUCCEED IN PREVIOUS STEP GET
+// PASSED TO SECOND STEP. EXAMPLE NEEDS FOR SOME RECORDS TO FAIL.
 
-A batch step uses two attributes to filter records:
+To filter records, the Batch Step component supports one `acceptExpression` and one `acceptPolicy`. Both are optional, and no other Mule components accept these filters. If you use both filters on the same component, Mule evaluates the filters in the following order:
 
-* acceptExpression
-* acceptPolicy
+. Accept Policy: <<accept_expression, acceptExpression>>
+. Accept Expression: <<accept_policy, acceptPolicy>>
 
-Each batch step can accept one acceptExpression and one acceptPolicy attributes to filter records.
+[[accept_expression]]
+A Batch Step component that uses an `acceptExpression` attribute applies a DataWeave expression to each record that reaches the component and accepts a record for processing within the component only if the expression evaluates to `true` for that record. If the record evaluates to `false`, the Batch Step component skips the record, and that record becomes available to the next Batch Step component within the Batch Job component.
 
-Use the acceptExpression attribute to process only records that evaluate to true; if the record evaluates to false, the batch step skips the record and sends it to the next one. In other words, the records with an accept expression that resolves to false are the ones that Mule filters _out_.
-
-The example below filters out all records where the age is less than 21; the batch step does not process those records.
+The example below filters out all records in which the `age` value is less than `21`:
 
 [source,xml,linenums]
 ----
@@ -36,20 +34,19 @@ The example below filters out all records where the age is less than 21; the bat
  </batch:job>
 ----
 
-Use the acceptPolicy attribute from batch step to process only the records which, relative to the value of the accept policy attribute, evaluate to true. Refer to the table below for a list of the available values for the accept policy.
+[[accept_policy]]
+A Batch Step component that uses an `acceptPolicy` attribute applies a policy to records that reach it and accepts a record for processing within the component only if the policy evaluates to `true` for that record. This attribute accepts the following policies:
 
 [%header,cols="25a,75a"]
 |===
-|Accept Policy |When evaluates to TRUE
-|NO_FAILURES |_Default_ +
-Batch step processes only those records that _succeeded_ to process in all preceding steps.
-|ONLY_FAILURES |Batch step processes only those records that _failed_ to process in a preceding batch step.
-|ALL |Batch step processes all records, regardless of whether they failed to process in a preceding batch step.
+|Accept Policy |When evaluates to `true`
+| `NO_FAILURES` | _Default_: Accepts only records that processed successfully within the preceding Batch Step component or accepts all records if there is no preceding Batch Step component.
+| `ONLY_FAILURES` | Accepts only records that failed to process successfully in the preceding Batch Step component or accepts _no_ records if there is no preceding Batch Step component.
+| `ALL` | Accepts all records for processing, regardless of whether they fail to process successfully in a preceding Batch Step component or whether there is a preceding Batch Step component.
 |===
 
-If you don't apply filters to a batch step, the batch processes only those records that _succeeded_ to process in all preceding steps. In other words, the default Accept Policy applied to all batch steps is NO_FAILURES.
-
-The example below illustrates the second batch step in a batch job that processes only those records that failed to process during the preceding step. In the first batch step, the runtime checked each record to see if it had an existing Salesforce contact; the second batch step, which creates a contact for each record, processes only the failed records (that is, records that failed to have an existing account).
+In the following example, the second Batch Step component (`batchStep2`) accepts only those records that failed to process successfully during the preceding step (`batchStep1`). For example, assume processors within `batchStep1` check each record for a Salesforce contact. If the check fails to find a contact, `batchStep2` accepts only those records without contacts, skipping records with contacts. Message processors within `batchStep2` can add a contact to those records.
+//TODO: IVAN I'D LIKE TO TEST THIS WITH A REAL EXAMPLE
 
 [source,xml,linenums]
 ----
@@ -65,30 +62,17 @@ The example below illustrates the second batch step in a batch job that processe
  </batch:job>
 ----
 
-Each batch job has a `maxFailedRecords` attribute that controls how many failed records you are willing to accept for a batch job. +
-When a batch job instance exceeds its `maxFailedRecords` value, regardless of the filter set on the batch step, the step does not process any records and pushes the failed batch job instance to the On Complete phase. +
-See xref:batch-error-handling-faq.adoc[Handling Errors During Batch Job] for more information.
-
-//TODO: WHAT WE'RE MISSING IS A REFERENCE THAT DESCRIBES FILTERS
-Filter characteristics:
-
-* Batch filters only apply to batch steps which, in turn, are only usable within the batch process phase of a batch job. You cannot apply filters with the Input or On Complete phases.
-* If you apply no filters to a batch step, the batch processes only those records which _succeeded_ to process in all preceding steps. In other words, the default Accept Policy applied to all batch steps is NO_FAILURES.
-* When a batch job instance exceeds its `max-failed-records` value, regardless of the filter set on the batch step, the step does not process any records and pushes the failed batch job instance to the On Complete phase.
-* Where you apply both types of filters, Mule evaluates them in the following order:
-+
-. Accept Policy
-. Accept Expression
-
+Note that each Batch Job component has a `maxFailedRecords` attribute that controls the number of failed records to accept in a batch job instance. If an instance exceeds the `maxFailedRecords` value, the Batch Step component does not complete processing of any records in the instance. Instead, the failed batch job instance is pushed to the On Complete phase. See xref:batch-error-handling-faq.adoc[] for more information.
+//TODO: WHAT HAPPENS TO RECORDS THAT PROCESSED SUCCESSFULLY BEFORE THE MAX # FAILED?
 
 [[aggregator_bulk_update]]
-== Performing Bulk Uploads from a Batch Aggregator Scope
+== Performing Bulk Operations from a Batch Aggregator Component
 
-Aggregation is useful for bulk uploading multiple records within an array to an external server, such as a database server. Within the Batch Aggregator component, you can add an operation, such as a bulk update, insert, or upsert operation, to load multiple records to a server with a single execution of an operation, instead of running an operation separately on each record.
+Aggregation is useful for sending multiple records within an array to an external server. Within the Batch Aggregator component, you can add an operation, such as a bulk upsert, insert, or update operation, to load multiple records to a server with a single execution of an operation, instead of running an operation separately on each record.
 
-You can process records in separate arrays of a fixed size or stream a single array of records from the batch job instance. For example, you can configure a Bulk Update operation in the Anypoint Connector for Database (Database Connector) to update 200 processed records on a database server. Alternatively, you can stream all the records in the instance to the server. For information about configuring bulk operations for Database Connector, see xref:db-connector::database-execute-bulk.adoc[].
+You can process records in separate arrays of a fixed size or stream a single array of records from the batch job instance. For example, you can configure an Upsert operation in the Anypoint Connector for Salesforce (Salesforce Connector) to upsert 200 processed records. Alternatively, you can stream all the records in the instance to the server.
 
-The following example bulk updates a database in separate arrays of 200 records per update:
+The following example bulk upserts records in separate arrays of 200 records per upsert:
 
 [source,xml,linenums]
 ----
@@ -96,14 +80,14 @@ The following example bulk updates a database in separate arrays of 200 records 
   <batch:process-records >
     <batch:step name="batchStep">
       <batch:aggregator size="200">
-        <db:bulk-update config-ref="Database_Config">
+        <salesforce:upsert doc:name="Upsert" ... />
       </batch:aggregator>
     </batch:step>
   </batch:process-records>
 </batch:job>
 ----
 
-The following example streams updates to a database:
+The following example streams upserts to a database:
 
 [source,xml,linenums]
 ----
@@ -111,14 +95,17 @@ The following example streams updates to a database:
 	<batch:process-records >
 		<batch:step name="batchStep">
 		  <batch:aggregator streaming="true">
-		    <db:bulk-update config-ref="Database_Config">
+		    salesforce:upsert doc:name="Upsert" ... />
 		  </batch:aggregator>
 		</batch:step>
 	</batch:process-records>
 </batch:job>
 ----
 
-To learn more about processing within the Batch Aggregation component and how aggregation differs from processing within the Batch Step component, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
+Error handling: +
+Some connectors handle record-level errors without causing an entire batch aggregation process to fail, for example, xref:salesforce-connector::salesforce-connector-reference.adoc#upsert[Anypoint Connector for Salesforce (Salesforce Connector)] and xref:netsuite-connector::netsuite-reference.adoc#Upsert[Anypoint Connector for NetSuite (NetSuite Connector)]. At runtime, these connectors keep track of records that the target resource accepts successfully and which fail. Rather than failing the entire group of records, the connector upserts as many records as it can and tracks any failures for notification purposes.
+
+To learn more about processing within the Batch Aggregator component and how aggregation differs from processing within the Batch Step component, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
 
 [[aggregator_modify_records]]
 == Modifying Records within a Batch Aggregator
@@ -149,17 +136,11 @@ The following example performs sequential access to records. Using Groovy within
 </batch:job>
 ----
 
-//TODO: NEED TO EXPLAIN THE FOLLOWING BULLET POINTS.
-Sequential access to records assumes the following:
-
-. The aggregator size matches the number of aggregated records.
-. There is a direct correlation between the aggregated records and the items in the list.
-
 === Randomly Accessing Records within a Batch Aggregator
 
-//TODO: HOW WOULD ANYONE KNOW THE "iteration number" of the record?
-//Is that number the index of the record in the list, or what?
-You can also use the For Each scope when randomly accessing records by their iteration number. For Each exposes a `records` variable, which is an immutable list that For Each uses to keep track of the iteration. You can use this variable to randomly access records in the list from the Batch Aggregator component.
+//TODO: IVAN IS GOING TO PROVIDE A BETTER EXAMPLE IF WE CAN THINK OF ONE.
+
+You can also use the For Each scope when randomly accessing records by their iteration number. For Each exposes a `records` variable, which is an immutable list that it uses to keep track of the iteration. You can use this variable to randomly access records in the list from the Batch Aggregator component.
 
 To demonstrate random access when using fixed-size aggregation, the following example specifies the index of a record in the For Each list of records. Instead of sequentially accessing each record, using the `records` variable with an index of a record selects a single record from the list. The example uses the Scripting module to modify the payload of the selected record and create a variable for that record:
 
@@ -183,7 +164,7 @@ To demonstrate random access when using fixed-size aggregation, the following ex
 </batch:job>
 ----
 
-You can configure a Batch Aggregator component to stream its content. Setting this component to stream the records (`streaming="true"`) enables you to process an array of all the records in the job instance without running out of memory, no matter how many or how large the records are. For example, if you need to write millions of records to a CSV file, you can stream the records with the Batch Aggregator component.
+You can configure a Batch Aggregator component to stream its content. Setting this component to stream the records (`streaming="true"`) enables you to process an array of all the records in the batch job instance without running out of memory, regardless of how many or how large the records are. For example, if you need to write millions of records to a CSV file, you can stream the records with the Batch Aggregator component.
 
 [source,xml,linenums]
 ----
@@ -202,7 +183,7 @@ You can configure a Batch Aggregator component to stream its content. Setting th
 </batch:job>
 ----
 
-As the following example shows, only sequential access to records is possible when streaming within the Batch Aggregator component. Random access is not supported when streaming because streaming requires access to the entire set of records. Without a fixed size, Mule cannot guarantee that all records will fit in memory.
+As the following example shows, only sequential access to records is possible when streaming within the Batch Aggregator component. Random access is not supported when streaming because streaming requires access to the entire set of records. This restriction is necessary because Mule cannot guarantee that all records will fit in memory if no fixed size is specified.
 
 [source,xml,linenums]
 ----
@@ -224,53 +205,19 @@ As the following example shows, only sequential access to records is possible wh
 </batch:job>
 ----
 
-To learn more about processing within the Batch Aggregation component and how aggregation differs from processing within the Batch Step component, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
-
-Streaming Tips:
-
-* Streaming from SaaS providers: In general, you are unlikely to use batch streaming when sending data through an Anypoint Connector to a SaaS provider, such as Salesforce, because SaaS providers often have restrictions on accepting streaming input.
-
-* Batch streaming is often useful in batch processing when writing to a file such as CSV, JSON, or XML.
-
-* Batch streaming and performance: Batch streaming affects the performance of your application because the array of records is stored in RAM, which can slow the pace at which transactions process. Though performance slows, the trade-off of streaming data can warrant using it in your implementation.
-
-* Batch streaming and access to items: The biggest drawback to using batch streaming is the limitation on access to the items in the output. A fixed-size commit provides an unmodifiable list of records,
-//TODO: IS "an unmodifiable" correct here or is it "a modifiable"
-//TODO: What do we mean by "commit" here? as in "fixed-size commit" and "streaming
-//commit". Should we use that term? Could we use a different term if we wanted? If ////so, what term?
-which enables you to access and process the items iteratively using one or more processors within the aggregator. A streaming commit is a one-read, forward-only iterator, which means that only one processor in the aggregator can read and process the input to the aggregator. However, you can use a scope like For Each with multiple processors within it because For Each maintains its own list of records.
-
-//TODO: WHAT WE'RE MISSING IS A REFERENCE THAT DESCRIBES EACH SCOPES
-Batch aggregator characteristics:
-
-* The Batch Aggregator component is an optional component that you can add to a Batch Step component. Only one aggregator per step is allowed. Aggregation is available only in the Process phase of a batch job instance and in no other phase.
-//TODO: WHAT DOES THIS MEAN? "can only wrap the final element ..."
-* An aggregator can only wrap the final element within the batch step in which it resides.
-* Many connectors provide operations that can handle record-level errors without causing an entire batch aggregation process to fail.
-//TODO: Which Salesforce and which NetSuite connectors?
-An example is `upsert` in the Salesforce and NetSuite connectors.
-+
-At runtime, the connectors with these operations keep track of which records that the target resource accepts successfully and which fail to upsert. Rather than failing a complete group of records, the connector upserts as many records as it can and tracks any failures for notification.
-+
-//TODO: TELLING PEOPLE TO CHECK THE CONNECTOR DOCS ISN'T A GREAT OPTION.
-To make sure that the connector you are using supports record-level errors, check the connector's documentation.
-//TODO: NEED TO EDIT AND POINT TO INFORMATION ABOUT TRANSACTIONS
-//OR EXPLAIN THAT CONCEPT MORE HERE
-* The Batch Aggregator component does not support job-instance-wide transactions. Within a Batch Step component, you can define a transaction that processes each record in a separate transaction. Think of it as a step within a step.
-+
-Any transaction started by a Batch Step component ends before the Batch Aggregator component starts processing. A transaction cannot cross the boundary these components, so they cannot share a transaction.
+To learn more about processing within the Batch Aggregator component and how aggregation differs from processing within the Batch Step component, see xref:batch-processing-concept.adoc#phase_process[Process Phase].
 
 NOTE::
-When using an aggregator, do not attempt to process Guava data types, such as `ImmutableMap`. Instead, use a Java Map to avoid serialization issues.
+When using a Batch Aggregator component, do not attempt to process Guava data types, such as `ImmutableMap`. Instead, use a Java Map to avoid serialization issues.
 
-//TODO: NEEDS EDITING
 == Preserving the MIME types of the Aggregated Records
 
 _Introduced in Mule 4.3_
 
-Aggregated records are passed into the aggregator as an array containing each record’s payload. However, the MIME types associated with those payloads are not preserved by default. You can preserve record’s MIME types by specifying the `preserveMimeTypes` attribute in a batch aggregator.
+Aggregated records pass into the Batch Aggregator component as an array containing each record’s payload. However, by default, the MIME types associated with those payloads are not preserved. To preserve record’s MIME types, specify the `preserveMimeTypes` attribute in the Batch Aggregator component.
 
-As an example, consider the following JSON document:
+[[json_array]]
+Consider the following JSON array:
 
 [source,json,linenums]
 ----
@@ -293,7 +240,7 @@ As an example, consider the following JSON document:
 ]
 ----
 
-Suppose you fed this document into the following job:
+Assume that the <<json_array, JSON array>> is the input to the following Batch Job component:
 
 [source,xml,linenums]
 ----
@@ -310,7 +257,7 @@ Suppose you fed this document into the following job:
 </batch:job>
 ----
 
-The batch engine splits the input JSON array into individual records, which means that the aggregator block receives an array with three elements. The first one of them is:
+The batch engine splits the input JSON array into individual records, which  aggregator block receives an array with three elements. The first one of them is:
 
 [source,json,linenums]
 ----
@@ -321,7 +268,7 @@ The batch engine splits the input JSON array into individual records, which mean
 }
 ----
 
-However, when the logger element attempts to evaluate the `#[payload.alias]` expression, it results in an error similar to the following:
+However, when the Logger component attempts to evaluate the `#[payload.alias]` expression, an error similar to the following one results:
 
 [source,text,linenums]
 ----
@@ -346,7 +293,7 @@ But it expects one of these combinations:
                                                  ^^^^^^^^^^^^^
 ----
 
-The previous error occurs because MIME types are not preserved by default, and therefore Mule doesn’t know that this record is actually a JSON. You can fix this by specifying the `preserveMimeTypes` attribute in the batch aggregator:
+This error occurs because MIME types are not preserved, which prevents Mule from reading it as JSON. To resolve this issue, you must set the `preserveMimeTypes` attribute in the Batch Aggregator component to `true`, for example:
 
 [source,xml,linenums]
 ----
@@ -357,18 +304,17 @@ The previous error occurs because MIME types are not preserved by default, and t
 </batch:aggregator>
 ----
 
-By setting this attribute, Mule automatically maintains each record's media type and knows that the payload actually represents a JSON document.
+The setting makes Mule maintain each record's media type and treat the payload as a JSON document.
 
-//TODO: NEEDS EDITING
 == Changing the Record Block Size
 
-In a traditional online processing model, each request is usually mapped to a worker thread. Regardless of the processing type (either synchronous, asynchronous, one-way, request-response or even if the requests are temporarily buffered before being processed), servers usually end up in a 1:1 relationship between a request and a running thread. +
-When it comes to a batch job, all records are first stored in a persistent queue before the Process phase begins, so that the traditional threading model wouldn't apply.
+A traditional online processing model typically maps each request to a worker thread. Generally, there is 1:1 relationship between a request and a running thread regardless of the processing type. This relationship holds for synchronous, asynchronous, one-way, and request-response processing types, and when temporarily buffering requests before processing.
 
-To improve performance, the runtime queues and schedules batch records in blocks
+However, in a batch job, the traditional threading model does not apply because records are first stored in a persistent queue, before the Process phase begins.
+
+To improve performance, Mule runtime queues and schedules batch records in blocks
 of up to 100 records per thread. This behavior reduces the number of I/O requests
-and improves an operation's load. Batch jobs use the Mule runtime engine's thread pools, so
-there is no default for the job. Each thread iterates through that block to
+and improves an operation's load. Batch jobs use Mule thread pools, so there is no default for the job. Each thread iterates through that block to
 process each record, and then each block is queued back, and the process continues.
 
 Consider having 1 million records to place in a queue for a 3-step batch job. At least three million I/O operations occur as the Mule runtime engine takes and requests each record as they move through the job's phases. +
@@ -396,7 +342,7 @@ You set the size through the Batch Job component, for example:
 //TODO: NEEDS EDITING AND ELABORATION
 == Setting a Max Concurrency Limit on Batch Job Instances
 
-The Max Concurrency (`maxConcurrency`) property limits the number of blocks that the batch job can process concurrently. The records inside the block are processed sequentially.
+The Max Concurrency (`maxConcurrency`) property limits the number of record blocks to process concurrently.
 
 You can configure the `maxConcurrency` property as in the following example:
 
@@ -407,7 +353,7 @@ You can configure the `maxConcurrency` property as in the following example:
 </batch:job>
 ----
 
-By default, the Batch Job component limits the max concurrency to twice the number of available cores. The capacity of the system running the Mule instance also limits concurrency.
+By default, the Batch Job component limits the maximum concurrency to twice the number of available cores. The capacity of the system running the Mule instance also limits concurrency.
 
 == See Also
 
