@@ -4,93 +4,297 @@ include::_attributes.adoc[]
 endif::[]
 :page-aliases: for-each-scope-xml-reference.adoc
 
-The For Each scope splits a payload into elements and processes them one by one through the components that you place in the scope.
-It is similar to a `for-each`/`for` loop code block in most programming languages and can process any collection, including lists and arrays.
-The collection can be any supported content type, such as `application/json`, `application/java`, or `application/xml`.
+Processing within the For Each scope (`<foreach />`) is similar to a `for-each` or `for` loop in most programming languages.
 
+By default, For Each splits the `payload` it receives as input into separate elements and processes them one by one or within separate batches containing a configured number of elements. Alternatively, you can use a DataWeave expression to collect a portion of the input to split (such as, `payload._someField_`). The scope accepts collections, including lists and arrays, of any supported content type, such as `application/json`, `application/java`, or `application/xml`.
 
-General considerations about the For Each scope:
+Within the scope, each element or batch of elements is treated as a separate `payload`. Instead of outputting processed input, the scope outputs the entire Mule event that it received as input, along with any additional variables created within the scope. The input event includes the un-split payload, attributes of the payload, and any variables associated with the event. By default, the scope stores that event in a variable (`rootMessage`) that you can access from within For Each. Outside of the scope, `vars.rootMessage` returns `null`. After all For Each processing is complete, continue using the typical variables (`payload`, `attributes`, `vars`) to access the parts of the event from outside For Each.
 
-* By default, For Each tries to split the payload of the input. If the payload is a simple Java collection, the For Each scope can split it without any configuration. The payload inside the For Each scope is each of the split elements.
-* For Each ignores attributes but accepts all variables of the input.
-* For Each does not modify the input payload. The output payload is the same as the input.
-//TODO: Next bullet not re non-Java collections NOT TRUE.
-// The scope splits both a JSON and XML payload.
-* For non-Java collections, such as XML or JSON, use a DataWeave expression to split data. Use the *Collection* field for this purpose.
-+
-In the following example, the *Collection* field in For Each is set to iterate over an array stored in `payload.topics`:
-+
+The scope's splitter ignores attributes of the input. Attributes are not accessible from the split elements, so `attributes` returns `null` from within For Each. However, you can use `vars.rootMessage.attributes` to access un-split attributes from within For Each.
+
+[[example]]
+== Basic Flow With For Each
+
+The following example illustrates a basic flow with For Each in Anypoint Studio. Assume that the scope receives its input from a scheduled HTTP request for this https://jsonplaceholder.typicode.com/users[JSON array of objects].
+
 [[studio_example]]
-image::component-foreach-example.png[For Each Component]
+image::mruntime-component-foreach-example.png[For Each Component]
 
-The For Each scope stores each item of the collection in `payload` during each iteration.
+As the following XML for this example shows, For Each (`<foreach />`) collects and splits the entire array (`payload`) it receives into separate objects. Components within the scope select a portion of each object, write a portion of that selected content into separate files, and log the new `payload` that results within For Each.
 
-
-You can also split an array into batches to enable quicker processing. Each batch is treated as a separate Mule message. For example, if a collection has 200 elements and you set *Batch Size* (`batchSize`) to `50`, the For Each scope iteratively processes 4 batches of 50 elements, each as a separate Mule message.
-
-This following XML example is based on the <<studio_example, For Each scope configuration in the shown in the Studio UI>>:
-
-[source,xml,linenums]
+[source,xml]
 ----
-...
-  <foreach doc:name="For Each" collection="#[payload.topics]" batchSize="1" rootMessageVariableName="rootMessage" counterVariableName="counter">
-      <file:write ... >
-      <!--Any other module that you want to include in the For Each scope -->
-  </foreach>
-...
-----
-
-== Variable Propagation
-
-//TODO: "of the block"?
-Every execution of the For Each scope starts with the variables and values
-from the previous execution of the block. New variables or modifications
-to existing variables that take place when processing one element are visible
-during the processing of another element. These changes to variables continue
-to be available outside the For Each scope.
-
-[source,xml,linenums]
-----
-<set-variable variableName="var1" value="var1"/>
-<set-variable variableName="var2" value="var2"/>
-<foreach collection="#[['apple', 'banana', 'orange']]">
-    <choice>
-        <when expression="#[payload == 'apple']">
-            <set-variable variableName="var2" value="newValue"/>
-            <set-variable variableName="var3" value="appleVal"/>
-        </when>
-        <when expression="#[payload == 'banana']">
-            <set-variable variableName="var3" value="#[vars.var3 ++ ' bananaVal']"/>
-            <!-- var3 will now have value 'appleVal bananaVal'-->
-        </when>
-        <otherwise>
-            <set-variable variableName="var3" value="otherVal"/>
-            <set-variable variableName="var4" value="val4"/>
-        </otherwise>
-    </choice>
+<!-- 1: For Each -->
+<foreach doc:name="For Each"  collection="#[payload]">
+  <!-- 2. Transform Message -->
+  <ee:transform doc:name="Transform Message" >
+    <ee:message >
+      <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.company]]></ee:set-payload>
+    </ee:message>
+  </ee:transform>
+  <!-- 3. File Write -->
+  <file:write doc:name="Write"
+    path='#[(payload.name replace " " with("-") ++ "-") ++ (now() as String {format: "uuuuMMddHHmmss"}) ++ ".json"]'
+    config-ref="File_Config" mode="CREATE_NEW"/>
+  <!-- 4: Logger -->
+  <logger level="INFO" doc:name="Logger" message="#[payload]"/>
 </foreach>
 ----
 
-After aggregation, the variables are:
-//TODO: "After aggregation"?
-// WHAT AGGREGATION? FOR EACH DOESN'T AGGREGATE, does it?
-// The variable values outside the block would
-// be "var1", "var2", "otherVal", "val4" (meaning there's no "newValue")
+. For Each (`<foreach />`) collects the entire input payload and splits it into the ten top-level JSON objects within it, such as this one:
++
+[source,json]
+----
+{
+  "id": 1,
+  "name": "Leanne Graham",
+  "username": "Bret",
+  "email": "Sincere@april.biz",
+  "address": {
+    "street": "Kulas Light",
+    "suite": "Apt. 556",
+    "city": "Gwenborough",
+    "zipcode": "92998-3874",
+    "geo": {
+      "lat": "-37.3159",
+      "lng": "81.1496"
+    }
+  },
+  "phone": "1-770-736-8031 x56442",
+  "website": "hildegard.org",
+  "company": {
+    "name": "Romaguera-Crona",
+    "catchPhrase": "Multi-layered client-server neural-net",
+    "bs": "harness real-time e-markets"
+  }
+}
+----
+. As For Each iterates over each object, the DataWeave expression (`payload.company`) in the xref:transform-component-about.adoc[Transform Message] component (`<ee:transform />`) uses DataWeave selectors to extract the value of each `"company"` key and transform the `payload` to the value each of those keys. As in a Mule flow, the next component within For Each receives the transformed payload as its input.
+. The File Write operation (`<file:write />`) uses `payload.name` within a larger DataWeave expression to select the `name` of each company from the transformed object. The name of each file follows the pattern specified in the expression, which hyphenates the extracted company name and appends a date-time stamp to make the file name unique. For example, the name of the file for Abernathy Group data looks like this:
++
+[source,json]
+----
+Abernathy-Group-20221007113314.json
+----
+By default, the operation also loads the payload received from Transform Message to each file, for example:
++
+[source,json]
+----
+{
+  "name": "Abernathy Group",
+  "catchPhrase": "Implemented secondary concept",
+  "bs": "e-enable extensible e-tailers"
+}
+----
+
+For configurable properties, see <<xml_reference>>.
+
+== Variable Propagation
+
+Each execution within For Each begins with the values of variables
+from the previous execution. New variables or modifications to the values of
+existing variables that take place when processing one element are accessible during the processing other elements. Changes to variables continue to be available outside the For Each scope.
+
+[source,xml]
+----
+<set-variable variableName="var1" value="var1-BeforeForEach"/>
+<set-variable variableName="var2" value="var2-BeforeForEach"/>
+<foreach collection="#[['apple', 'banana', 'orange']]">
+    <choice>
+        <when expression="#[payload == 'apple']">
+            <set-variable variableName="var2" value="var2-newValue"/>
+            <set-variable variableName="var3" value="var3-appleVal"/>
+        </when>
+        <when expression="#[payload == 'banana']">
+            <set-variable variableName="var3" value="#[vars.var3 ++ ' bananaVal']"/>
+            <!-- var3 will now have value 'var3-appleVal bananaVal'-->
+        </when>
+        <otherwise>
+            <set-variable variableName="var3" value="var3-otherVal"/>
+            <set-variable variableName="var4" value="var4-val4"/>
+        </otherwise>
+    </choice>
+    <logger level="INFO" doc:name="Logger After Choice"
+            message='#[ [vars.var1, vars.var2, vars.var3, vars.var4] as Array ]'/>
+</foreach>
+<logger level="INFO" doc:name="Logger After For Each"
+         message='#[[vars.var1, vars.var2, vars.var3, vars.var4] as Array]'/>
+----
+
+As the xref:choice-router-concept.adoc[Choice router] (`<choice />`) processes each condition, the first logger (`Logger After Choice`) prints the following variable values:
 
 [source,json,linenums]
 ----
-{var1: "var1", var2: "newValue", var3: "otherVal", var4: "val4"}
+// when payload == 'apple':
+.LoggerMessageProcessor:
+[var1-BeforeForEach, var2-newValue, var3-appleVal, null]
+
+// when payload == 'banana'
+[var1-BeforeForEach, var2-newValue, var3-appleVal bananaVal, null]
+
+// otherwise:
+[var1-BeforeForEach, var2-newValue, var3-otherVal, var4-val4]
+
+[var1-BeforeForEach, var2-newValue, var3-otherVal, var4-val4]
+----
+
+The last values are propagated outside of For Each. Notice that the next logger (`Logger After For Each`) prints the same values as the ones printed after the final choice condition (`otherwise`).
+
+[source,json,linenums]
+----
+[var1-BeforeForEach, var2-newValue, var3-otherVal, var4-val4]
 ----
 
 == Error Handling
 
-If one of the elements in a collection throws an exception, the For Each scope stops processing that collection and invokes the error handler.
+If one of the elements in a collection throws an exception, For Each stops processing that collection and invokes the error handler.
 
 See xref:on-error-scope-concept.adoc[] for information about Mule error handlers.
 
-== Example Projects
+[[xml_reference]]
+== XML Reference
 
-There are several example projects in https://www.mulesoft.com/exchange/[Anypoint Exchange^] that you can open in xref:studio::import-project-exchange.adoc[Anypoint Studio] to learn more about how to use the For Each scope:
+For Each scopes provides a number of configurable properties you can configure within the `<foreach/>` tag. As shown in the <<example, example>>, processors within For Each are children of this tag.
+
+[%header,cols="1a,1a,1a,4a"]
+|===
+| Field Name | XML | Default | Description
+
+| *Collection*
+| `collection`
+| `payload`
+| A DataWeave expression that returns a Java collection, object, array, map, or DOM nodes. For Each automatically splits the collection into elements, such as the highest-level objects in a JSON array of objects. Each elements becomes the `payload` on which a processor within For Each acts. For Each accepts collections, including lists and arrays, of any supported content type, such as `application/json`, `application/java`, or `application/xml`.
+
+| *Counter Variable Name*
+| `counterVariableName`
+| `counter`
+| Name of the variable that assigns a number to each element over which the scope iterates. The sequence starts with `1` proceeds sequentially based on the order in which each message is processed within the scope. When using the default name of the value, you can access this number with `vars.counter`. For Each consumes this variable, so it is not available and returns `null` when used outside of the scope.
+
+| Batch Size
+| `batchSize`
+| `1`
+| Number that the scope uses to partition the collected input into arrays of specified size. For example, if input to For Each is an array of 199 elements and you set the batch size to 50, the scope produces 3 arrays of 50 elements each and 1 array of 49 elements.
+
+| *Root Message Variable Name*
+| `rootMessageVariableName`
+| `rootMessage`
+| Name of the variable that stores the complete, un-split Mule message from the original input to For Each. The message contains the payload and any attributes but does not contain any variables (`vars`), which are part of the Mule event that contains the Mule message. Within For Each, you can gain access to the value of the payload of the message with `vars.rootMessage.payload` and to attributes of the message with `vars.rootMessage.attributes`. For Each consumes this variable, so you can access it only from within the scope. Outside For Each, the variable returns `null`.
+|===
+
+The following example illustrates the use of several attributes that are available to For Each:
+
+[source,xml]
+----
+<http:request-config name="HTTP_Request_configuration"
+      doc:name="HTTP Request configuration"  >
+</http:request-config>
+<file:config
+      name="File_Config" doc:name="File Config"  >
+  <file:connection
+        workingDir="/Users/me/Documents/reports-example" />
+</file:config>
+<flow name="example-for-each-flow"  >
+  <scheduler doc:name="Scheduler"  >
+    <scheduling-strategy >
+      <fixed-frequency frequency="1" timeUnit="HOURS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <!-- HTTP request for a JSON array of objects -->
+  <http:request method="GET" doc:name="Request"
+        config-ref="HTTP_Request_configuration"
+        url="https://jsonplaceholder.typicode.com/users"/>
+  <!-- 1: For Each -->
+  <foreach doc:name="For Each" collection="payload.company">
+    <!-- 2: Logger 1 -->
+    <logger level="INFO" doc:name="Logger 1"
+            message="#[iterationCounter : vars.counter]" />
+    <!-- 3: Logger 2 -->
+    <logger level="INFO" doc:name="Logger 2"
+             message="#[sharedStatusCode : vars.rootMessage.attributes.statusCode]" />
+    <!-- 4: File Write -->
+    <file:write doc:name="Write"
+          path='#[(payload.name ++ "_" ++ (now() as String  {format: "uuuuMMddHHmmss"}) ++ ".json")]'
+          config-ref="File_Config" mode="CREATE_NEW">
+    </file:write>
+    <!-- 5: Logger 3 -->
+    <logger level="INFO" doc:name="Logger 3"
+            message="#[vars.rootMessage.payload..company.name]"/>
+  </foreach>
+  <!-- 6: Logger 4 -->
+  <logger level="INFO" doc:name="Logger 4"
+          message="#[payload..company.name]"/>
+  <!-- 7: Logger 5 -->
+  <logger level="INFO" doc:name="Logger 5"
+        message="#[attributes.statusCode]"/>
+</flow>
+----
+
+After an HTTP request (`<http:request />`), the remaining components are configured to illustrate how some of the For Each properties work and how processing of the `payload` and `attributes` takes place within and outside of For Each:
+
+. For Each collects the company objects (`collection="payload.company"`) within the JSON array returned from the HTTP request's `url`.
+. In Logger 1, `iterationCounter : vars.counter` returns an object with the iteration number, starting with `1` for the first company object and ending with `10` for the last, for example, `{iterationCounter=1}`.
+. In Logger 2, `sharedStatusCode : vars.rootMessage.attributes.statusCode` retrieves the value of the status code attribute that is stored in the `rootMessage` variable: `{sharedStatusCode=200}`. The status code comes from the original input to For Each and is not included in the split payload, so each iteration makes the Logger print the same status code.
+. In `<file: write />`, `(payload.name ++ "_" ++ (now() as String  {format: "uuuuMMddHHmmss"}) ++ ".json")` extracts the value of the `payload.name` from the company object produced during the For Each splitting process with `collection="payload.company"` and appends a unique date-time stamp to it. Names of files created by expression are `Abernathy Group_20221007120752.json` for the first company and `Yost and Sons_20221007120752.json` for the last.
++
+For the file content, the setting uses the default (`payload`) implicitly, so the created files contain company data in JSON format, such as the following data for the first company object:
++
+[source,json]
+----
+{
+  "name": "Abernathy Group",
+  "catchPhrase": "Implemented secondary concept",
+  "bs": "e-enable extensible e-tailers"
+}
+----
+. In Logger 3: `vars.rootMessage.payload..company.name` retrieves an array of company name values stored in the `rootMessage` variable. Like the `statusCode` value, this data is part of the original, un-split input to For Each that is stored in the `rootMessage` variable. All company names are accessible from that variable, so they can all be listed in the array.
++
+[source,json]
+----
+[Romaguera-Crona, Deckow-Crist, Romaguera-Jacobson, Robel-Corkery,
+ Keebler LLC, Considine-Lockman, Johns Group, Abernathy Group,
+ Yost and Sons, Hoeger LLC]
+----
+. Logger 4 is located outside For Each. The expression `payload..company.name` in this logger produces the same array produced by Logger 3, but Logger 4 is able to select `payload` directly. For Each consumes the `rootMessage` variable, so the expression `vars.rootMessage.payload..company.name` from Logger 4 logger would return `null`.
+. Logger 5 is located outside For Each. The expression `attributes.statusCode` produces the same status code value as the expression in Logger 2, but Logger 5 is able to select `attributes` directly. For Each consumes the `rootMessage` variable, so the expression `vars.rootMessage.attributes.statusCode` from Logger 5 would return `null`.
+
+The next example illustrates the batch size (`batchsize`) functionality. Assume that flow collect the same input payload from the preceding flow through a Flow Reference (`<flow ref />`) component:
+
+----
+<flow name="example-for-each-flow" >
+  ...
+  <!-- 1: Flow Reference sends Mule event to next flow. -->
+  <flow-ref doc:name="Flow Reference" name="for-each-batchExample"/>
+</flow>
+<flow name="for-each-batchExample" >
+  <!-- 2: For Each >
+  <foreach doc:name="For Each"
+               collection="#[payload]"
+               batchSize="3">
+    <!-- 3: Logger >
+    <logger level="INFO" doc:name="Logger"
+            message="#[payload.id]"/>
+  </foreach>
+</flow>
+----
+
+. The Flow Reference component sends its Mule event to next flow (`for-each-batchExample`). This event contains a JSON array of objects as its `payload`. This `payload` originated from the HTTP request in the previous flow (`example-for-each-flow`).
+. For Each (`<foreach />`) in this flow (`for-each-batchExample`) sets the batch size `batchSize="3"`.
+. The Logger in this flow prints the `id` values of the input (`payload.id`)  in batches of 3. Each batch is an array of up to 3 elements. Because there are only 10 elements from the split input to For Each, the logger prints the following:
+
+[source, logs]
+----
+...LoggerMessageProcessor: [1, 2, 3]
+...LoggerMessageProcessor: [4, 5, 6]
+...LoggerMessageProcessor: [7, 8, 9]
+...LoggerMessageProcessor: [10]
+----
+
+== More Examples
+
+You can learn more about using For Each from several Mule projects within https://www.mulesoft.com/exchange/[Anypoint Exchange^]:
 
 //TODO: ADD LINKS TO THE EXAMPLES?
 * _Authenticating Salesforce using OAuth2_
@@ -100,94 +304,13 @@ There are several example projects in https://www.mulesoft.com/exchange/[Anypoin
 * _Importing Email Attachments using the POP3 Connector_
 * _Querying a Database and Attaching Results to an Email_
 
-To download and open an example project while you are in Anypoint Studio, click the Exchange icon in the upper-left corner. Then, in the window that opens, log into Anypoint Exchange and search for the name of the project.
-
-== XML Reference
-
-For Each scopes use the `<foreach/>` tag. Components that are affected by this scope are defined as child elements of this tag.
-
-=== Configurable Properties
-
-[%header,cols="1a,1a,1a,4a"]
-|===
-| Field Name | XML | Default | Description
-
-| *Collection*
-| `collection`
-| `payload`
-| A DataWeave expression that returns a Java collection, object, array, map, or DOM nodes.
-
-| *Counter Variable Name*
-| `counterVariableName`
-| `counter`
-| Name of the variable that assigns a number to each message over which the scope iterates. The sequence starts with `1` for the first processed message and proceeds sequentially based on the order in which the message is processed within the scope. When using the default value, you can access this number with `vars.counter`.
-
-| Batch Size
-| `batchSize`
-| `1`
-| Partitions the collection into sub-collections of the specified
- size. For example, if a collection has 200 elements and you set the batch size to 50, it processes 4 batches of 50 elements each.
-
-| *Root Message Variable Name*
-| `rootMessageVariableName`
-| `rootMessage`
-| Name of the property that stores the input to the For Each component. This Mule event contains the complete, non-split message. Within For Each, you can gain access to the value of the input payload with `vars.rootMessage.payload` if you are using the default value, `rootMessage`. After For Each, use `payload` to access the value of the input to For Each.
-|===
-
-
-////
-=== Iterate a JSON Array
-
-[source,xml,linenums]
-----
-include::{examplesdir}/for-each-scope-concept_1.xml[]
-----
-
-In this case, the payload contains a JSON array. For Each iterates over the payload because the `collection` attribute has not been defined. The payload within For Each is each of the users in the JSON array.
-
-=== Iterate over a Java Map that is Placed in a Variable
-
-[source,xml,linenums]
-----
-include::{examplesdir}/for-each-scope-concept_2.xml[]
-----
-
-The example uses the `ee:transform` to set a variable named `users` with a Java map that is created with DataWeave. Then it uses a built-in DataWeave function to get the entries of a map as a collection in order to iterate over it.
-
-=== Split a Collection into Batches
-
-[source,xml,linenums]
-----
-include::{examplesdir}/for-each-scope-concept_3.xml[]
-----
-
-The `batchSize` attribute creates sub-arrays of two elements. So inside `foreach`, the payload will have an array of two elements.
-
-=== Aggregate the Process of Each Element into a Variable
-
-[source,xml,linenums]
-----
-include::{examplesdir}/for-each-scope-concept_4.xml[]
-----
-
-Within the For Each, the example creates an `aggregation` variable that concatenates the name in reverse. Then that variable can be accessed outside the For Each scope.
-
-////
-
-////
-EDGE CASE? OUT IN 4.0, PER DAN F. IF THERE'S A REQUEST TO RESTORE IT, WE MIGHT RESTORE IT
-== Persisting Data
-
-In case the message inside the For Each scope is persisted, not only the item in the collection is serialized but also all the variables associated with it. The rootMessage variable, associated with the message, contains a reference to the complete, unsplit collection. Therefore, serialization/deserialization of the rootMessage variable could impact memory consumption considerably when this collection is large enough.
-
-To avoid this issue you must first remove the rootMessage variable from the message before persisting it.
-////
-
-include::partial$parallelforeach_vs_foreach.adoc[]
-
-See xref:parallel-foreach-scope.adoc[Parallel For Each Scope].
+You can also open these projects from xref:studio::import-project-exchange.adoc[Anypoint Studio].
 
 == See Also
 
-* xref:about-mule-event.adoc[Mule Events]
-* xref:about-mule-message.adoc[Mule Message Structure]
+* xref:about-mule-event.adoc[]
+* xref:about-mule-message.adoc[]
+* xref:dw-functions.adoc[]
+* xref:parallel-foreach-scope.adoc[]
+* xref:http-connector::http-request-ref.adoc[HTTP Request Operation in Anypoint Connector for HTTP (HTTP Connector)]
+* xref:file-connector::file-write.adoc[File Write Operation in Anypoint Connector for File (File Connector)]
