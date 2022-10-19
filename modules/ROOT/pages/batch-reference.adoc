@@ -11,12 +11,12 @@ image::batch-flow-generic-example.png[alt=Batch Processing Components in a Mule 
 
 The Batch Job component splits the payload of the Mule message into records. Within the Batch Step and Batch Aggregator components, these records are available with the keyword `payload`, and Mule variables are also accessible through the `vars` keyword. However, Mule attributes are not accessible from within these components. Both components return `null` on `attributes`.
 
-This reference assumes that you are familiar with the xref:batch-processing-concept.adoc#batch_phases[batch processing phases] of a batch job instance.
+This reference assumes that you are familiar with the xref:batch-processing-concept.adoc#batch-job-processing-phases[batch processing phases] of a batch job instance.
 
 [[ref_batch_job_component]]
 == Batch Job Component (<batch:job />)
 
-This component prepares its input for processing and outputs a report with results of that processing. Preparation takes place during the xref:batch-processing-concept.adoc#batch_phases[Load and Dispatch] phase of a batch job instance, and the report is available in the xref:batch-processing-concept.adoc#batch_on_complete[On Complete] phase.
+This component prepares its input for processing and outputs a report with results of that processing. Preparation takes place during the xref:batch-processing-concept.adoc#load-and-dispatch[Load and Dispatch] phase of a batch job instance, and the report is available in the xref:batch-processing-concept.adoc#on-complete[On Complete] phase.
 
 In Studio, you can set these properties in the component's <<ref_batch_job_general_fields, General>> and <<ref_batch_job_history_fields, History>> tabs.
 
@@ -52,25 +52,6 @@ INFO  ... DefaultBatchEngine:
 
 Note that parallel processing within a batch job instance makes it possible for the number of errors to exceed the configured maximum because it is possible for multiple records fail at the same time.
 
-/////
-MOVE TO ON COMPLETE SECTION
-In such a case, a Logger configured within the *On Complete* area to print `payload as Object` identifies a number of failed records (`failedRecords`). The Batch Job component also reports the failures in the instance, such as `Failed Records: 10`, for example:
-
-----
-INFO  ... LoggerMessageProcessor:
-{onCompletePhaseException=null, loadingPhaseException=null, totalRecords=10,
-elapsedTimeInMillis=115, failedOnCompletePhase=false, loadedRecords=10,
-failedRecords=10, failedOnInputPhase=false, successfulRecords=0,
-inputPhaseException=null, processedRecords=10, failedOnLoadingPhase=false,
-batchJobInstanceId=Job From 23/06/22 12:47:57}
-...
-INFO  ... DefaultBatchEngine:
-Finished execution for instance 'b50e9970-f332-11ec-bb5f-147ddaaf4f97'
-of job 'Batch_Job_in_Mule_Flow'.
-Total Records processed: 10. Successful records: 0. Failed Records: 10
-----
-/////
-
 | Scheduling Strategy | `schedulingStrategy` | When a Batch Job component triggers repeatedly, more than one batch job instance can be ready to execute at the same time. The instances can run sequentially based on their creation timestamp (the default) or according to a round-robin algorithm that attempts to maximize the use of available resources. This setting is appropriate only for jobs that have no side effects or dependencies on other records because the order of processing is not guaranteed.
 
 * `ORDERED_SQUENTIAL` (default): With this setting, batch job instances execute one at a time in the order established by their creation timestamp. An instance created earlier executes before an instance created at a later time and date.
@@ -78,13 +59,13 @@ Total Records processed: 10. Successful records: 0. Failed Records: 10
 ** Do not use this option for data synchronization jobs because `ROUND_ROBIN` does not guarantee any specific order of execution. This guidance avoids the chance of updates to the same record in concurrently running batch job instances. Using this setting when synchronizing data makes it possible to return a result with an earlier, incorrect version of the data.
 ** Use this strategy to parallelize execution of batch job instances if you are certain that no record depends on the processing of another record within the Batch Job component, such as a case in which your batch job retrieves only new records from a database.
 
-| Job Instance ID | `jobInstanceId` | Optional expression that provides a friendly, unique name for the batch instance. To make the name unique, you must use a DataWeave expression, for example, `\#[jobInstanceId="#['Job From ' ++ now() as String {format: 'dd/MM/yy hh:mm:ss'}]` within this field. If an expression returns the same value more than once, Mule throws the error `InitialisationException`. The Batch Job component uses this value to create a new identifier each time the Mule flow reaches the Batch Job component. If you do not provide an ID, Mule automatically creates a UUID that serves as the identifier for each batch job instance.
+| Job Instance ID | `jobInstanceId` | Optional expression that provides a friendly, unique name for the batch instance. To make the name unique, you must use a DataWeave expression, for example, `\#[jobInstanceId="#['Job From ' ++ now() as String {format: 'dd/MM/yy hh:mm:ss'}]` within this field. If an expression returns the same value more than once, Mule throws an error with a message such as, `Batch Job 'my-batch-job-example' already has an instance with id 'my-repeated-id'`. The Batch Job component uses this value to create a new identifier each time the Mule flow reaches the Batch Job component. If you do not provide an ID, Mule automatically creates a UUID that serves as the identifier for each batch job instance.
 
 | Batch Block Size |  `blockSize` | Number of records to process per record block. The default is `100` records per block. If fewer records are available for processing than the configured size, Mule sends a block of a smaller size to the record processors. Such a case can occur, for example, if there are 1010 records and the block size is 100 because the modulo is 10, not 0. The block size setting provides a way to tune performance, which is affected by the size of records in each block and the `maxConcurrency` setting.
 
 | Max Concurrency  | `maxConcurrency` | Property that sets the maximum level of parallelism to allow when processing record blocks within the component. The default is twice the number of cores available in the CPUs. The capacity of the system running the Mule instance also limits concurrency. Like the `blockSize` setting, this setting provides a way to tune performance.
 
-| Target  | `target` | To use the payload received by a batch job instance in a component that is located _after_ the Batch Job component, you can provide a unique value for the `target` and use `payload` in the downstream component to gain access that payload. Without a target value, the input payload to the Batch Job component is not available in downstream components. For more information about target variables, see xref:target-variables.adoc[Enrich Data with Target Variables]. There is no default value.
+| Target  | `target` | To use the payload received by a batch job instance in a component that is located _after_ the Batch Job component, you can provide a unique value for the `target` and use `payload` in the downstream component to gain access that payload. Without a target value, the input payload to the Batch Job component is not available in downstream components. For more information about target variables, see xref:target-variables.adoc[]. There is no default value.
 
 |===
 
@@ -127,22 +108,10 @@ Note that these fields are attributes to the `<batch:expiration/>` element, whic
 
 The XML example is edited to focus on settings in the batch history fields.
 
-//TODO: MOVE THE FOLLOWING TO A TROUBLESHOOTING SECTION, WHERE PEOPLE ARE MORE
-// LIKELY TO FIND IT. LINK TO THAT INFO FROM THIS SECTION.
-// Create work item for it.
-////
-If you receive a `No space left on device` error, try changing the retention period to a shorter period, such as 1 day for a for a batch process that runs daily. Choose an expiration policy based the frequency that your batch processes will runs and the amount of data they process.
-
-After making this change, monitor your application to determine if the error no longer occurs. If the issue recurs:
-
-* Increase the disk space available for your application. In CloudHub deployments, increase the worker size.
-* Decrease the frequency or number of records to process in your batch jobs.
-////
-
 [[ref_batch_step_component]]
 == Batch Step Component (<batch:step/>)
 
-The Batch Step component runs during the xref:batch-processing-concept.adoc#phase_process[Process phase] of a batch job instance, not during the Load and Dispatch or On Complete phases.
+The Batch Step component runs during the xref:batch-processing-concept.adoc#process[Process phase] of a batch job instance, not during the Load and Dispatch or On Complete phases.
 
 A minimum of one per Batch Job component is required within a Batch Job component. In addition to changing the name Batch Step component, you can configure _filters_ that determine which records the component accepts for processing within the component. Any processors that you add to the component act on records that the Batch Job component accepts.
 
@@ -170,32 +139,18 @@ The following table describes each field and includes the XML element for the fi
 
 |===
 
-////
-  // TODO: The MetaData tab, same as for other batch components.
-  // POINT TO DOC ON THIS. CREATE THE DOC IF IT DOESN'T EXIST YET
-  // OR IS INCOMPLETE. Would need work item for this task.
-////
-
 [[ref_batch_aggregator_component]]
 == Batch Aggregator Component (<batch:aggregator)
 
-The Batch Aggregator component is an optional component that acts on an array of records. Aggregation takes place during the xref:batch-processing-concept.adoc#phase_process[Process phase] of a batch job instance.
+The Batch Aggregator component is an optional component that acts on an array of records. Aggregation takes place during the xref:batch-processing-concept.adoc#process[Process phase] of a batch job instance.
 
 There is no default configuration for the Batch Aggregator component. If you use this component, you must indicate whether to stream records (`streaming`) or pull records from the queue into separate arrays of a fixed size (`size`), but not both. The settings are mutually exclusive. Random access to streamed records is not possible.
 
-The Batch Aggregator component accepts a single processor for the message `payload`. A downstream sibling to that processor receives no `payload` but can gain access to the value of Mule variables, such as the ID of the batch job instance, using `vars.batchJobInstanceId`. In addition, a scope within the aggregator, such as xref:for-each-scope-concept.adoc[For Each] scope, that iterates over each record in the array can contain multiple child processors.
+The Batch Aggregator component accepts one or more processors for the message `payload`. However, it is common to use a scope within the aggregator, such as xref:for-each-scope-concept.adoc[For Each] scope, to iterate over each record so that the child processors within the scope can act on each record individually.
 
-The Batch Aggregator component also provides a way preserve the MIME type of records (`preserveMimeTypes`), which is needed when accessing part of a record that you are aggregating as a fixed size (`size`). For details about record processing within this component, see batch-processing-concept.adoc#batch_aggregator_processing[batch aggregator processing].
+The Batch Aggregator component also provides a way preserve the MIME type of records (`preserveMimeTypes`), which is needed when accessing part of a record that you are aggregating as a fixed size (`size`), See xref:batch-filters-and-batch-aggregator.adoc#preserving-the-mime-types-of-the-aggregated-records[Preserving the MIME types of the Aggregated Records]. To learn about record processing within this component, see batch-processing-concept.adoc#batch_aggregator_processing[batch aggregator processing].
 
 Note that some connectors, such as xref:salesforce-connector::salesforce-connector-reference.adoc#upsert[Anypoint Connector for Salesforce (Salesforce Connector)] and xref:netsuite-connector::netsuite-reference.adoc#Upsert[Anypoint Connector for NetSuite (NetSuite Connector)], provide operations that can handle record-level errors without causing the batch aggregation process to fail.
-
-////
-TODO: MOVE TO A USE CASE SECTION AND POINT TO THAT SECTION INSTEAD OF WRITING THIS HERE
-Use cases for aggregation include the following:
-
-* Submitting an array of records to a remote service that accepts bulk uploads of records to an external service.
-* Accessing and modifying record payloads or variables. Both streaming (`streaming`) and fixed-size (`size`) aggregation enable sequential access to records. Fixed-size aggregation also enables random access to records. See batch-filters-and-batch-aggregator#aggregator_bulk_update[Performing Bulk Uploads from a Batch Aggregator Component].
-////
 
 Limitations:
 
