@@ -4,7 +4,7 @@ include::_attributes.adoc[]
 endif::[]
 :page-aliases: scatter-gather-xml-reference.adoc
 
-The Scatter-Gather component (`<scatter-gather />`) is a routing event processor that processes a Mule event through different parallel processing routes that contain different event processors, which are connector operations or other Mule components. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each of these routes uses a separate thread to execute the event processors, and the resulting Mule event can be either the same Mule event without modifications or a new Mule event with its own payload, attributes, and variables. The Scatter-Gather component then combines the Mule events returned by each processing route into a new Mule event that is passed to the next event processor only after every route completes successfully.
+The Scatter-Gather component (`<scatter-gather />`) is a routing event processor that processes a Mule event through different parallel processing routes that contain different event processors, which are connector operations or other Mule components. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each of these routes uses a separate thread to execute the event processors on the input, and the resulting Mule event can be either the same Mule event without modifications or a new Mule event with its own payload, attributes, and variables. The Scatter-Gather component then combines the Mule events returned by each processing route into a new Mule event object that passes to the next event processor only after every route completes successfully.
 
 The Scatter-Gather component executes each route in parallel, not sequentially. Parallel execution of routes can greatly increase the efficiency of your Mule application and can provide more information than sequential processing.
 
@@ -17,7 +17,116 @@ image::mruntime-scatter-gather.png[Diagram of Scatter-Gather Component]
 . Each of the processing routes starts executing in parallel. After all processors inside a route finish processing, the route returns a Mule event, which can be either the same Mule event without modifications or a new Mule event created by the processors in the route as a result of the modifications applied.
 . After all processing routes have finished execution, the Scatter-Gather component creates a new Mule event that combines all resulting Mule events from each route, and then passes the new Mule event to the next component in the flow.
 
-WARNING: Configure your Scatter-Gather component to have at least two routes; otherwise, your Mule application throws an exception and does not start.
+WARNING: Configure your Scatter-Gather component to have at least two routes. Otherwise, your Mule application throws an exception and does not start.
+
+== Example
+
+Assume a scheduled input (`<<scheduler />`) to Scatter Gather with the message `"hello scatter gather"` from Set Payload (`<set-payload />`).
+
+[source, xml]
+----
+<flow name="w-scatter-gather-exampleFlow" >
+  <!-- Scheduler -->
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="75" timeUnit="SECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <!-- Set Payload -->>
+  <set-payload value="hello scatter gather" doc:name="Set Payload" />
+  <!-- Scatter-Gather -->
+  <scatter-gather doc:name="Scatter-Gather" >
+    <!-- first route -->
+    <route >
+      <set-payload value='#[payload ++ " first route"]' doc:name="Set Payload" />
+    </route>
+    <!-- second route -->
+    <route >
+      <set-payload value='#[payload ++ " second route"]' doc:name="Set Payload" />
+    </route>
+  </scatter-gather>
+  <!-- Logger -->
+  <logger level="INFO" doc:name="Logger1"
+          message="#[%dw 2.0&#10;output application/json&#10;---&#10;payload]"/>
+  <!-- Logger -->
+  <logger level="INFO" doc:name="Logger2"
+          message='#[%dw 2.0&#10;output application/json&#10;---&#10;valuesOf(payload mapObject { ($$) : $}).payload]'/>
+</flow>
+----
+
+* The first `<route />` within Scatter-Gather adds the string `" first route"` to the input `payload`.
+* The second `<route />` within Scatter-Gather adds the string `" second route"` to the input `payload`.
+
+The first Logger after Scatter gather prints the output `payload` of Scatter-Gather, which is an objection containing key-value pairs for each route. The key provides the index of the route (0 or 1), and the value provides a set of key-value pairs not only for the payload but for attributes and other properties of the event, excluding Mule variables, for example:
+
+[source, JSON]
+----
+INFO  ...LoggerMessageProcessor:
+{
+  "0": {
+    "inboundAttachmentNames": [
+
+    ],
+    "exceptionPayload": null,
+    "inboundPropertyNames": [
+
+    ],
+    "outboundAttachmentNames": [
+
+    ],
+    "payload": "hello scatter gather first route",
+    "outboundPropertyNames": [
+
+    ],
+    "attributes": null
+  },
+  "1": {
+    "inboundAttachmentNames": [
+
+    ],
+    "exceptionPayload": null,
+    "inboundPropertyNames": [
+
+    ],
+    "outboundAttachmentNames": [
+
+    ],
+    "payload": "hello scatter gather second route",
+    "outboundPropertyNames": [
+
+    ],
+    "attributes": null
+  },
+  "2": {
+    "inboundAttachmentNames": [
+
+    ],
+    "exceptionPayload": null,
+    "inboundPropertyNames": [
+
+    ],
+    "outboundAttachmentNames": [
+
+    ],
+    "payload": "hello scatter gather third route",
+    "outboundPropertyNames": [
+
+    ],
+    "attributes": null
+  }
+}
+----
+
+To access and manipulate such a payload, you can use a DataWeave function such as `mapObject`. The second Logger in the example uses `valuesOf(payload mapObject { ($$) : $}).payload` to print the payloads of each key in the output object:
+
+[source, JSON]
+----
+INFO  ...LoggerMessageProcessor:
+[
+  "hello scatter gather first route",
+  "hello scatter gather second route"
+]
+----
 
 == Variable Propagation
 
