@@ -1,0 +1,139 @@
+= Batch Job Phases
+
+Each time a Batch Job component executes, the following phases take place:
+
+* <<phase_load_dispatch>>: The Batch Job component splits xref:batch-processing-concepts.adoc#valid_input[valid input] into records and prepares the records for processing. This phase takes place within the Batch Job component.
+* <<phase_process>>: Mule components and connector operations within a Batch Step and, optionally, Batch Aggregator process records within a given batch job instance.
+* <<phase_on_complete>>: The Batch Job component issues a report object with the result of processing the batch job instance instance. In Studio, a processor for this phase, such as a Logger, goes within the On Complete area (`<batch:on-complete />` ) of the Batch Job component.
+
+For an XML example of batch processing phases, see xref:batch-processing-concept.adoc#batch_phases_xml[].
+
+[[phase_load_dispatch]]
+=== Load and Dispatch
+
+When an upstream event in the flow triggers the Batch Job component, the Load and Dispatch phase begins. In this phase:
+
+. Mule creates a new batch job instance that persists through each phase of a batch job.
++
+[[batchJobInstanceId]]
+Mule exposes each batch job instance through the `batchJobInstanceId` variable. You can use `vars.batchJobInstanceId` to access the identifier for an instance in any batch processing phase. The auto-generated identifier is a UUID, but you can change it to a more readable name. For details, see xref:batch-job-instance-id.adoc[].
++
+. Mule automatically uses DataWeave to split the input to the Batch Job component into records and stores the records in a persistent queue. The input is a serialized message payload that Mule splits into a collection of records. During the <<phase_process, Process phase>>, the Batch Step components pull records from this queue.
++
+This activity is "all or nothing," which means that Mule either successfully generates and queues a record for every item from the input, or the entire event fails with an error type, such as `MULE:EXPRESSION` message, and an error message, such as `"Expecting Array or Object but got String." evaluating expression: "payload".`
++
+In Anypoint Runtime Manager, the queue name is prefixed with `BSQ`, for example:
++
+image:mruntime-batch-bsq.png[Batch step queue transaction log]
++
+. Mule presents the batch job instance and queue of records to its first Batch Step component for processing.
+
+Each operation within this phase blocks other execution within the flow until it completes. The logs identify them as `BLOCKING` operations. After this phase completes, the flow continues to execute without waiting for batch processing operations in the next phase to execute or finish processing records they receive.
+
+[[phase_process]]
+=== Process Phase
+
+The Process phase begins after the Load and Dispatch phase finishes loading records to the queue and starts execution of a batch job instance. In this phase, Mule pulls records from the queue to build record blocks of the configured batch block size (100 records per block, by default). Then Mule sends the blocks to the Batch Step component.
+
+Within the Batch Step component, processing takes place in parallel at the block level, but records within each block process sequentially by default. Mule uses its auto-tuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).
+
+During this phase, processors within the components can access and modify records using the Mule variables `payload` and `vars`, but _not_ `attributes` because the Batch Job component ignores Mule attributes and does not make them available to its child components. The Batch Job component consumes records after all record processing finishes. So any transmission of _processed_ records to an external server or service must take place _within_ the Batch Step or Batch Aggregator components. Changes to records within a Batch Step component propagate to the next Batch Step within the same Batch Job, but changes to records that take place within a Batch Aggregator component _are not propagated_ outside of the aggregator to the containing Batch Step component. For Mule variable propagation rules, see <<variable_propagation>>.
+
+After processing all the records in a block, a Batch Step component sends the records back to the stepping queue, where the records await processing by any Aggregator component within the Batch Step component or by the next Batch Step component, if another is present. This process continues until every record passes through every Batch Step component. At the end of this phase, all records are consumed. They are not available for further processing by downstream processors in the Mule flow.
+
+image::mruntime-batch-step-process.png[Record Stepping Queue for Batch Steps]
+
+As a record is processed, it keeps track of each Batch Step component it completes.
+
+[[batch_aggregator_processing]]
+By default, a batch job instance does not wait for all its queued records to finish processing in one Batch Step component before making them available for processing by the next. Configuring a Batch Aggregator component (aggregator) changes this behavior:
+
+* Behavior when the Batch Aggregator component sets a fixed size:
++
+In this scenario, the aggregator pulls records from the record stepping queue into arrays a fixed size. After processing records in an array, the aggregator sends the records back to the record stepping queue. A processor within the aggregator must be able to receive the array of records as input.
++
+image:mruntime-batch-job-process-aggregator-fixed.png[Batch job process with Aggregator with fixed size]
++
+/////////
+//TODO: THIS MAY NOT BE 100% CLEAR.
+// (1) CAN THE RECORDS IN THE BLOCK BE FROM A DIFFERENT INSTANCE? (I think not.)
+// (2) WILL THE BATCH STEP EVER WAIT? FOR EXAMPLE, if the block size is 3 but there are 10 records, would _only the last block contain 1 record? Or is it possible for other blocks to contain fewer records than the set size. Everything depends on what's available in the record stepping queue for a given instance when the step goes to pick up the records? (Sounds like the latter is true, but need to check.)
+/////////
+[calloutlist]
+. Each Batch Step component within a Batch Job component receives one or more record blocks and starts processing them in parallel.
+. After processing a record, the Batch Step component sends the record to the Batch Aggregator component for further processing.
+. The Batch Aggregator component places records into one or more arrays according to its `size` configuration. If fewer records are available from the queue than the configured size, the component pulls them into the component for processing. This scenario can occur, for example, when the size setting does not divide evenly into the number of records. The last set of records is smaller than the other sets.
+. After processing records in a given array, the Batch Aggregator component sends all the records back to the record stepping queue.
+
+* Behavior when the Batch Aggregator component is configured to stream records:
++
+In this scenario, the Batch Job component sends the processed records to its Batch Aggregator component. The Batch Aggregator component loads an array with all records for an instance from the record stepping queue until all records from the current batch step are aggregated. A processor within the component must be able to accept an array of records as input.
++
+image:mruntime-batch-job-process-aggregator-streaming.png[Batch job process with Aggregator configured for Streaming]
++
+[calloutlist]
+. Each Batch Step components receives one or more record blocks and starts processing them in parallel.
+. After the batch step processes a record, the batch step sends the record to the aggregator for further processing.
+. The Batch Aggregator component continues processing records until there are no more records in the record stepping queue that are waiting to be processed by the current batch step.
+. The aggregator sends all the aggregated records to the record stepping queue.
+
+Mule persists a list of all records that succeed or fail to process through each batch step. If an event processor in a batch step fails to process a record, Mule continues processing the batch, skipping over the failed record in each subsequent batch step.
+
+At the end of this phase, the batch job instance completes and, therefore, ceases to exist.
+
+[[phase_on_complete]]
+=== On Complete
+
+During this phase, you can configure the runtime to create a report or summary of the records it processed in a given batch job instance. This phase provides system administrators and developers insight into which records failed or succeeded. This phase does not process or provide access to individual records, nor does it pass processed records to downstream processors in the flow.
+
+Because Mule processes a batch job as an asynchronous, one-way flow, the results of batch processing do not return to the flow, nor do the results return as a response to a caller. Any event source that feeds data into a batch job instance must be one-way, not request-response.
+
+
+As a best practice, configure a mechanism for reporting on failed or successful records to facilitate further action where required. During the On Complete phase, you can perform either of these tasks:
+
+* Reference the result object for the batch job instance from elsewhere in the Mule application to capture and use batch metadata, such as the number of records that failed to process in a particular batch job instance.
++
+TODO: HOW DO WE DO THIS?
++
+* Log the result object for each batch job instance.
+
+[source,xml,linenums]
+----
+<batch:job name="Batch3">
+  <batch:process-records>
+    <batch:step name="Step1">
+      <batch:record-variable-transformer/>
+      <ee:transform/>
+    </batch:step>
+    <batch:step name="Step2">
+      <logger/>
+      <http:request/>
+    </batch:step>
+  </batch:process-records>
+  <batch:on-complete>
+    <logger level="INFO" doc:name="Logger"
+            message='#[payload as Object]'/>
+  </batch:on-complete>
+</batch:job>
+----
+
+From the logger set to `payload as Object`, a report looks something like this:
+
+----
+INFO  2022-07-06 11:39:02,921 [[MuleRuntime].uber.06:
+[w-batch-take6].batch-management-work-manager @56978b97]
+[processor: w-batch-take6Flow/processors/3/route/1/processors/0;
+ event: e835b2c0-fd5a-11ec-84a5-147ddaaf4f97]
+org.mule.runtime.core.internal.processor.LoggerMessageProcessor:
+{onCompletePhaseException=null, loadingPhaseException=null, totalRecords=1000, elapsedTimeInMillis=117, failedOnCompletePhase=false, failedRecords=0, loadedRecords=1000, failedOnInputPhase=false, successfulRecords=1000, inputPhaseException=null, processedRecords=10, failedOnLoadingPhase=false, batchJobInstanceId=e84b5da0-fd5a-11ec-84a5-147ddaaf4f97}
+----
+
+The fields in the report object (a `BatchJobResult`) are accessible as keys when using DataWeave selectors, such as `payload.failedRecords` to return the number of failed records in the instance.
+
+If you leave the On Complete phase empty and do not reference the batch job result object from elsewhere in your application, the batch job simply completes, whether failed or successful. However, after Mule completes execution of an entire batch job instance, the logs provide some processing information, for example:
+
+----
+Finished execution for instance 'e84b5da0-fd5a-11ec-84a5-147ddaaf4f97'
+of job 'w-batch-take6Batch_Job'.
+Total Records processed: 1000. Successful records: 1000. Failed Records: 0
+----
