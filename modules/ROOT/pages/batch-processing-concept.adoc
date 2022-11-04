@@ -19,20 +19,10 @@ Common use cases for batch processing include:
 * Synchronizing data sets between business applications, such as syncing contacts between NetSuite and Salesforce.
 * Extracting, transforming and loading (ETL) information into a target system, such as uploading data from a flat file (CSV) to Hadoop.
 * Handling large quantities of incoming data from an API to a legacy system.
-* Routing records to the appropriate processors: Accept Policies and Accept Expression on Batch Step components are xref:batch-filters-and-batch-aggregator.adoc#batch_filters[batch_filters] that enable you to route successful and failed records to different processors, or to provide a DataWeave expression that determines which records to accept or skip.
+* Routing records to the appropriate processors: Accept Policies and Accept Expression on Batch Step components are batch filters that enable you to route successful and failed records to different processors, or to provide a DataWeave expression that determines which records to accept or skip.
 * Handling failed records and errors.
 
-//TODO: MAYBE HIDE LINKS UNTIL WE HAVE ALL THE EXAMPLES WE NEED:
-See xref:batch-filters-and-batch-aggregator.adoc[] and xref:batch-error-handling-faq.adoc[] for some examples.
-
-////
-//TODO (track this task in GUS)
-// Provide examples for these procedures and link to them from the list above:
-// * synchronize data: missing link
-// * ETL procedure: missing example and link
-// * legacy system: missing example and link
-// * recover from failures: missing example
-////
+See xref:batch-filters-and-batch-aggregator.adoc[] and xref:batch-error-handling-faq.adoc[] for examples.
 
 == Architecture
 
@@ -40,10 +30,9 @@ Mule batch processing components prepare records for processing in batches, run 
 
 image:mruntime-batch-job-overview.png[Flow with Batch Components and Processors]
 
-The processors you place within batch processing components act on records. Each record has the structure of a Mule event, so the processors can access, modify, and route record payloads. Processors can also work on other parts of the record, such their variables or attributes. However, note that the Batch Job component consumes records in the <<On Complete, phase_on_complete>>, which occurs after all record processing finishes, and does not propagate the records to external components, outside of the Batch Job component.
-// TODO: Are there ways to retain the change to the record outside of the
-// batch components? For ex, can you pass the value of the record to a variable
-// so that you can retain the change somewhere?
+The processors you place within batch processing components act on records. Each record is similar to a Mule event, so the processors can access, modify, and route record payloads. Processors can also work on other Mule variables but _not_ Mule attributes.
+
+The Batch Job component consumes records in the <<phase_on_complete, On Complete phase>>, which occurs after all record processing finishes, and does not propagate the records to external components, outside of the Batch Job component. However, you can set a xref:batch-reference.adoc#ref_batch_job_component[target variable] (`target`) in the Batch Job component that enables a downstream component, outside of the Batch Job, to gain access to the _pre-processed payload_ that the Batch Job component receives by using the keyword `payload`.
 
 The following example outlines the XML structure of a Mule flow that performs batch processing and returns a report with the results of that processing:
 
@@ -86,16 +75,24 @@ The following example outlines the XML structure of a Mule flow that performs ba
 </mule>
 ----
 
-Note that the various `placeholder` entries in the example, such as `<processor placeholder />`, illustrate the location of real processors, such as connector operations, Mule core components, and so on, which process Mule messages, records, and the batch processing report. They are not real processors.
+Note that the various `placeholder` entries in the example, such as `<processor placeholder />`, _illustrate_ the location of real processors, such as connector operations, Mule core components, and so on, which process Mule messages, records, and the batch processing report. They are _not real processors_.
 
-<1> The message source triggers the Mule flow. Common message sources are listeners, such as an HTTP listener from Anypoint Connector for HTTP (HTTP Connector), a Scheduler component, or a connector operation that polls for new files.
-<2> Processors located upstream of the Batch Job component typically retrieve and, if necessary, prepare a message for the Batch Job component to consume. For example, an HTTP request operation might retrieve data to process, and a DataWeave script in a Transform Message component might transform the data into a <<valid_input, valid format>> for the Batch Job component to receive.
-<3> When the Batch Job component receives a message from an upstream processor in the flow, the <<phase_load_dispatch, Load and Dispatch phase>> begins. In this phase, the component prepares the input for processing as records, which includes creating a batch job instance in which processing takes place.
-<4> The batch job instance executes when the flow reaches `<process-records/>`. At this point, the <<phase_process, Process phase>> begins. All record processing takes place during this phase.
-<5> Each Batch Step component contains one or more processors that act upon a record to transform, route, enrich, or modify data in the records. For example, you might configure a connector operation to pass processed records one-by-one to an external server. The only _unsupported_ processors are those that perform a request-response operation, such as an HTTP request, which returns a response.
-<6> A Batch Aggregator component is optional. You can add only one to a Batch Step component. Processors within an aggregator must be able to accept an array of record objects as input. The aggregator is useful for loading an array of processed records to an external server. It is also possible to use components, such as For Each, that iterate over the input array so that other processors can process the records individually. The Batch Aggregator component requires a <<batch_aggregator_processing, `streaming` or `size`>> setting to indicate how to process records.
-<7> Additional Batch Step components are optional. This example does not contain a Batch Aggregator component.
-<8> After records pass through all Batch Step components, Mule completes the batch job instance and reports the results, indicating which records succeed and which failed during processing. You can retrieve or log the result with a Logger or other processor within `<batch:on-complete />`.
+//1
+. The message source triggers the Mule flow. Common message sources are listeners, such as an HTTP listener from Anypoint Connector for HTTP (HTTP Connector), a Scheduler component, or a connector operation that polls for new files.
+//2
+. Processors located upstream of the Batch Job component typically retrieve and, if necessary, prepare a message for the Batch Job component to consume. For example, an HTTP request operation might retrieve the data to process, and a DataWeave script in a Transform Message component might transform the data into a <<valid_input, valid format>> for the Batch Job component to receive.
+//3
+. When the Batch Job component receives a message from an upstream processor in the flow, the <<phase_load_dispatch, Load and Dispatch phase>> begins. In this phase, the component prepares the input for processing as records, which includes creating a batch job instance in which processing takes place.
+//4
+. The batch job instance executes when the flow reaches `<process-records/>`. At this point, the <<phase_process, Process phase>> begins. All record processing takes place during this phase.
+//5
+. Each Batch Step component contains one or more processors that act upon a record to transform, route, enrich, or modify data in the records. For example, you might configure a connector operation to pass processed records one-by-one to an external server. The only _unsupported_ processors are those that perform a request-response operation, such as an HTTP request, which returns a response.
+//6
+. A Batch Aggregator component is optional. You can add only one to a Batch Step component. Processors within an aggregator must be able to accept an array of records as input. The aggregator is useful for loading an array of processed records to an external server. It is also possible to use components, such as For Each, that iterate over the input array so that other processors can process the records individually. The Batch Aggregator component requires a <<batch_aggregator_processing, `streaming` or `size`>> setting to indicate how to process records.
+//7
+. Additional Batch Step components are optional. This example does not contain a Batch Aggregator component.
+//8
+. After records pass through all Batch Step components, Mule completes the batch job instance and reports the results, indicating which records succeed and which failed during processing. You can retrieve or log the result with a Logger or other processor within `<batch:on-complete />`.
 
 [[valid_input]]
 == Valid Input to the Batch Job Component
@@ -124,7 +121,7 @@ When an upstream event in the flow triggers the Batch Job component, the Load an
 [[batchJobInstanceId]]
 Mule exposes each batch job instance through the `batchJobInstanceId` variable. You can use `vars.batchJobInstanceId` to access the identifier for an instance in any batch processing phase. The auto-generated identifier is a UUID, but you can change it to a more readable name. For details, see xref:batch-job-instance-id.adoc[].
 +
-. Mule automatically uses DataWeave to split the input to the Batch Job component into records and stores the records in a persistent queue, which serves as a batch stepping queue during the <<phase_process, Process phase>>. The input is a serialized message payload that Mule splits into a collection of records. During the Process phase, Batch Step components pull records from this queue, which is called a _record stepping queue_.
+. Mule automatically uses DataWeave to split the input to the Batch Job component into records and stores the records in a persistent queue. The input is a serialized message payload that Mule splits into a collection of records. During the <<phase_process, Process phase>>, the Batch Step components pull records from this queue.
 +
 This activity is "all or nothing," which means that Mule either successfully generates and queues a record for every item from the input, or the entire event fails with an error type, such as `MULE:EXPRESSION` message, and an error message, such as `"Expecting Array or Object but got String." evaluating expression: "payload".`
 +
@@ -141,11 +138,11 @@ Each operation within this phase blocks other execution within the flow until it
 
 The Process phase begins after the Load and Dispatch phase finishes loading records to the queue and starts execution of a batch job instance. In this phase, Mule pulls records from the queue to build record blocks of the configured batch block size (100 records per block, by default). Then Mule sends the blocks to the Batch Step component.
 
-Within the Batch Step component, processing takes place parallel at the block level, but records within each block process sequentially by default. Mule uses its auto-tuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).
+Within the Batch Step component, processing takes place in parallel at the block level, but records within each block process sequentially by default. Mule uses its auto-tuning capabilities to determine how many threads to use and the level of parallelism to apply (see xref:execution-engine.adoc[Execution Engine]).
 
-During this phase, processors within the components can access and modify records using the Mule variables `payload`, `attributes`, and `vars`. However, the Batch Job component consumes records after all record processing finishes. So transmission of processed records to an external server or service must take place _within_ the Batch Step or Batch Aggregator components. Although changes to records within a Batch Step component propagate to the next Batch Step in the same Batch Job, the changes do not propagate outside of the Batch Job component. In addition, changes to records that take place within a Batch Aggregator component _are not propagated_ outside of the aggregator to the containing Batch Step component. For propagation rules for variables, see <<variable_propagation>>.
+During this phase, processors within the components can access and modify records using the Mule variables `payload` and `vars`, but _not_ `attributes` because the Batch Job component ignores Mule attributes and does not make them available to its child components. The Batch Job component consumes records after all record processing finishes. So any transmission of _processed_ records to an external server or service must take place _within_ the Batch Step or Batch Aggregator components. Changes to records within a Batch Step component propagate to the next Batch Step within the same Batch Job, but changes to records that take place within a Batch Aggregator component _are not propagated_ outside of the aggregator to the containing Batch Step component. For Mule variable propagation rules, see <<variable_propagation>>.
 
-After processing all the records in a block, a Batch Step component sends the records back to the record stepping queue, where the records await processing by any Aggregator component within the Batch Step component or by the next Batch Step component, if another is present. This process continues until every record passes through every Batch Step component. At the end of this phase, all records are consumed. They are not available for further processing by downstream processors in the Mule flow.
+After processing all the records in a block, a Batch Step component sends the records back to the stepping queue, where the records await processing by any Aggregator component within the Batch Step component or by the next Batch Step component, if another is present. This process continues until every record passes through every Batch Step component. At the end of this phase, all records are consumed. They are not available for further processing by downstream processors in the Mule flow.
 
 image::mruntime-batch-step-process.png[Record Stepping Queue for Batch Steps]
 
@@ -270,34 +267,6 @@ Variables in the report object example follow:
 * `myOnCompleteVar` is an example of a variable created within the On Complete phase. It appears in the report but does not persist after the On Complete phase ends.
 
 Downstream from the Batch Job component, only `myVariable` persists. Like the records and their attributes, the variables of the records are completely consumed within the Batch Job component. The batch job instance executes asynchronously from the rest of the flow, so no variable created within the Process or On Complete phases persists outside of the Batch Job component.
-
-
-//TODO: THIS SECTION COULD/SHOULD MOVE TO A REFERENCE
-== Scheduling Strategies
-
-A Mule application can contain several batch job definitions. Each definition
-has its own scheduling strategy. A *Scheduling Strategy* enables you to control
-how instances of a given batch job are executed:
-
-* `ORDERED_SQUENTIAL` (the default): If several job instances are in an executable
-state at the same time, the instances execute one at a time based on their
-creation timestamp.
-* `ROUND_ROBIN`: This setting attempts to execute all available instances of a
-batch job using a round-robin algorithm to assign the available resources.
-+
-The `ROUND_ROBIN` option is useful when you can guarantee that no job execution can have a
-side effect on another job execution. Therefore, this option is not a good
-choice for data synchronization jobs, which can update the same record in two
-concurrent jobs. Because the order of the job execution is not guaranteed,
-your result might be a prior version of the data. However, you can safely
-use this strategy to parallelize the job's execution if your batch job
-retrieves only new records from a database or lifts individual files
-from an SFTP server, and you are certain that all records are completely
-independent.
-
-Note that none of these strategies guarantee that records will be executed in order.
-The strategies do not control the execution order of records in the batch job,
-nor do they depend on the number of records each instance contains.
 
 == Error Handling
 
