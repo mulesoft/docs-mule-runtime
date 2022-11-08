@@ -9,9 +9,7 @@ You can set up and configure Mule batch processing components to perform common 
 [[batch_filters]]
 == Filtering Records to Process within a Batch Step Component
 
-You can apply one or more record filters as attributes to any number of Batch Step components. For example, assume that the first Batch Step component within a given Batch Job component checks for a Salesforce contact in each record and the second updates the contact information in those records. To ensure that the second Batch Step component processes only records that succeeded in the first step, you can configure a filter on the second Batch Step component. The filter streamlines processing so that Mule focuses on only the relevant data for a given step.
-// TODO: IVAN, NEED EXAMPLE WHERE ONLY RECORDS THAT SUCCEED IN PREVIOUS STEP GET
-// PASSED TO SECOND STEP. EXAMPLE NEEDS FOR SOME RECORDS TO FAIL.
+You can apply one or more record filters as attributes to any number of Batch Step components. For example, assume that the first Batch Step component within a given Batch Job component checks for a Salesforce contact in each record and the second updates the contact information in those records. To ensure that the second Batch Step processes only records that succeeded in the first step, you can configure a filter on the second Batch Step. The filter streamlines processing so that Mule focuses on only the relevant data for a given step.
 
 To filter records, the Batch Step component supports one `acceptExpression` and one `acceptPolicy`. Both are optional, and no other Mule components accept these filters. If you use both filters on the same component, Mule evaluates the filters in the following order:
 
@@ -19,7 +17,7 @@ To filter records, the Batch Step component supports one `acceptExpression` and 
 . Accept Expression: <<accept_policy, acceptPolicy>>
 
 [[accept_expression]]
-A Batch Step component that uses an `acceptExpression` attribute applies a DataWeave expression to each record that reaches the component and accepts a record for processing within the component only if the expression evaluates to `true` for that record. If the record evaluates to `false`, the Batch Step component skips the record, and that record becomes available to the next Batch Step component within the Batch Job component.
+A Batch Step component that uses an `acceptExpression` attribute applies a DataWeave expression to each record that reaches the component and accepts a record for processing within the component only if the expression evaluates to `true` for that record. If the record evaluates to `false`, the Batch Step component skips the record, and that record becomes available to the next Batch Step component within the Batch Job component if one exists.
 
 The example below filters out all records in which the `age` value is less than `21`:
 
@@ -35,33 +33,96 @@ The example below filters out all records in which the `age` value is less than 
 ----
 
 [[accept_policy]]
-A Batch Step component that uses an `acceptPolicy` attribute applies a policy to records that reach it and accepts a record for processing within the component only if the policy evaluates to `true` for that record. This attribute accepts the following policies:
-
-[%header,cols="25a,75a"]
-|===
-|Accept Policy |When evaluates to `true`
-| `NO_FAILURES` | _Default_: Accepts only records that processed successfully within the preceding Batch Step component or accepts all records if there is no preceding Batch Step component.
-| `ONLY_FAILURES` | Accepts only records that failed to process successfully in the preceding Batch Step component or accepts _no_ records if there is no preceding Batch Step component.
-| `ALL` | Accepts all records for processing, regardless of whether they fail to process successfully in a preceding Batch Step component or whether there is a preceding Batch Step component.
-|===
+A Batch Step component uses an `acceptPolicy` attribute to apply a policy to records processed in a previous Batch Step component. The Batch Step accepts a record for processing within the component only if the policy evaluates to `true` for that record. The default policy is `NO_FAILURES`. Other policies are `ONLY_FAILURES` and `ALL`. For descriptions of these policies, see xref:batch-reference.adoc#ref_batch_step_component[Batch Step Component (<batch:step/>)].
 
 In the following example, the second Batch Step component (`batchStep2`) accepts only those records that failed to process successfully during the preceding step (`batchStep1`). For example, assume processors within `batchStep1` check each record for a Salesforce contact. If the check fails to find a contact, `batchStep2` accepts only those records without contacts, skipping records with contacts. Message processors within `batchStep2` can add a contact to those records.
 
-[source,xml,linenums]
+[source,xml]
 ----
 <batch:job jobName="batchJob">
-	<batch:process-records >
-		<batch:step name="batchStep1">
-			...
-		</batch:step>
-		<batch:step name="batchStep2" accept-policy="ONLY_FAILURES">
-			...
-		</batch:step>
-	</batch:process-records>
- </batch:job>
+  <batch:process-records >
+	  <batch:step name="batchStep1" >
+      <!-- Check for contact -->
+		  ...
+    </batch:step>
+    <batch:step name="batchStep2" accept-policy="ONLY_FAILURES">
+      <!-- Accept records that failed -->
+		  ...
+    </batch:step>
+  </batch:process-records>
+</batch:job>
 ----
 
-Note that each Batch Job component has a `maxFailedRecords` attribute that controls the number of failed records to accept in a batch job instance. If an instance exceeds the `maxFailedRecords` value, the Batch Step component does not complete processing of the remaining records in the instance. Instead, the failed batch job instance is pushed to the On Complete phase. See xref:batch-error-handling-faq.adoc[] for more information. 
+[[accept_expression_policy]]
+For demonstration purposes, the following example uses the Raise Error component (`<raise-error />`) to produce failures in the first Batch Step (`batchStep1`). The second Batch Step (`batchStep2`) accepts failed records only (`ONLY_FAILURES`) and logs the payload of those records. The third uses the default `acceptPolicy` to accept `NO_FAILURES`.
+
+[source,xml]
+----
+<flow name="batch-exampleFlow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <fixed-frequency frequency="75" timeUnit="SECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <!-- Set Payload -->
+  <set-payload value="#[[1,2,3,4,5]]" doc:name="Set Payload" />
+  <!-- Batch Job Component -->
+  <batch:job jobName="Batch_Job" maxFailedRecords="-1">
+    <batch:process-records >
+      <!-- First Batch Step defaults to NO_FAILURES -->
+      <batch:step name="batchStep1" acceptPolicy="ALL"
+                  acceptExpression="#[payload &lt; 3]">
+        <!-- Raising Error -->
+        <raise-error doc:name="Raise error"
+                     type="MY:APP" description="Example: Raising Error "/>
+      </batch:step>
+      <!-- Second Batch Step: ONLY FAILURES -->
+      <batch:step name="batchStep2" acceptPolicy="ONLY_FAILURES">
+        <logger level="INFO" doc:name="Logger" message="#[payload]"
+                category="LOGGER IN SECOND BATCH STEP"/>
+      </batch:step>
+      <batch:step name="batchStep3" >
+        <logger level="INFO" doc:name="Logger" message="#[payload]"
+                category="LOGS IN THIRD BATCH STEP"/>
+			</batch:step>
+    </batch:process-records>
+  </batch:job>
+</flow>
+----
+
+* The Set Payload component (`<set-payload />`) sends the array `[1,2,3,4,5]` to the Batch Job component.
+* The Batch Job component (`<batch:job />`) sets `maxFailedRecords` to `-1` so that failed records within the first Batch Step component do not stop the batch job instance from processing.
+* The first Batch Step (`batchStep1`) configures `acceptExpression="#[payload &lt; 3]"` to accept only records with a payload less than `3` and throws an error on those records because of the Raise Error component within it:
++
+[source, logs]
+----
+INFO  ...DefaultBatchStep: Found exception processing record on step 'batchStep1' for job instance 'f9bb6d60-5ef2-11ed-81e7-147ddaaf4f97'
+of job 'batch-example-policiesBatch_Job'.
+----
+* The second Batch Step (`batchStep2`) prints the payload of the failed records, for example:
++
+[source, logs]
+----
+INFO  ... LOGGER IN SECOND BATCH STEP: 1
+INFO  ... LOGGER IN SECOND BATCH STEP: 2
+----
+* The third Batch Step (`batchStep3`) prints the payload of the successful records, for example:
++
+[source, logs]
+----
+INFO ... LOGS IN THIRD BATCH STEP: 3
+INFO  ...LOGS IN THIRD BATCH STEP: 4
+INFO  ...LOGS IN THIRD BATCH STEP: 5
+----
+* After the batch job instance completes, the logs indicate that `3` records processed successfully and `2` records failed:
++
+[source, logs]
+----
+INFO  ...engine.DefaultBatchEngine: Finished execution for instance ...
+Total Records processed: 5. Successful records: 3. Failed Records: 2
+----
+
+For more information, see xref:batch-error-handling-faq.adoc[].
 
 [[aggregator_bulk_update]]
 == Performing Bulk Operations from a Batch Aggregator Component
@@ -244,7 +305,7 @@ Assume that the <<json_array, JSON array>> is the input to the following Batch J
   <batch:process-records>
     <batch:step name="log">
       <batch:aggregator size="10">
-        <foreach> 
+        <foreach>
 	  <logger message="Agent #[payload.alias] is #[payload.status]" />
 	</foreach>
       </batch:aggregator>
