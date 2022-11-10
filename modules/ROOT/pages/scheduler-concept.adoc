@@ -2,20 +2,59 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+page-aliases: scheduler-xml-reference.adoc
 
-The Scheduler component is a Mule message source that enables you to trigger a flow based on a time-based condition. You can configure it to be triggered at a regular interval or give it a more flexible cron expression. For example, a Scheduler might trigger an event to start a flow every 5 seconds.
+The Scheduler component is a Mule message source (trigger) that enables you to trigger a flow based on a time-based condition. You can schedule the flow to start at a regular interval or based on a cron expression. For example, a Scheduler might trigger the flow to start every 5 seconds. Each execution of the Scheduler generates a new Mule message for use by downstream processors in the flow.
 
-Consider the following when you implement a Scheduler in your Mule application:
+Consider the following when adding a Scheduler to your Mule application:
 
-* Schedulers use the same timezone as the machine on which Mule is running. However, if an application is running in CloudHub, the Scheduler conforms to the UTC timezone, regardless of the geographic region in which the application is running.
-* The `disallowConcurrentExecution` property enables you to prevent the Scheduler from re-triggering a flow until it finishes processing. See xref:scheduler-xml-reference#scheduler-properties[<scheduler> Properties].
+* Schedulers use the same timezone as the machine on which Mule is running. However, if an application is running in CloudHub, the Scheduler conforms to the UTC timezone, regardless of the geographic region in which the application is running. Cron jobs can set a specific time zone.
+* The `disallowConcurrentExecution` property enables you to prevent the Scheduler from triggering the next flow until the preceding flow finishes processing.
 * If xref:execution-engine.adoc#backpressure[back-pressure] occurs because no resources are available at the time of the scheduled trigger, Mule skips the trigger.
 //Enhancement request for this: MULE-14930
-* In a Mule runtime engine cluster or multi-worker CloudHub deployment, the Scheduler runs (or triggers the flow) only on the primary node (that is, only in one Mule instance).
+* In a Mule runtime engine cluster or multi-worker CloudHub deployment, the Scheduler executes only on the primary node (that is, only in one Mule instance).
+
+== Architecture
+
+Like other Mule message source components, a Scheduler is first component in a Mule flow.
+
+image::scheduler-component-ex.png["Scheduler component in Mule flow"]
+
+The Scheduler sets a scheduling strategy at a fixed frequency or an interval based on a cron expression.
+
+* The fixed frequency setting in this Scheduler triggers the generation of new Mule message in the flow every fifteen seconds:
++
+[source, xml]
+----
+<flow name="example-flow" >
+  <scheduler doc:name="Scheduler">
+    <scheduling-strategy>
+      <fixed-frequency frequency="15" timeUnit="SECONDS" />
+    </scheduling-strategy>
+  </scheduler>
+  <!-- One or more processors here. -->
+</flow>
+----
++
+* The cron expression in this Scheduler triggers the generation of new Mule message in the flow every fifteen seconds:
++
+[source, xml]
+----
+<flow name="cron-expression-flow" >
+  <scheduler doc:name="Scheduler" >
+    <scheduling-strategy >
+      <cron expression='0/15 * * * * ? '/>
+    </scheduling-strategy>
+  </scheduler>
+  <!-- One or more processors here. -->
+</flow>
+----
+
+For Scheduler attributes, see <<reference>>.
 
 == Example Projects
 
-There are several example projects in xref:https://www.mulesoft.com/exchange/[Anypoint Exchange^] that you can open in Anypoint Studio to learn more about how to use the Scheduler component:
+Several examples in https://www.mulesoft.com/exchange/[Anypoint Exchange^] show use cases for a Scheduler component:
 
 * _Data Sync Using Watermarking and Batch_
 * _Import Contacts into Microsoft Dynamics CRM_
@@ -27,34 +66,87 @@ There are several example projects in xref:https://www.mulesoft.com/exchange/[An
 
 To download and open an example project from Anypoint Studio, click the Exchange icon in the upper-left corner. Then, in the window that opens, log into Anypoint Exchange and search on the name of the project.
 
-== Fixed Frequency
+[[reference]]
+== Reference
 
-Use Fixed Frequency (`<fixed-frequency />`) scheduling strategy (`<scheduling-strategy >`) to set a Scheduler to trigger a flow at a regular intervals. 
+The Scheduler accepts properties for configuring the execution interval  and concurrency:
+
+ * <<props_scheduler>>
+ * <<props_fixed_frequency>>
+ * <<props_cron_expressions>>
+
+[[props_scheduler]]
+=== Scheduler (`<scheduler/>`)
+
+By default, the Scheduler does not wait for one execution of the flow to complete before executing again at the configured cadence. You can change this behavior by setting the `disallowConcurrentExecution="true"` attribute directly in the configuration XML.
+
+[%header,cols="1a,4a"]
+|===
+| XML | Description
+
+|`disallowConcurrentExecution`
+| When this attribute is set to `true`, the Scheduler skips its execution if the previous execution of the flow has not finished processing. In this way, no two flows execute at the same time. Once processing in the flow is complete, the Scheduler executes at its next scheduled interval. Default value is `false`.
+|
+|===
+
+In the following example, the Scheduler skips its next execution if the flow takes longer to complete than the fixed frequency of 10 milliseconds:
+
+[source,xml]
+----
+<flow name="scheduler-disallowConcurrentExecution-ex" >
+  <scheduler doc:name="Scheduler" disallowConcurrentExecution="true" >
+    <scheduling-strategy>
+      <fixed-frequency frequency="10" timeUnit="MILLISECONDS"/>
+    </scheduling-strategy>
+  </scheduler>
+  <!-- processors here -->
+</flow>
+----
+
+Mule logs an `Execution skipped` message in the logs each time the Scheduler skips its execution, for example (edited for readability):
+
+[source,logs]
+----
+INFO  2022-11-09 15:15:43,082 ...
+...scheduler.DefaultSchedulerMessageSource:
+Flow 'scheduler-disallowConcurrentExecution-ex' is already running and
+'disallowConcurrentExecution' is set to 'true'. Execution skipped.
+
+INFO  2022-11-09 15:15:43,083 ...
+...scheduler.DefaultSchedulerMessageSource:
+Flow 'scheduler-disallowConcurrentExecution-ex' is already running and
+'disallowConcurrentExecution' is set to 'true'. Execution skipped.
+----
+
+[[props_fixed_frequency]]
+=== Fixed Frequency (`<fixed-frequency/>`)
+
+The fixed frequency scheduling strategy accepts the following attributes:
 
 [%header,cols="1a,1a,1a,4a"]
 |===
 |Attribute | XML | Default | Description
+
 |*Frequency*
 | `frequency`
-| 1000
-|The frequency at which the Scheduler triggers the flow given the *Time unit* (`timeUnit`) setting. Setting `0` or a negative value causes the component to use the default value.
+| `1000`
+|The frequency at which the Scheduler triggers the flow given the `timeUnit` setting.
 
 | *Start Delay*
 | `startDelay`
-| 0
-| The amount of time to wait before triggering the flow for the first time after the application starts. This property uses the same `timeUnit` as the frequency.
-
+| `0`
+| The amount of time to delay execution of the Scheduler for the first time after the application starts. This property uses the same `timeUnit` as the frequency.
 
 | *Time Unit*
 | `timeUnit`
 | `MILLISECONDS`
-| A time unit for the values of `frequency` and `startDelay`, one of the following:
+| One of the following time units for the values of `frequency` and `startDelay`:
 
-`MILLISECONDS`, `SECONDS`, `MINUTES`, `HOURS`, `DAYS`
+`MILLISECONDS`, `SECONDS`, `MINUTES`, `HOURS`, or `DAYS`
 
 |===
 
-The following example uses a `fixed-frequency` scheduling strategy (`<scheduling-strategy >):
+This strategy delays execution of the Scheduler for 10 seconds and then executes every 10 seconds:
 
 [source,xml]
 ----
@@ -65,11 +157,43 @@ The following example uses a `fixed-frequency` scheduling strategy (`<scheduling
 </scheduler>
 ----
 
-This strategy delays execution of the Scheduler for 10 seconds and then executes every 10 seconds to start the flow. 
+[[props_cron_expressions]]
+=== Cron (`<cron/>`)
 
+For more complex scheduling strategies, you can use a cron expression.
+
+[%header,cols="1a,4a,2a"]
+|===
+|Parameter |Description |Example
+
+| `expression`
+| Use a cron expression for when to do a trigger. There is no default cron expression. For guidance with expressions, see <<cron_expressions>>.
+| `expression="1 1 1 1,7 * ?"`
+
+| `timeZone`
+| Time zone passed as system property, or in machine's operating system. https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[Java time zone^] values are supported. Avoid Java abbreviations, such as `PST` and `AGT`, and instead use the full-name Java equivalents, such as `America/Los_Angeles` and
+`America/Argentina/Buenos_Aires`.
+| `timeZone="America/Argentina/Buenos_Aires"`
+|===
+
+Example that uses a cron expression to trigger the flow at 12:00 every day.
+
+[source,xml]
+----
+<flow name="componentsFlow">
+    <scheduler>
+        <scheduling-strategy>
+            <cron expression="0 0 12 * * ?"/>
+        </scheduling-strategy>
+    </scheduler>
+    <logger message="my message"/>
+</flow>
+----
+
+[[cron_expressions]]
 == Cron Expressions
 
-Cron is a widely used standard for describing time and date information. The Cron Expression (`<cron expression />` scheduling strategy (`<scheduling-strategy >`) is useful for triggering a flow at intervals not available through the Fixed Frequency scheduling strategy. 
+Cron is a widely used standard for describing time and date information. The Cron Expression (`<cron expression />` scheduling strategy (`<scheduling-strategy >`) is useful for triggering a flow at intervals not available through the Fixed Frequency scheduling strategy.
 
 The Scheduler keeps track of every second and creates a Mule event when the
 Quartz Cron expression matches your time-date setting. You can trigger the event
@@ -78,13 +202,13 @@ just once or at regular intervals.
 A date-time expression consists of six required settings and can include the
 optional year setting. Specify the settings in the following order:
 
-. Seconds (0-59)
-. Minutes (0-59)
-. Hours (0-23)
-. Day of month (1-31)
-. Month (1-12 or JAN-DEC)
-. Day of the week (1-7 or SUN-SAT)
-. Year (empty or a 4-digit year between 1970-2099, for example, 2019)
+. Seconds (`0`-`59`)
+. Minutes (`0`-`59`)
+. Hours (`0`-`23`)
+. Day of month (`1`-`31`)
+. Month (`1`-`12` or `JAN`-`DEC`)
+. Day of the week (`1`-`7` or `SUN`-`SAT`)
+. Year (empty or a 4-digit year between `1970`-`2099`, for example, `2019`)
 
 The Scheduler supports Quartz Cron expressions. Here are a few examples:
 
@@ -110,7 +234,7 @@ The Scheduler component also supports Quartz Scheduler special characters:
 * `L`: Last day of the week or month, or last specific day of the month
   (such as `6L` for the last Saturday of the month).
 * `W`: Weekday, which is valid in the month and day-of-the-week fields.
-* `#`: Nth day of the month. For example, `#3` is the third day of the month.
+* `#`: "nth" day of the month. For example, `#3` is the third day of the month.
 
 //source info: +http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/crontrigger.html+
 
@@ -131,24 +255,12 @@ This example logs the message "hello" every second:
 Note that there are a number of free online tools that can help you build Cron
 expressions.
 
-=== Time Zones (timeZone)
+== Debugging in Anypoint Studio
 
-For Cron configurations, Java `timeZone` values are supported. Avoid
-the Java abbreviations, such as `PST` and `AGT`, and instead use the full-name
-Java equivalents, such as `America/Los_Angeles` and
-`America/Argentina/Buenos_Aires`.
+In the Anypoint Studio xref:studio::to-run-debug-mode.adoc[debug mode], the Mule application disables the triggering of events. You can manually execute the Scheduler component when debugging by clicking the green arrow icon in Studio that appears at the bottom of the component, for example:
 
-//source info: +https://docs.oracle.com/javase/8/docs/api/java/time/ZoneId.html+
-
-== Debugging
-
-In the Anypoint Studio *Debug Mode* view, the Mule application disables the triggering of events. You can
-instead execute the Scheduler component when debugging by clicking the green arrow icon
-that appears at the bottom of the component. 
-
-//TODO: ADD PNG
-
+image:scheduler-component-debug-ex.png[Debug arrow in the Scheduler]
 
 == See Also
 
-* xref:scheduler-xml-reference.adoc[Scheduler XML Reference]
+* xref:flow-component.adoc[]
