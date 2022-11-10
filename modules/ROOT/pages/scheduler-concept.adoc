@@ -10,9 +10,9 @@ Consider the following when adding a Scheduler to your Mule application:
 
 * Schedulers use the same timezone as the machine on which Mule is running. However, if an application is running in CloudHub, the Scheduler conforms to the UTC timezone, regardless of the geographic region in which the application is running.
 +
-To set a time zone for the Scheduler, see <<props_cron_expressions>>.
-* The `disallowConcurrentExecution` property enables you to prevent the Scheduler from triggering the next flow until the preceding flow finishes processing.
-* If xref:execution-engine.adoc#backpressure[back-pressure] occurs because no resources are available at the time of the scheduled trigger, Mule skips the trigger.
+To set a time zone for the Scheduler, see `timeZone` in <<props_cron_expressions>>.
+* The `disallowConcurrentExecution` property enables you to prevent the Scheduler from triggering the next execution of a flow while the previously executed flow is still running.
+* If xref:execution-engine.adoc#backpressure[back-pressure] occurs because no resources are available at the time of the scheduled trigger, Mule skips that execution.
 //Enhancement request for this: MULE-14930
 * In a Mule runtime engine cluster or multi-worker CloudHub deployment, the Scheduler executes only on the primary node (that is, only in one Mule instance).
 
@@ -21,6 +21,13 @@ To set a time zone for the Scheduler, see <<props_cron_expressions>>.
 Like other Mule message source components, a Scheduler is first the component in a Mule flow.
 
 image::scheduler-component-ex.png["Scheduler component in Mule flow"]
+
+The XML for the Scheduler consists of the following elements:
+
+* `<scheduler />`: Top-level element of the Scheduler.
+* `<scheduling-strategy />`: Second-level element that accepts one of the following children:
+** `<fixed-frequency />`: For common scheduling frequencies, such as every second.
+** `<cron />`: For <<cron_expressions, cron expressions>> and time zone settings.
 
 The Scheduler sets a scheduling strategy at a fixed frequency or an interval based on a cron expression:
 
@@ -52,30 +59,35 @@ The Scheduler sets a scheduling strategy at a fixed frequency or an interval bas
 </flow>
 ----
 
-At least one processor must follow the Scheduler. Processors include Mule components and connector operations, such as an HTTP Request operation or Transform Message component. Failure to provide a processor produces a `MuleRuntimeException` and causes the deployment of the Mule application to fail.
+At least one processor must follow the Scheduler. Processors include Mule components and connector operations, such as an HTTP Request operation or Transform Message component. Failure to provide a processor produces a `MuleRuntimeException` and causes the deployment of the Mule application to fail with the following ERROR message in the logs (edited for readability):
+
+[source,logs]
+----
+ERROR ...MuleRuntimeException ...
+The content of element 'flow' is not complete.
+One of '{"http://www.mulesoft.org/schema/mule/core":abstract-message-processor,
+"http://www.mulesoft.org/schema/mule/core":abstract-mixed-content-message-processor}'
+is expected.
+----
 
 For Scheduler attributes, see <<reference>>.
 
 [[reference]]
 == Reference
 
-The Scheduler elements accept attributes for configuring the execution interval and concurrency:
-
- * <<props_scheduler>>
- * <<props_fixed_frequency>>
- * <<props_cron_expressions>>
+The Scheduler elements accept attributes for configuring the execution interval and concurrency.
 
 [[props_scheduler]]
 === Scheduler (`<scheduler/>`)
 
-By default, the Scheduler does not wait for one execution of a given flow to complete before executing again at the configured cadence. You can change this behavior by setting the `disallowConcurrentExecution="true"` attribute directly in the configuration XML.
+By default, the Scheduler does not wait for one execution of a given flow to complete before executing another instance of the flow at the configured cadence. You can change this behavior by setting the `disallowConcurrentExecution="true"` attribute directly in the configuration XML.
 
 [%header,cols="1a,4a"]
 |===
-| XML | Description
+| Attribute XML | Description
 
 |`disallowConcurrentExecution`
-| When this attribute is set to `true`, the Scheduler skips its scheduled execution if a prior execution of the flow is still processing. Once processing the flow finishes processing, the Scheduler executes at its next scheduled interval. The default value is `false`.
+| When this attribute is set to `true`, the Scheduler skips its scheduled execution if the flow is still running. Once the flow is done, the Scheduler executes at the next configured interval. The default value is `false`.
 |===
 
 In the following example, the Scheduler skips its execution if the flow takes longer to complete than the fixed frequency of 10 milliseconds:
@@ -92,7 +104,7 @@ In the following example, the Scheduler skips its execution if the flow takes lo
 </flow>
 ----
 
-Mule logs an `Execution skipped` message in the logs each time the Scheduler skips its execution, for example (edited for readability):
+Each time a Scheduler skips its execution, Mule logs an `Execution skipped` message, for example (edited for readability):
 
 [source,logs]
 ----
@@ -151,18 +163,17 @@ This strategy delays execution of the Scheduler for 10 seconds and then executes
 
 For more complex scheduling strategies, you can use a cron expression.
 
-[%header,cols="1a,4a,2a"]
+[%header,cols="1a,1a,4a"]
 |===
-|Parameter |Description |Example
+|Attribute |XML |Description
 
+| *Expression*
 | `expression`
-| Use a cron expression for when to do a trigger. There is no default cron expression. For guidance with expressions, see <<cron_expressions>>.
-| `expression="1 1 1 1,7 * ?"`
+| Use a cron expression for when to do a trigger. There is no default cron expression. For guidance with expressions, see <<cron_expressions>>. Example: `expression="1 1 1 1,7 * ?"`
 
+| *Time Zone*
 | `timeZone`
-| Time zone passed as system property, or in machine's operating system. https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[Java time zone^] values are supported. Avoid Java abbreviations, such as `PST` and `AGT`, and instead use the full-name Java equivalents, such as `America/Los_Angeles` and
-`America/Argentina/Buenos_Aires`.
-| `timeZone="America/Argentina/Buenos_Aires"`
+| Time zone passed as system property, or in machine's operating system. https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[Java time zone^] values are supported. Avoid Java abbreviations, such as `PST` and `AGT`, and instead use the full-name Java equivalents, such as `America/Los_Angeles`. Example: `timeZone="America/Argentina/Buenos_Aires"`
 |===
 
 Example that uses a cron expression to trigger the flow at 12:00 every day in the `America/Los_Angeles` time zone.
@@ -246,7 +257,7 @@ expressions.
 
 == Examples
 
-Several examples in https://www.mulesoft.com/exchange/[Anypoint Exchange^] show use cases for a Scheduler component:
+Several examples that you can find in https://www.mulesoft.com/exchange/[Anypoint Exchange^] show use cases for a Scheduler component:
 
 * _Data Sync Using Watermarking and Batch_
 * _Import Contacts into Microsoft Dynamics CRM_
@@ -256,7 +267,7 @@ Several examples in https://www.mulesoft.com/exchange/[Anypoint Exchange^] show 
 * _Salesforce to MySQL Database Using Batch Processing_
 * _Sending a CSV File Through Email Using SMTP_
 
-To download and open an example project from Anypoint Studio, click the Exchange icon in the upper-left corner. Then, in the window that opens, log into Anypoint Exchange and search on the name of the project.
+To download and open the project from Anypoint Studio, see xref:studio::import-project-exchange.adoc[].
 
 == Debugging in Anypoint Studio
 
