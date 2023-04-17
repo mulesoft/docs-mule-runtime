@@ -1,0 +1,76 @@
+= Dynamic Evaluate Component
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+include::partial$eol-warning.adoc[]
+
+
+
+The Dynamic Evaluate component evaluates an expression to select a DataWeave script, and then executes the new script to generate a result. This behavior enables you to dynamically select the script, instead of hardcoding it into the xref:transform-component-about.adoc[Transform Message component].
+
+The script can use any of the usual xref:dataweave-variables-context.adoc[context variables], such as `message`, `payload`,`vars`, or `attributes`, but you can also add custom ones by providing a set of key-value pairs.
+
+== Dynamic Evaluate Configuration
+
+[%header,cols="1,1,2,2"]
+|===
+| Field | Value | Description | Example
+
+| Expression | DataWeave expression | Specifies an expression that selects a DataWeave script that Mule then executes. |
+`expression="#[vars.generateOrderScript]"`
+| Parameters | DataWeave expression | Specifies key-value pairs to set as parameters that the DataWeave script can evaluate. |
+`#[{joiner: ' and ', id: payload.user.id}]`
+
+|===
+
+== Example XML Configuration
+
+The following example selects a script from a database through a `userId` query parameter and stores that script in a `userScript` variable. The `dynamic-evaluate` component accesses the `userScript` variable to invoke the script using the provided parameter `name`, which contains the value of `attributes.queryParams.userName`.
+
+[source,xml,linenums]
+----
+<flow name="dynamic-evaluate-example-flow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <!-- This SQL query uses queryParams.userId to dynamically select a DataWeave script stored in a Database,
+  and then assign this script to target variable userScript-->
+  <db:select config-ref="dbConfig" target="userScript">
+    <db:sql>#["SELECT script FROM SCRIPTS WHERE ID = $(attributes.queryParams.userId)"]</db:sql>
+  </db:select>
+  <!-- The dynamic evaluate component executes the script stored in vars.userScript-->
+  <ee:dynamic-evaluate expression="#[vars.userScript]">
+    <!-- This line sets a parameter called 'name', so the expression in the Dynamic Evaluate component can use it -->
+    <ee:parameters>#[{name: attributes.queryParams.userName}]</ee:parameters>
+  </ee:dynamic-evaluate>
+</flow>
+----
+
+Consider the following scripts stored in this example's database for entries `lsalander` and
+`mblomkvist`, respectively:
+
+.Example: lsalander script
+----
+output application/json
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+.Example: mblomkvist script
+----
+output application/x-www-form-urlencoded
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+=== Example Application Behavior
+
+When this example Mule application receives `lsalander` as the `queryParams.userId` in the request, Mule executes the corresponding script, which results in a JSON response. If the application receives `mblomkvist` as the `queryParams.userId` value, Mule executes a different script that generates a `x-www-form-urlencoded` response.
+
+This example demonstrates how the response type can be parameterized based on the user, but the entire response can
+be parameterized to suit each users needs.
