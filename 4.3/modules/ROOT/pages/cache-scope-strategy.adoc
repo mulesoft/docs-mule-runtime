@@ -1,0 +1,103 @@
+= Set Up a Caching Strategy
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+You can create a caching strategy from a Cache scope properties panel or a Global Elements configuration in Anypoint Studio. After you create a strategy, a Cache component in your flow can reference it.
+
+You can configure the cache size, expiration time, and maximum allowed entries by setting these values in the object store that you define or reference from the caching strategy.
+
+Follow these steps to configure a caching strategy:
+
+. Open the caching strategy configuration window.
++
+You can open it from the Cache scope properties panel or the *Caching Strategies* option in the Global Elements tab within Studio:
++
+image:mruntime-caching-strategy.png[caching strategy configuration]
++
+. Define the *Name* of the caching strategy.
+. Define the *ObjectStore* to use by selecting any of the following options:
+** *Edit Inline* +
+Use this option to create an Object Store configuration specific for this caching strategy.
+** *Global Reference* +
+Use this option either to select an existing Object Store, or to create a new global Object Store that can be referenced by this caching strategy and any other component in your application.
++
+. Select a mechanism for generating a key used for storing events within the caching strategy:
++
+* *Default*
+* *Key Expression*
++
+A DataWeave expression (for example, `keyGenerationExpression="#[vars.requestId]"`).
++
+Note that for two requests that are the same ("equal"), you need to generate the same key. Otherwise, you can get wrong results.
++
+* *Key Generator*
++
+Requires you to implement the `com.mulesoft.mule.runtime.cache.api.key.MuleEventKeyGenerator` interface.
++
+. (Optional) Open the *Advanced* tab in the properties window to configure advanced settings:
++
+image:mruntime-caching-strategy-advanced.png[caching strategy advanced configuration]
++
+* Select or create a *Response Generator*.
++
+Note that this step requires that you implement the
+`com.mulesoft.mule.runtime.cache.api.response.ResponseGenerator` interface.
++
+* Select the *Event Copy Strategy*:
+** *Simple event copy strategy*
++
+Data is immutable. This is the default value.
+** *Serializable event copy strategy*
++
+Data is mutable.
+
+== Synchronized Access to a Cache
+
+By default, Mule synchronizes access to a cache to avoid unexpected results if multiple message processors (on the same or different Mule instances) use the cache at the same time.
+
+Consider a scenario where two message processors attempt to retrieve a value from a cache but do not find the value in the cache. So each message processor calculates the value independently and inserts it into the cache. If access to the cache is not synchronized, the value inserted by the second message processor overwrites the value inserted by the first message processor. If the values are different, then two different results are obtained for the same input, with only the last one stored in the cache.
+
+In some scenarios this outcome is valid, but it can be a problem if the application requires cache coherence. Synchronizing the caching strategy ensures this coherence. A synchronized cache is locked when it is being modified by a message processor. In the previous scenario, a locked cache forces the second message processor to wait until the first message processor has calculated the value, and then it retrieves the value from the cache.
+
+You can disable cache synchronization by defining the `synchronized` property in the `<ee:object-store-caching-strategy>` element and setting it to `false`.
+
+[IMPORTANT]
+Synchronization affects performance, and the impact is most severe in cluster mode.
+
+== Example Caching Strategy
+
+The following XML snippet shows the configuration of a caching strategy that synchronizes access to the cache, and defines a persistent Object Store to store the cached responses. The caching strategy is then referenced by a Cache scope:
+
+[source, xml, linenums]
+----
+<!-- Caching strategy definition -->
+<ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" synchronized="false" >
+  <!-- Object Store defined for the caching strategy-->
+  <os:private-object-store
+    alias="CachingStrategy_ObjectStore"
+    maxEntries="100"
+    entryTtl="10"
+    expirationInterval="5"
+    config-ref="ObjectStore_Config" />
+</ee:object-store-caching-strategy>
+
+<!-- Cache scope referencing the strategy-->
+<ee:cache doc:name="Cache" cachingStrategy-ref="Caching_Strategy">
+      <!-- Some processing logic to cache-->
+</ee:cache>
+----
+
+////
+REMOVED PER PABLO K:
+* Select or create a Consumable Message Filter.
++
+Note that this step requires that you implement the `com.mulesoft.mule.compatibility.core.api.routing.filter.Filter` interface.
+////
+
+== See Also
+
+* xref:cache-scope.adoc[Cache Scope]
+* xref:cache-scope-to-configure.adoc[Configure the Cache Scope]
+* xref:mule-object-stores.adoc#object-store-config[Object Store Configuration]
+* xref:global-elements.adoc[Global Elements]

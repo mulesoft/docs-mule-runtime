@@ -1,0 +1,74 @@
+= Cache Scope
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: cache, anypoint, studio
+
+The Cache scope is for storing and reusing frequently called data. You can use a Cache scope to reduce the processing load on the Mule instance and to increase the speed of message processing within a flow. It is particularly effective for these tasks:
+
+* Processing repeated requests for the same information.
+* Processing requests for information that involve large repeatable streams.
+
+When a message processor in a Mule app sends a message to the Cache scope, the parent flow expects an output. The Cache scope processes the message payload, delivers the output to the parent flow, and saves the output (that is, caches the response). The next time the Cache scope receives the same kind of message payload, the scope can offer a cached response rather than invoking a potentially time-consuming process again.
+
+For instance, you can use a Cache scope to manage customer requests for flight information. Many customers might request the same pricing information about flights from San Francisco to Buenos Aires. Rather than using a lot of processing power to send separate requests to several airline databases with each customer query, you can use a Cache scope to arrange to send a request to the databases fewer times – say, once every ten minutes – and present users with the cached flight pricing information. Where timeliness of data is not critical, Cache scope can save time and processing power.
+
+Note that you can put any number of message processors (such as connectors or components) into a Cache scope and configure the caching strategy to store the responses (which contain the payload of the response message) produced by the processing that occurs within the scope.
+
+The cache scope also works in clustered environments because the object store configured in the caching strategy is shared across all nodes in the cluster.
+
+== Caching Process
+
+The Cache scope caches repeatable streams. It does not cache nonrepeatable streams, which can be read only once before they are lost. By default, all streams are repeatable in Mule unless a component's streaming strategy is configured to be nonrepeatable.
+
+In general, the caching process follows this sequence:
+
+. A message enters the Cache scope.
+. The Cache scope determines whether the message payload is nonrepeatable.
+. The Cache scope generates a key to identify the message’s payload.
++
+By default, Mule uses an SHA256KeyGenerator and a SHA256 digest to generate a unique key for the message payload. However, you can set up your own key through a custom caching strategy.
++
+. The Cache scope compares the newly generated key to cached responses that it has previously processed and saves it in the ObjectStore you set up (recommended) or in the default `InMemoryObjectStore`.
++
+* If there is no cached response event (a _cache miss_), the Cache scope processes the new message and produces a response.
++
+It also saves the resulting response in the object store (if the response is repeatable).
++
+* If there is a cached response event (a _cache hit_), the caching strategy generates a response that combines data from both the new request and the cached response.
++
+Note that if the generated response is a nonrepeatable stream, the scope does not cache the response.
++
+. The Cache scope pushes the response out into the parent flow for continued processing.
+
+==  Caching Strategy
+
+A caching strategy defines the actions a Cache scope takes when a message enters its sub-flow. By default, the Cache scope uses a caching strategy that stores data in an in-memory object store. You can create a custom caching strategy that references an existing object store, or you can create a new custom object store to use in this caching strategy.
+
+You can configure the cache size, expiration time, and maximum allowed entries by setting these values in the object store that you define or reference from the caching strategy. You can also configure a caching strategy to synchronize access to the cache, to avoid different message processors from using the cache at the same time.
+
+Your caching strategy can also reference these customizations:
+
+* Event Key for the ObjectStore, which is a DataWeave expression or Java object used to create the key to use for storing the payload in the ObjectStore.
+* Response Generator for your strategy, which is a reference to a Java object that is used to create the responses returned by the caching strategy.
+* Event Copy Strategy for mutable or immutable data.
+////
+REMOVED:
+* Consumable Message Filter, which is a reference to a Java object that is used to determine whether a message contains a consumable payload.
+////
+
+== Filters
+
+Instead of processing all message payloads that it receives, the Cache scope can exclude specific payloads from the Cache scope flow based on an DataWeave expression.
+
+== Example
+
+In Anypoint Studio, you can download and open the example project _Cache Scope with Salesforce Contacts_ from Anypoint Exchange to learn more about how to use the Cache scope. This example caches fetched data from Salesforce. When a query is issued to request the data again, results are returned from cache and a new call to Salesforce is not made.
+
+To download and open this example project while you are in Anypoint Studio, click the Exchange icon in the upper-left corner. Then, in the window that opens, log into Anypoint Exchange and search on the name of the project.
+
+== See Also
+
+* xref:cache-scope-to-configure.adoc[Configure the Cache Scope]
+* xref:cache-scope-strategy.adoc[Set Up a Caching Strategy]
+* xref:streaming-about.adoc[Streaming in Mule Applications]

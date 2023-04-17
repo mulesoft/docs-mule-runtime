@@ -1,0 +1,284 @@
+= Shared Resources
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: anypoint studio, shared resources, domains, multiple applications, share ports, domain project
+
+When you deploy Mule on premises, you can define global configurations such as default error handlers, shared properties, scheduler pools, and connector configurations to be shared among all applications deployed under the same domain. To do so, create a Mule domain and then reference it from each application. As a result, each app now associated with the Mule domain can access shared resources in the domain. +
+Note that Mule apps are associated with only one domain at a time.
+
+Sharing resources allows multiple development teams to work in parallel using the same set of connector configurations, enabling the teams to:
+
+* Expose multiple services within the domain through the same port.
+* Share the connection to persistent storage.
+* Share services between Mule applications through a well-defined interface.
+* Ensure consistency between Mule applications upon any changes because the configuration is only set in one place.
+
+To share the metadata, keep the Mule domain project open in Anypoint Studio. Otherwise, you must enter the metadata manually on the linked Mule projects.
+
+== Prerequisites
+
+* Anypoint Studio 7.x
+* Mule runtime engine 4.x
+* Run Mule runtime engine On Premises
+
+== Limitations
+
+Defining flows, subflows, or any message processors as shared resources is not supported. Domains are not meant to share behavior. They are meant to share resources only.
+
+== Architecture
+
+A Mule domain project in Anypoint Studio has the following key files:
+
+[%header%autowidth.spread,cols="a,a"]
+|===
+|File Name |Description
+|`/src/main/mule/mule-domain-config.xml` |This is the shared resources configuration file. This file must have the `mule-domain-config.xml` file name.
+|`pom.xml` |This is the dependencies file descriptor. It is a Maven POM file with required plugins for domains projects.
+|`/mule-artifact.json` |This file is a descriptor for the domain artifact.
+|===
+
+When you package the Mule domain project into a deployable JAR file, you can find the following files:
+
+[%header%autowidth.spread,cols="a,a"]
+|===
+|File Name |Description
+|`mule-domain-config.xml` |This is the shared resources configuration file. This file must have the `mule-domain-config.xml` file name.
+|`/repository` |A Maven-like repository with all the dependencies of the domain.
+|`/META-INF/maven/groupId/artifactId/pom.xml` |Artifact Maven descriptor file.
+|`/META-INF/mule-artifact/classloader-model.json` |Internal Mule file used for dependency management.
+|`/META-INF/mule-artifact/mule-artifact.json` |This file is a descriptor for the domain artifact.
+|===
+
+== Configuration
+
+To use shared resources in your Mule apps, complete the following tasks:
+
+. <<create_domain_project, Create a new domain>>.
+. <<define-shared-resources, Define one or more shared resources in that domain>>.
+. <<assoc_apps_domain, Associate applications with the domain>>.
+. <<reference-shared-resources, Reference shared resources>> in your Mule applications.
+. <<deploy-shared-resources, Deploy the domain and the Mule apps with shared resources>>. +
+// Note that you can also deploy domain and apps together in a <<Deploying Domain Bundles, domain bundle>>.
+
+[[create_domain_project]]
+== Create a New Domain
+
+To create a new domain in Anypoint Studio:
+
+. In the top menu bar select, *File* > *New* > *Mule Domain Project*.
++
+image::mruntime-new-domain.png[new+domain]
++
+. Fill in the same fields as you would with a regular Mule Project:
++
+image::mruntime-create-domain.png[create+new+domain]
++
+* Provide a name for the project, and select a Mule version.
+
+[[define-shared-resources]]
+== Shared Resources Configuration
+
+You can configure your <<create_domain_project,domain project>> by defining one or more shared resources in your `mule-domain-config.xml` file. You can edit this file in Anypoint Studio using either the XML editor or the graphic interface.
+
+=== Configure Shared Resources by Editing the Configuration XML
+
+Configure shared resources by adding module or connector configurations to your domain's configuration XML.
+
+The following example configures an HTTP Listener as a shared resource:
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<domain:mule-domain
+        xmlns="http://www.mulesoft.org/schema/mule/core"
+        xmlns:domain="http://www.mulesoft.org/schema/mule/ee/domain"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/ee/domain http://www.mulesoft.org/schema/mule/ee/domain/current/mule-domain-ee.xsd">
+
+    <!-- Example configuration for an HTTP Listener-->
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" >
+      <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+
+</domain:mule-domain>
+----
+
+=== Configure Shared Resources by Using the Global Elements Tab
+
+Configure shared resources by using the *Global Elements* tab in Anypoint Studio to first add a module to your domain project and then create a global element.
+
+For example, to add Anypoint Connector for HTTP (HTTP Connector) to your domain project:
+
+. In the *Global Elements* tab, click *Manage Modules*:
++
+image:mruntime-domain-manage-modules.png[manage modules domain]
+. Click *Add Module*:
++
+image:mruntime-domain-add-module.png[add modules domain]
+. Search for the module you want to add and click *Add >*:
++
+image:mruntime-domain-add-module-finish.png[add module finish domain]
+. Click *Finish*.
+
+After you add the HTTP connector to the domain project, you can create a global element to use as a shared resource:
+
+. In the *Global Elements* tab, click *Create*:
++
+image:mruntime-domain-create-config.png[create config domain]
+. Select the HTTP Connector and complete the configuration process:
++
+image:mruntime-domain-connector-config.png[create connector config domain]
+. Define the configurable parameters of your global element in the *Global Element Properties* window.
+
+[[assoc_apps_domain]]
+== Associate Applications with a Domain
+
+Mule apps can be associated with only one domain at a time. You can associate an existing Mule app with a domain either by using Studio or by editing your project's `pom.xml` file directly. If you don't set a domain dependency, Mule applications use the `default` domain.
+
+Consider the following when working with Mule 4.2.2 and later versions:
+
+* The version honors semantic versioning. +
+For example, if you set the version to 1.0.1, a domain with version 1.0.2 and later works, but a domain with version 1.0.0 does not.
+* If different domains are deployed with the same group ID, artifact ID, and version, the reference in the `pom.xml` file might be ambiguous. +
+To avoid this issue, add the name of the domain folder in the Mule application's `mule-artifact.json` file:
+
+[source,json,linenums]
+----
+{
+  "domain": "mymuledomain-1.0.1-mule-domain"
+  ...
+}
+----
+
+=== Associate a Mule App with a Domain Using Studio
+
+To associate a Mule application with a domain from Studio, follow these steps:
+
+. In the Project Explorer or Package Explorer view, right-click the Mule application.
+. In the menu that opens, click *Properties*.
+. From Properties, click *Mule Project*.
+. In the *Domain* field, select a domain for your project.
++
+image::mruntime-assign-domain.png[assign+domain]
++
+Note that when you select a domain, the Mule runtime engine for your project matches the domain's Mule runtime engine automatically.
+
+After completing these steps, Studio includes the domain in the `pom.xml` for your project, for example:
+
+[source,xml,linenums]
+----
+<dependencies>
+  ...
+  <dependency>
+      <groupId>com.mycompany</groupId>
+      <artifactId>mymuledomain</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+      <classifier>mule-domain</classifier>
+      <scope>provided</scope>
+  </dependency>
+</dependencies>
+----
+
+=== Associate a Mule App with a Domain Outside Studio
+
+To associate a Mule app with a domain outside Studio, add the domain dependency to the `pom.xml` file as shown in the previous example.
+
+[[reference-shared-resources]]
+== Reference Shared Resources
+
+The following `mule-domain-config.xml` example defines HTTP listener and HTTP request configurations as shared resources.
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule-domain xmlns="http://www.mulesoft.org/schema/mule/domain"
+             xmlns:core="http://www.mulesoft.org/schema/mule/core"
+             xmlns:http="http://www.mulesoft.org/schema/mule/http"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                     http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+               http://www.mulesoft.org/schema/mule/domain http://www.mulesoft.org/schema/mule/domain/current/mule-domain.xsd">
+
+    <http:listener-config name="HTTP_Listener_Configuration">
+        <http:listener-connection host="0.0.0.0" port="8080"/>
+    </http:listener-config>
+
+    <http:request-config name="domainLevel">
+        <http:request-connection host="localhost" port="9090"/>
+    </http:request-config>
+
+</mule-domain>
+----
+
+Any Mule application associated with the domain can make use of the shared resources by referencing them within the configuration in the same way that you reference a resource within the project itself. In the example that follows, the HTTP Listener connector references the shared resource named `HTTP_Listener_Configuration`.
+
+[source,xml,linenums]
+----
+<mule>
+   <flow name="httpService">
+      <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+      <set-payload value="success" />
+   </flow>
+</mule>
+----
+
+In Studio's visual editor, you can simply pick the shared resource out of the dropdown list in the *Connector Configuration* field of the connector's properties editor:
+
+image::pick-resource.png[pick+resource]
+
+[[deploy-shared-resources]]
+== Deploy with Shared Resources
+
+By default, when you deploy either a Mule application associated with a domain or a domain associated with any Mule application, Anypoint Studio deploys both. You can change this default behavior by changing the run configuration for the domain. You can also deploy a set of Mule applications in your workspace together, even if they don't share the same domain.
+
+[NOTE]
+Mule domain projects cannot be installed using Runtime Manager.
+
+=== Deploy from Anypoint Studio
+
+The following steps describe how to deploy your domain project and the associated Mule applications from Studio:
+
+. Open the drop-down menu next to the play button and select *Run Configurations*.
++
+image::mruntime-run-configuration.png[run+configuration]
++
+. Select the *General* tab and then select the boxes next to the projects that you want to always deploy together with the Mule application that is currently selected in the navigation menu to the right.
++
+image::mruntime-run-configuration-properties.png[run+configuration+properties]
+
+=== Deploy Outside Anypoint Studio
+
+The following steps describe how to deploy your domain project and the Mule applications outside Studio, to a standalone Mule runtime engine:
+
+. In Studio, select *File* > *Export*.
+. Select *Mule* > *Anypoint Studio Project to Mule Deployable Archive (includes Studio metadata)*. +
+This process creates a JAR file that you can deploy to a standalone Mule runtime engine.
++
+image::mruntime-export-studio.png[]
++
+. Copy the exported domain's JAR file to `MULE_HOME/domains`.
+. Export each Mule application that you want to deploy with the associated domain.
+. Copy the exported JAR files for each Mule application that references the domain into the `MULE_HOME/apps` folder.
+. Start Mule via the command console.
++
+When Mule starts, it first deploys any domains found in the `MULE_HOME/domains` folder, then it deploys the Mule applications in the `MULE_HOME/apps` folder, so that all domains are fully started before the Mule  applications start.
+
+////
+Need to update this section to Mule 4
+=== Deploying Domain Bundles
+
+You can also bundle in your domain folder all of the applications associated with a domain and then deploy the entire folder. To do this, include an `apps` folder in your domain folder structure and place the JAR files of your applications there.
+
+image::domainbundle.png[domainBundle]
+
+The deployment behavior is the same as when a domain and apps are deployed separately: Mule first deploys the domain and then the applications. Deploying domain bundles simplifies the deployment mechanism for teams by removing the manual step of deploying applications separately.
+////
+
+=== Deploying Domains Using Mule Maven Plugin
+
+You can deploy domains to your local Mule instances using the Mule Maven plugin.
+See xref:deploy-on-premises.adoc#deploy-a-domain[Deploy a Domain] for instructions.

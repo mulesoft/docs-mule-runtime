@@ -1,0 +1,192 @@
+= Migrating the File Connector
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+The File transport was completely rewritten. It evolved away from the Mule 3 transport model into an operation based connector. This enables many new capabilities:
+
+* The ability to read files or fully list directory contents on demand, unlike the old transport, which only provided a polling inbound endpoint.
+* Top-level support for common file system operations such as copying, moving, renaming, deleting, creating directories, and more.
+* Support for locking files at the file system level.
+* Advanced file matching functionality.
+
+[[whats_covered_here]]
+== What's Covered Here?
+
+* <<file_configs>>
+* <<file_config_refs>>
+* <<file_listener>>
+* <<file_write>>
+
+
+[[file_configs]]
+== Migrating File Connector Configurations
+
+In Mule 3, all transport configurations are set under a top-level element called `<file:connector />`, and by default, the File connector sets auto-deletion, streaming, and validation of the connections to `true`.
+
+.Mule 3 Example: Default File Configuration
+[source,xml,linenums]
+----
+<file:connector name="file_config_default"
+ autoDelete="true"
+ streaming="true"
+ validateConnections="true" />
+----
+
+The connector configuration also provides settings for reading, writing, and moving files, among many others. The next example shows most of the Mule 3 setting available to the File connector.
+
+.Mule 3 Example: Available File Connection Settings
+[source,xml,linenums]
+----
+<file:connector name="file_config_most_settings"
+ outputPattern="FileNamePattern"
+ writeToDirectory="WriteToDirectory"
+ readFromDirectory="ReadFromDirectory"
+ workDirectory="WorkDirectory"
+ workFileNamePattern="WorkFileNamePattern"
+ autoDelete="true"
+ outputAppend="true"
+ streaming="true"
+ dispatcherPoolFactory-ref="MyBean"
+ recursive="true"
+ dynamicNotification="true"
+ validateConnections="true"
+ serialiseObjects="true"
+ pollingFrequency="4000" fileAge="800"
+ moveToPattern="MoveToPattern"
+ moveToDirectory="MoveToDirectory"
+ doc:name="File" doc:description="Notes">
+  <file:expression-filename-parser/>
+  <spring:property name="Name" value="Value"/>
+</file:connector>
+----
+
+In Mule 4, `<file:config />` is the the top-level element for the file connection configuration, and `<file:connection />` is a child element for connection-related settings.
+
+.Mule 4 Examples
+[source,xml,linenums]
+----
+<file:config name="file_config" defaultWriteEncoding="UTF-8">
+  <file:connection workingDir="/Users/me/path/to/files" />
+</file:config>
+----
+
+* `workingDir` allows to specify a path to which all other paths are relative to. If not specified, the user's home directory will be used. Note that in Mule 3, `workDirectory` is a similarly named attribute, but `workDirectory` is used when moving input files before processing them.)
+* `defaultWriteEncoding` identifies the character encoding to use for writing. You can overwrite this global configuration with a File operation, such as Write.
+
+All other Mule 3 config parameters are no longer needed since they were either replaced by parameters in the new connector's operations or they were render needless by the new connector model.
+
+[[file_config_refs]]
+== Referencing File Connection Configurations
+
+In Mule 3, all operations are set as inbound or outbound endpoints that use `connector-ref` to point to a name File connector configuration.
+
+.Mule 3 Example: File Connection as Inbound Endpoint
+[source,xml,linenums]
+----
+<file:inbound-endpoint path="/tmp/input"
+  connector-ref="file_config"
+  responseTimeout="10000" ... />
+----
+
+.Mule 3 Example: File Connection as Outbound Endpoint
+[source,xml,linenums]
+----
+<file:outbound-endpoint path="/tmp/output" connector-ref="file_config" responseTimeout="10000" />
+----
+
+[[file_listener]]
+== Migrating an inbound endpoint
+
+In Mule 3, a `<file:inbound-endpoint>` message source was used to poll a directory for files. For each file found, a new message was triggered. The message would hold the file's content in the payload and a number of file attributes as system properties. To avoid picking the same files over and over, `autoDelete` and `moveTo` parameters were provided so that the files would leave the polled directory after being picked.
+
+Mule 4 offers an improved way of doing that. The `<file:listener>` component (called `On New File` in the Studio palette) polls a directory and triggers a new message just like its predecessor did. However, it has the following added capabilities:
+
+* You can use a `<file:matcher>` to only accept files that match certain criteria.
+* The listening `directory` has to be created before the app starts, or a reconnection strategy must be configured. In Mule 3.x, the directory was created if it did not exist when the app started.
+* You are no longer forced to either delete or move the file, although the option to do that is still available.
+* In 3.x, deleting or moving the input file did not take place if an error occurred and a transaction was rolled back, but it was done if there was no transaction. In Mule 4, an error prevents the deletion or move operation from occurring regardless of whether there is a transaction or not.
+* You can use any of the connector's operations to change processed files in such a way that they no longer meet the matching criteria.
+* Watermark is automatically supported, allowing you to optionally filter automatically by creation or modification timestamp.
+* Mule 3 used the canonical path of the read file to add its metadata into the message inbound properties. Mule 4 uses the absolute path.
+
+.Mule 3 Example: Inbound endpoint
+[source,xml,linenums]
+----
+<flow name="listener">
+  <file:inbound-endpoint path="${workingDirectory}/test-data/in" autoDelete="true"
+    pollingFrequency="1000"/>
+
+  <flow-ref name="processFile" />
+</flow>
+----
+
+.Mule 4 Example: On New File
+
+[source,xml,linenums]
+----
+<file:config name="file">
+  <file:connection workingDir="${workingDir}"/>
+</file:config>
+
+<flow name="onNewFile">
+    <file:listener config-ref="file" directory="test-data/in" autoDelete="true">
+      <scheduling-strategy>
+        <fixed-frequency frequency="1000"/>
+      </scheduling-strategy>
+    </file:listener>
+
+    <flow-ref name="processFile" />
+</flow>
+----
+
+[[file_write]]
+== Migrating an outbound endpoint
+
+The Mule 3 transport uses the `<file:outbound-endpoint>` component to write the current payload to a file. The Mule 4 connector uses the `<file:write>` operation instead.
+The most important differences are:
+
+* The `<file:outbound-endpoint>` component was asynchronous, which means that the actual writing happened in the background, while the next message processor in the flow was concurrently executed. The `<file:write>` operation in the other hand, is synchronous, which means that the next message processor will not be executed until this one finishes. If you want the asynchronous behavior, just wrap the `<file:write>` operation in an `<async>` block
+* The `<file:outbound-endpoint>` required the content to be written to be in the message payload at the moment of executing. The `<file:write>` operation allows embedding a DataWeave transformation which generates the content to be written.
+* The Mule 3 transport has the `outputAppend` parameter set at the config level, while the `<file:write>` operation has a mode parameter
+
+.Mule 3 Example: Outbound endpoint
+
+[source,xml,linenums]
+----
+<file:connector name="file" outputAppend="true" />
+
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <set-payload value="Hello #[payload.name]" />
+  <file:outbound-endpoint path="greet.txt" connector-ref="file" />
+</flow>
+----
+
+.Mule 4 Example: Write Operation
+
+[source,xml,linenums]
+----
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <file:write path="greet.txt" mode="APPEND">
+    <file:content>#['Hello $(payload.name)']</file:content>
+  </file:write>
+</flow>
+----
+
+To use the File connector, simply add it to your application using the Studio palette or add the following dependency in your `pom.xml` file:
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-file-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== See also
+
+* xref:connectors::file/file-connector.adoc[File Connector Documentation]

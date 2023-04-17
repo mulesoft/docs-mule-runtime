@@ -1,0 +1,104 @@
+= Distributed Locking
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: distributed locking, cluster
+
+Mule runtime engine provides the ability to create locks for synchronizing access to resources within Mule components. To manage concurrent access to resources, Mule provides a lock factory that you can access programmatically by scripts or in custom extensions built with the xref:1.1@mule-sdk::getting-started.adoc[Java SDK].
+
+Any locks you create with the Mule lock factory work seamlessly on deployment models that use either a single server or a cluster of servers. This means that if you have a server running the same flow in multiple threads, or a cluster environment running the same app, you can guarantee resource synchronization with Mule locks. Additionally, the Mule locking system offers a simple API to access shared locks.
+
+[WARNING]
+====
+`LockFactory` creates a `Lock` that implements `java.util.concurrent.Lock` but does not support the method `newCondition()`. Using `newCondition()` causes Mule to throw an `UnsupportedOperationException`. Mule does support other methods of interfacing with a lock, such as `lockInterruptibly()` and `tryLock()`.
+====
+
+== Create a Lock
+
+To create a lock, perform these steps:
+
+. Gain access to a `LockFactory` through injection. +
+If you are building an extension with the Java SDK and need locking for one of your  operations, you inject `LockFactory` into your class. +
+. Use `LockFactory` to start creating locks. +
+See the following sample code that declares an extension operation that manages code access through Mule locks and thus prevents synchronization issues when the operation is executing in parallel (like in a scatter gather scope or in different cluster nodes). +
+. Use an identifier for the lock you create. +
+An identifier allows you to access one lock from different threads without having to explicitly share the same lock instance between them. +
+
+This lock implements the `java.util.concurrent.Lock` interface, so calling the method `lock()` makes the thread wait until it acquires the lock. +
+
+After you create the lock, the critical code section can be executed and you must also create a lock release mechanism to prevent deadlocks on other threads waiting for this lock. You accomplish this by enclosing the `lock.unlock` call in a `finally` block:
+
+[source,java,linenums]
+----
+public class ClusterOperations {
+
+  @Inject
+  private LockFactory lockFactory;
+
+  public void sharedResourceOperation() {
+      Lock lock = lockFactory.createLock("sharedResourceId");
+      lock.lock();
+      try {
+          // Lock acquired, execute critical code.
+      } finally {
+          lock.unlock();
+      }
+  }
+}
+----
+
+== Create a Lock Using Scripting
+If you are using the scripting extension, you must first access the registry to obtain the `LockFactory` and then create locks through scripting code. The following example uses Groovy to achieve the same result as the previous example: obtain the  `LockFactory` (this time through the `Registry`), create a new `Lock` for the given ID, wait until obtaining the lock to execute critical code and after that release the lock.
+
+[source,groovy,linenums]
+----
+lockFactory = registry.lookupByName("_muleLockFactory").get()
+lock = lockFactory.createLock("sharedResourceId")
+lock.lock()
+try {
+	// Lock acquired, execute critical code.
+} finally {
+	lock.unlock()
+}
+----
+
+== Share a Lock Between Operations
+
+Locking is useful not only to create locks for many threads running the same operation, but also can be used for different operations that may be running in parallel. Using the same lock ID to create a lock in different operations allows those operations to obtain access to the same lock. The following code sample illustrates two custom operations that create locks using the same lock ID:
+
+[source,java,linenums]
+----
+public class ClusterOperations {
+
+  @Inject
+  private LockFactory lockFactory;
+
+  public void sharedResourceOperationA() {
+      Lock lock = lockFactory.createLock("sharedResourceId");
+      lock.lock();
+      try {
+          // Lock acquired, execute critical code.
+      } finally {
+          lock.unlock();
+      }
+  }
+
+  public void sharedResourceOperationB() {
+      Lock lock = lockFactory.createLock("sharedResourceId");
+      lock.lock();
+      try {
+          // Lock acquired, execute critical code.
+      } finally {
+          lock.unlock();
+      }
+  }
+}
+----
+
+== See Also
+
+* xref:mule-high-availability-ha-clusters.adoc[Mule High Availability (HA) Clustering]
+
+*  xref:creating-and-managing-a-cluster-manually.adoc[Creating and Managing a Cluster Manually]
+
+* xref:distributed-file-polling.adoc[Distributed File Polling]

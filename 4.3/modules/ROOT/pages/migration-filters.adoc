@@ -1,0 +1,78 @@
+= Migrating Filters
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+// Contacts/SMEs: Rodro
+
+Mule 4 does not use `filters` anymore. The functionality provided by filters 
+in Mule 3 can be achieved by using the xref:connectors::validation/validation-connector.adoc[Validation Module].
+
+== Applying Filters
+
+In Mule 3, when a message was filtered, the flow ended silently at that point.
+
+The Validation module fails the flow when a condition is not met, 
+which makes the migrated flow handle the `VALIDATION` error.
+
+The flow with the source for sending the response has to 
+account for the `VALIDATION` error, which you can do by setting a variable in 
+an error handler for validation errors, for example:
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<flow name="flow">
+    ...
+    <validation:is-true expression="#[...]"/>
+    ...
+    <error-handler>
+        <on-error-propagate type="MULE:VALIDATION">
+            <set-variable variableName="filtered" value="true"/>
+        <on-error-propagate/>
+    </error-handler/>
+</flow>
+----
+
+You can then query the set variable in the source's error response builder to 
+send an appropriate response to the client. For instance, the 
+`http:listener` source might be something like this: 
+
+.Mule 4 example
+[source,xml,linenums]
+----
+<flow name="flow">
+    <http:listener config-ref="listenerConfig">
+        <http:error-response statusCode="#[if (vars.filtered) 400 else 500]"
+                             reasonPhrase="#[if (vars.filtered) 'Bad Request' else 'Internal Server Error']">
+            <http:body>#[error.description]</http:body>
+        </http:error-response>
+    </http:listener>
+    ...
+
+    <validation:is-true expression="#[...]"/>
+    <error-handler>
+        <on-error-propagate type="MULE:VALIDATION">
+            <set-variable variableName="filtered" value="true"/>
+        <on-error-propagate/>
+    </error-handler/>
+</flow>
+----
+
+In this case, a 400 (Bad Request) code will be returned if the event is filtered.
+
+== Migrating Custom or complex Filters
+
+Most likely, any custom or complex/nested filters you used can be migrated to use the expression language. The DataWeave script can be externalized to a file if the same filter needs to be in several places.
+
+For cases where you filter data in ways that DataWeave does not support, you should use the Java module or the Scripting module and use custom code to perform the filtering.
+
+== See Also
+
+xref:connectors::validation/validation-connector.adoc[Validation Module]
+
+xref:dataweave.adoc[DataWeave Language]
+
+xref:connectors::scripting/scripting-module.adoc[Scripting Module]
+
+xref:connectors::java/java-module.adoc[Java Module]

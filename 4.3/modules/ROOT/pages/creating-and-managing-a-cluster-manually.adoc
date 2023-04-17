@@ -1,0 +1,223 @@
+= Create and Manage a Cluster Manually
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: cluster, deploy
+
+This page describes manual creation and configuration of a cluster. There are two ways to create and manage clusters:
+
+* Using Runtime Manager
++
+See xref:runtime-manager::cluster-about.adoc[Clusters] for configuration instructions.
+* Manually, using a configuration file
+
+== Cluster Requirements and Restrictions
+
+* Do not mix cluster management tools.
++
+Manual cluster configuration is not synced to Anypoint Runtime Manager, so any change you make in the platform overrides the cluster configuration files. To avoid this scenario, use only one method for creating and managing your clusters: either manual configuration or configuration using Anypoint Runtime Manager.
+* All nodes in a cluster must have the same Mule runtime engine and Runtime Manager agent version. If you are using a cumulative patch release, such as 4.3.0-20210322, all instances of Mule must be the same cumulative patch version.
+
+== Creating a Cluster Manually
+
+Follow this procedure to create a cluster manually, using a configuration file.
+
+. Ensure that the node is not running, that is that the Mule Runtime Server is stopped.
+. Create a file named `mule-cluster.properties` inside the node's `$MULE_HOME/.mule` directory.
+. Edit the file with parameter = value pairs, one per line. See the example below.
++
+*Note*: `mule.clusterId` and `mule.clusterNodeId` must be in the properties file.
++
+[source,text,linenums]
+----
+...
+mule.cluster.nodes=192.168.10.21,192.168.10.22,192.168.10.23
+mule.cluster.multicastenabled=false
+mule.clusterId=<Cluster_ID>
+mule.clusterNodeId=<Cluster_Node_ID>
+...
+----
++
+. Repeat this procedure for all Mule servers that you want to be in the cluster.
+. Start the Mule servers in the nodes.
+
+For the full list of available parameters, see <<Cluster Configuration Parameters>>.
+
+== Managing a Cluster Manually
+
+Manual management of a cluster is only possible for clusters that have been manually created.
+
+To manually change the configuration of a cluster node, follow these steps:
+
+. Stop the node's Mule server.
+. Edit the node's `mule-cluster.properties` as desired, then save the file.
+. Restart the node's Mule server.
+
+[CAUTION]
+====
+Failure to ensure that the options you apply in the configuration file are valid for all cluster nodes can break cluster configuration and disable the cluster.
+====
+
+=== Quorum Management
+
+When managing a _manually configured cluster_ you can now set a minimum quorum of machines required for the cluster to be operational.
+
+When partitioning a network, clusters are available by default. However, by setting a minimum quorum size you can configure your cluster to reject updates that do not pass a minimum threshold. +
+This helps you achieve better consistency and protects your cluster in case of an unexpected loss of one of your nodes (Mule Runtimes in the cluster).
+
+Under normal circumstances, if a node were to die in the cluster, you may still have enough memory available to store your data, but the amount of threads available to process requests would be reduced as you now would have less nodes available and the partition threads in the cluster could quickly become overwhelmed. This could lead to
+
+* Clients left without threads to process their requests.
+* The remaining members of the cluster become so overwhelmed with requests that they’re unable to respond and are forced out of the cluster on the assumption that they are dead.
+
+To protect the rest of the cluster in the event of member loss, you can set a minimum quorum size to stop concurrent updates to your nodes, and throwing a +QuorumException+ whenever the number of active nodes in the cluster is below your configured value.
+
+[CAUTION]
+====
+
+Ensure you catch QuorumExceptions when configuring a Quorum Size for your cluster, and then make any decision as to send an email, stop a process, perform some logging, activate retry strategies, etc.
+====
+
+To enable quorum, place in the cluster configurations file `+{MULE_HOME}/.mule/mule-cluster.properties+` the `+mule.cluster.quorumsize+` property, and then define the minimum number of nodes of the cluster to remain in an operational state.
+
+[NOTE]
+--
+Quorum feature is only valid for components that use Object Store.
+--
+
+=== Object Store Persistence
+
+You can persistently store JDBC data in a central system that is accessible by all cluster nodes when using Mule runtime engine on-premises.
+
+The following relational database systems are supported:
+
+* MySQL 5.5+
+* PostgreSQL 9
+* Microsoft SQL Server 2014
+
+To enable object store persistence, create a database and define its configuration values in the `+{MULE_HOME}/.mule/mule-cluster.properties+` file:
+
+. `mule.cluster.jdbcstoreurl`: JDBC URL for connection to the database
+. `mule.cluster.jdbcstoreusername`: Database username
+. `mule.cluster.jdbcstorepassword`: Database user password
+. `mule.cluster.jdbcstoredriver`: JDBC Driver class name
+. `mule.cluster.jdbcstorequerystrategy`: SQL dialect
++
+See <<cluster-config-params, Cluster Configuration Parameters>> for possible configuration values for this parameter.
+
+The database's tables are created automatically, as this feature creates tables for each different object store that you want to persist. +
+Two tables are created per object store:
+
+* One table stores data
+* Another table stores partitions.
+
+==== Recommendations for the Object Store Database
+
+* MuleSoft recommends that you create a dedicated database/schema that will only be used for JDBC store.
+* The database username needs to have permission to:
+** Create objects in the database (`DDL`), `CREATE` and `DROP` for tables.
+** Access and manage the objects it creates (`DML`), `INSERT`, `UPDATE`, `DELETE`, and `SELECT`.
+* Always keep in mind that the data storage needs to be hosted in a centralized DB reachable from all nodes. Don't use more than one database per cluster. +
+Check the <<persistency-config,cluster configuration reference for persistency>> for details on how to configure these values.
+* The persistent object store uses a database connection pool based on the `ComboPooledDataSource` Java class. The Mule runtime engine does not set any explicit values for the connection pool behavior. The standard configuration uses the default value for each property. +
+For example, the default value for `maxIdleTime` is 0, which means that idle connections never expire and are not removed from the pool. Idle connections remain connected to the database in an idle state. +
+You can configure the connection pool behavior by passing your desired parameter values to the runtime, using either of the following options:
+** Pass multiple parameters in the command line when starting Mule:
++
+[source,console]
+----
+$ $MULE_HOME/bin/mule start \
+-M-Dc3p0.maxIdleTime=<value> \
+-M-Dc3p0.maxIdleTimeExcessConnections=<value>
+----
++
+Replace `<value>` with your desired value in milliseconds.
+
+** Add multiple lines to the `$MULE_HOME/conf/wrapper.conf` file:
++
+----
+wrapper.java.additional.<n>=-Dc3p0.maxIdleTime=<value>
+wrapper.java.additional.<n>=-Dc3p0.maxIdleTimeExcessConnections=<value>
+----
++
+Replace `<n>` with the next highest sequential value from the `wrapper.conf` file.
++
+[NOTE]
+You can find more information about the pool configuration of the `ComboPooledDataSource` Java class in http://www.mchange.com/projects/c3p0/#configuration[this article].
+
+=== Monitoring
+
+You can monitor the events thrown by the cluster members through the http://www.oracle.com/technetwork/java/javase/tech/javamanagement-140525.html[JMX technology].
+
+The JMX monitoring option is disabled by default. To enable it, add the `+mule.cluster.jmxenabled+` property to the `+{MULE_HOME}/.mule/mule-cluster.properties+` configuration file.
+
+Please note that enabling JMX might cause some performance overheads given that the underlying structure adds listeners to get the statistics for each individual node.
+
+
+=== Membership Listener
+
+The membership listener allows you to get notifications whenever:
+
+. A new member is added to the cluster
+. An existing member leaves the cluster
+
+When one of these events is triggered, the membership listener outputs the addresses of the members that joined or left respectively.
+
+[[cluster-config-params]]
+== Cluster Configuration Parameters
+
+The following table lists the parameters of the `mule-cluster.properties` file.
+
+[%header%autowidth.spread,cols="a,a,a"]
+|===
+|Property Name | Description | Required
+|`mule.clusterId` | Unique identifier for the cluster. It can be any alphanumeric string. | Yes
+|`mule.clusterNodeId` | Unique ID of the node within the cluster. It can be any integer between 1 and the number of nodes in the cluster. | Yes
+|`mule.clusterSize`  | The number of nodes that belong to the cluster. | Yes
+|`mule.cluster.networkinterfaces`  a|
+Comma-separated list of interfaces to use by Hazelcast. Wildcards are supported, as shown below.
+
+----
+192.168.1.*,192.168.100.25
+----
+| No
+|`mule.cluster.nodes` a|
+The nodes that belong to the cluster, in the form `<host:port>`, for example, `172.16.9.24:9000`. Specifying just one IP address enables the server to join the cluster.
+
+The port number is optional; if not set, the default is 5701. To include more than one host, create a comma-separated list.
+
+This option configures the cluster with the specified fixed IP addresses. Use this option if you are not relying on multicast for cluster node discovery. If using this option, set `mule.cluster.multicastenabled` to `false`, otherwise an exception is thrown when you start the cluster. (see next item in this table). +
+
+Examples:
+
+Two nodes listening on port 9000:
+
+----
+172.16.9.24:9000,172.16.9.51:9000
+----
+
+Two nodes listening on port 5701:
+
+----
+192.168.1.19,192.168.1.20
+----
+| No
+|`mule.cluster.quorumsize` |Enables you to define the minimum number of machines required in a cluster to remain in an operational state.  | No
+|`mule.cluster.multicastenabled` |*(Boolean)* Enable/disable multicast. Set to `false` if using fixed IP addresses for cluster node discovery (see option `mule.cluster.nodes` above). +
+If set to `true`, do not set IP addresses in `mule.cluster.nodes`.  | No
+|`mule.cluster.multicastgroup` |Multicast group IP address to use.  | No
+|`mule.cluster.multicastport` |Multicast port number to use.  | No
+| [[persistency-config]] `mule.cluster.jdbcstoreurl` |
+The JDBC URL for connection to the database  | Required only when storing persistent data.
+|`mule.cluster.jdbcstoreusername` |
+Database username  | Required only when storing persistent data.
+|`mule.cluster.jdbcstorepassword`  |
+Database user password |Required only when storing persistent data.
+|`mule.cluster.jdbcstoredriver` |
+JDBC Driver class name |Required only when storing persistent data.
+|`mule.cluster.jdbcstorequerystrategy` |
+SQL dialect for accessing the stored object data.
+This property can take three different values: `mssql`, `mysql` and `postgresql`.  |Required only when storing persistent data.
+|`mule.cluster.jmxenabled` | *(Boolean)* Enable/disable monitoring | No
+| `mule.cluster.listenersenabled` | *(Boolean)* Enable/disable membership listener. Set to `true` if you want your nodes to get notified when a member enters or leaves the cluster. | No
+|===

@@ -1,0 +1,417 @@
+= XML Cryptography
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:keywords: cryptography, module, sign, encrypt, xml, AES
+:toc:
+:toc-title:
+
+== Configure XML Encryption from Anypoint Studio
+
+To configure XML encryption from Anypoint Studio, follow these steps:
+
+. From the Mule palette, add *Crypto* to your project.
++
+See xref:cryptography.adoc#install-crypto-module[Install the Extension] for instructions.
+. Select the desired operation, and drag the component to the flow:
++
+image::mruntime-crypto-xml-add.png[crypto-xml-add]
+. Open the component properties and select an existing *Module configuration*, or create a new one by specifying the *Keystore*, *Type* (JKS, JCEKS, PKCS12) and *Password*.
++
+You can also add symmetric or asymmetric key information to be used in the sign operations:
++
+image::mruntime-crypto-jce-global-config.png[crypto-jce-global-config]
+. Configure *Key selection* by using a *Key id* value previously defined in the module configuration, or define a new one for this operation:
++
+image::mruntime-crypto-xml-config.png[crypto-xml-config]
+. Select *Digest Algorithm*, *Canonicalization Algorithm*, *Type*, and *Element path*.
+
+== Encrypting
+
+This example configures a keystore that contains a symmetric key that will later be used for encryption.
+
+.Example: JCE Configuration
+[source,xml,linenums]
+----
+<crypto:jce-config name="symmetricConfig" keystore="secret.jks" password="mule1234" type="JCEKS">
+    <crypto:jce-key-infos>
+        <crypto:jce-symmetric-key-info keyId="mySymKey" alias="aes128test" password="mule1234"/>
+    </crypto:jce-key-infos>
+</crypto:jce-config>
+----
+
+In the next example, the XML encrypt operation is used to encrypt a specific element of the XML document.
+
+.Example: Using the Encrypt Operation
+[source,xml,linenums]
+----
+<crypto:xml-encrypt config-ref="symmetricConfig" keyId="mySymKey" algorithm="AES_CBC" elementPath="//song"/>
+----
+
+The `elementPath` is an XPath expression that identifies the element to encrypt.
+Depending on your needs, you can use a symmetric or asymmetric key for encrypting an XML document.
+
+== Decrypting
+
+.Example: JCE Configuration
+[source,xml,linenums]
+----
+<crypto:jce-config name="jceConfig" keystore="keystore.jks" password="mule1234">
+    <crypto:jce-key-infos>
+        <crypto:jce-symmetric-key-info keyId="mySymKey" alias="aes128test" password="mule1234"/>
+        <crypto:jce-asymmetric-key-info keyId="myAsymKey" alias="test1" password="test1234"/>
+    </crypto:jce-key-infos>
+</crypto:jce-config>
+----
+
+In the next example, the XML decrypt operation (`crypto:xml-decrypt`) is used to decrypt an XML document. The operation uses the asymmetric key stored in the referenced keystore.
+
+.Example: Using the Decrypt Operation
+[source,xml,linenums]
+----
+<crypto:xml-decrypt config-ref="jceConfig" keyId="myAsymKey"/>
+----
+
+Depending on your needs, you can use a symmetric or asymmetric key for decryption.
+
+== Signing
+
+.Example: JCE Configuration
+[source,xml,linenums]
+----
+<crypto:jce-config name="asymmetricConfig" keystore="keystore.jks" password="mule1234">
+    <crypto:jce-key-infos>
+        <crypto:jce-asymmetric-key-info keyId="myAsymKey" alias="test1" password="test1234"/>
+    </crypto:jce-key-infos>
+</crypto:jce-config>
+----
+
+The next example uses the asymmetric key to sign an XML document by creating an XML envelope and inserting the signature inside the content that is being signed.
+
+.Example: Enveloped Signature
+[source,xml,linenums]
+----
+<crypto:xml-sign config-ref="asymmetricConfig" keyId="myAsymKey" type="ENVELOPING" digestAlgorithm="SHA256" elementPath="/PurchaseOrder/Buyer"/>
+----
+
+In the next example, a detached XML signature is created based on an element of the XML document. Instead of being inserted in the signed content, the detached signature is returned as a separate XML element.
+
+.Example: Detached Signature
+[source,xml,linenums]
+----
+<crypto:xml-sign config-ref="asymmetricConfig" keyId="myAsymKey" type="DETACHED" digestAlgorithm="SHA256" elementPath="/PurchaseOrder/Buyer"/>
+----
+
+== Validating a Signature
+
+.Example: JCE Configuration
+[source,xml,linenums]
+----
+<crypto:jce-config name="asymmetricConfig" keystore="keystore.jks" password="mule1234">
+    <crypto:jce-key-infos>
+        <crypto:jce-asymmetric-key-info keyId="myAsymKey" alias="test1" password="test1234"/>
+    </crypto:jce-key-infos>
+</crypto:jce-config>
+----
+
+In the next example, the asymmetric key is used to validate the signature of the XML element specified by the `elementPath` XPath expression.
+
+.Example: Using the Validate Operation
+[source,xml,linenums]
+----
+<crypto:xml-validate config-ref="asymmetricConfig" keyId="myAsymKey" elementPath="/PurchaseOrder/Buyer"/>
+----
+
+If the document has multiple signatures, set `elementPath` to select the signature to validate. Specify a signed element using an XPath expression to validate the signature for that element.
+
+== Targeting a Custom Namespace by Using elementPath
+
+To sign or validate an XML element that is inside a custom namespace, specify the namespace by using the XPath functions: https://developer.mozilla.org/en-US/docs/Web/XPath/Functions/namespace-uri[namespace-uri] and https://developer.mozilla.org/en-US/docs/Web/XPath/Functions/local-name[local-name].
+
+For example, consider the following document:
+[source,xml,linenums]
+----
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope/">
+    <FirstElement>
+        <!-- Some content -->
+    </FirstElement>
+    <SecondElement>
+        <!-- Additional content -->
+    </SecondElement>
+</soap:Envelope>
+----
+To target the content of `FirstElement` inside `soap:Envelope`, you specify the `xmlns:soap` namespace. The XML schema for `xmlns:soap` is defined in `http://www.w3.org/2003/05/soap-envelope/`.
+
+The following example shows an `xml-sign` operation configured to sign `FirstElement`:
+[source,xml,linenums]
+----
+<crypto:xml-sign
+    config-ref="asymmetricConfig"
+    keyId="myAsymKey"
+    type="DETACHED"
+    digestAlgorithm="SHA256"
+    elementPath="/*[namespace-uri()='http://www.w3.org/2003/05/soap-envelope/' and local-name()='Envelope']/FirstElement"/>
+----
+Note that the `elementPath` expression specifies the `xmlns:soap` namespace.
+
+== Reference
+
+=== Module Configuration
+
+JCE Configuration for Java keystores and inline keys to sign or encrypt XML documents or elements.
+
+==== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+|Name | String | The name for this configuration. Connectors reference the configuration with this name. | | *x*{nbsp}
+| Keystore a| String |  +++Path to the keystore file.+++ |  | {nbsp}
+| Type a| Enumeration, one of:
+
+** `JKS`
+** `JCEKS`
+** `PKCS12` |  +++Type of the keystore.+++ |  `JKS` | {nbsp}
+| Password a| String |  +++Password for unlocking the keystore.+++ |  | {nbsp}
+| Jce Key Infos a| Array of One of:
+
+* <<JceAsymmetricKeyInfo>>
+* <<JceSymmetricKeyInfo>> |  +++List of keys to be considered, with internal IDs for referencing them.+++ |  | {nbsp}
+| Expiration Policy a| <<ExpirationPolicy>> |  +++Configures the minimum amount of time that a dynamic configuration instance can remain idle before the runtime considers it eligible for expiration. This does not mean that the platform will expire the instance at the exact moment that it becomes eligible. The runtime will actually purge the instances when it sees it fit.+++ |  | {nbsp}
+|===
+
+[[xmlDecrypt]]
+== Xml Decrypt Operation
+`<crypto:xml-decrypt>`
+
++++
+Decrypts the XML document.
++++
+
+=== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+| Configuration | String | The name of the configuration to use. | | *x*{nbsp}
+| Content a| Binary |  +++the document to decrypt+++ |  `#[payload]` | {nbsp}
+| Streaming Strategy a| * <<repeatable-in-memory-stream>>
+* <<repeatable-file-store-stream>>
+* non-repeatable-stream |  +++Configure if repeatable streams should be used and their behavior+++ |  | {nbsp}
+| Key Id a| String |  +++The key ID, as defined in the JCE configuration.+++ |  | {nbsp}
+| Jce Key Info a| One of:
+
+* <<JceAsymmetricKeyInfo>>
+* <<JceSymmetricKeyInfo>> |  +++An inline key definition.+++ |  | {nbsp}
+| Target Variable a| String |  +++The name of a variable on which the operation's output will be placed+++ |  | {nbsp}
+| Target Value a| String |  +++An expression that will be evaluated against the operation's output and the outcome of that expression will be stored in the target variable+++ |  `#[payload]` | {nbsp}
+|===
+
+=== Output Type
+
+Binary
+
+=== Throws
+* `CRYPTO:MISSING_KEY` {nbsp}
+* `CRYPTO:KEY` {nbsp}
+* `CRYPTO:PASSPHRASE` {nbsp}
+* `CRYPTO:PARAMETERS` {nbsp}
+* `CRYPTO:DECRYPTION` {nbsp}
+
+
+[[xmlEncrypt]]
+== Xml Encrypt Operation
+`<crypto:xml-encrypt>`
+
++++
+Encrypt the XML document.
++++
+
+=== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+| Configuration | String | The name of the configuration to use. | | *x*{nbsp}
+| Content a| Binary |  +++the document to encrypt+++ |  `#[payload]` | {nbsp}
+| Algorithm a| Enumeration, one of:
+
+** `AES_CBC`
+** `AES_GCM`
+** `TRIPLEDES` |  +++the algorithm for encryption+++ |  `AES_CBC` | {nbsp}
+| Element Path a| String |  +++the path to the element to encrypt, if empty the whole document is considered+++ |  | {nbsp}
+| Streaming Strategy a| * <<repeatable-in-memory-stream>>
+* <<repeatable-file-store-stream>>
+* non-repeatable-stream |  +++Configure if repeatable streams should be used and their behavior+++ |  | {nbsp}
+| Key Id a| String |  +++The key ID, as defined in the JCE configuration.+++ |  | {nbsp}
+| Jce Key Info a| One of:
+
+* <<JceAsymmetricKeyInfo>>
+* <<JceSymmetricKeyInfo>> |  +++An inline key definition.+++ |  | {nbsp}
+| Target Variable a| String |  +++The name of a variable on which the operation's output will be placed+++ |  | {nbsp}
+| Target Value a| String |  +++An expression that will be evaluated against the operation's output and the outcome of that expression will be stored in the target variable+++ |  `#[payload]` | {nbsp}
+|===
+
+=== Output Type
+
+Binary
+
+=== Throws
+* `CRYPTO:MISSING_KEY` {nbsp}
+* `CRYPTO:ENCRYPTION` {nbsp}
+* `CRYPTO:KEY` {nbsp}
+* `CRYPTO:PARAMETERS` {nbsp}
+
+
+[[xmlSign]]
+== Xml Sign Operation
+`<crypto:xml-sign>`
+
++++
+Sign an XML document.
++++
+
+=== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+| Configuration | String | The name of the configuration to use. | | *x*{nbsp}
+| Content a| Binary |  +++the XML document to sign+++ |  `#[payload]` | {nbsp}
+| Digest Algorithm a| Enumeration, one of:
+
+** `RIPEMD160`
+** `SHA1`
+** `SHA256`
+** `SHA512` |  +++the hashing algorithm for signing+++ |  `SHA256` | {nbsp}
+| Canonicalization Algorithm a| Enumeration, one of:
+
+** `EXCLUSIVE`
+** `EXCLUSIVE_WITH_COMMENTS`
+** `INCLUSIVE`
+** `INCLUSE_WITH_COMMENTS` |  +++the canonicalization method for whitespace and namespace unification+++ |  `EXCLUSIVE` | {nbsp}
+| Type a| Enumeration, one of:
+
+** `DETACHED`
+** `ENVELOPED`
+** `ENVELOPING` |  +++the type of signature to create+++ |  `ENVELOPED` | {nbsp}
+| Element Path a| String |  +++for internally detached signatures, an unambiguous XPath expression resolving to the element to sign+++ |  | {nbsp}
+| Streaming Strategy a| * <<repeatable-in-memory-stream>>
+* <<repeatable-file-store-stream>>
+* non-repeatable-stream |  +++Configure if repeatable streams should be used and their behavior+++ |  | {nbsp}
+| Key Id a| String |  +++The key ID, as defined in the JCE configuration.+++ |  | {nbsp}
+| Jce Key Info a| One of:
+
+* <<JceAsymmetricKeyInfo>>
+* <<JceSymmetricKeyInfo>> |  +++An inline key definition.+++ |  | {nbsp}
+| Target Variable a| String |  +++The name of a variable on which the operation's output will be placed+++ |  | {nbsp}
+| Target Value a| String |  +++An expression that will be evaluated against the operation's output and the outcome of that expression will be stored in the target variable+++ |  `#[payload]` | {nbsp}
+|===
+
+=== Output Type
+
+Binary
+
+=== Throws
+* `CRYPTO:MISSING_KEY` {nbsp}
+* `CRYPTO:KEY` {nbsp}
+* `CRYPTO:PASSPHRASE` {nbsp}
+* `CRYPTO:SIGNATURE` {nbsp}
+
+
+[[xmlValidate]]
+== Xml Validate Operation
+`<crypto:xml-validate>`
+
++++
+Validate an XML signed document.
++++
+
+=== Parameters
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|===
+| Name | Type | Description | Default Value | Required
+| Configuration | String | The name of the configuration to use. | | *x*{nbsp}
+| Content a| Binary |  +++Specifies the document to verify (includes the signature).+++ |  `#[payload]` | {nbsp}
+| Element Path a| String |  +++For internally detached signatures, an unambiguous XPath expression that resolves to the signed element.+++ |  | {nbsp}
+| Use inline certificate if present a| Boolean |  +++Specify whether or not to validate the signature against a certificate contained in the +++`ds:Signature`+++ element, if the certificate is present.+++ | `"false"` | {nbsp}
+| Key Id a| String |  +++Specifies the key ID, as defined in the JCE configuration.+++ |  | {nbsp}
+| Jce Key Info a| One of:
+
+* <<JceAsymmetricKeyInfo>>
+* <<JceSymmetricKeyInfo>> |  +++An inline key definition.+++ |  | {nbsp}
+|===
+
+=== Throws
+* `CRYPTO:MISSING_KEY` {nbsp}
+* `CRYPTO:PARAMETERS` {nbsp}
+* `CRYPTO:VALIDATION` {nbsp}
+
+== Types Definition
+[[ExpirationPolicy]]
+=== Expiration Policy
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Max Idle Time a| Number | A scalar time value for the maximum amount of time a dynamic configuration instance should be allowed to be idle before it's considered eligible for expiration |  |
+| Time Unit a| Enumeration, one of:
+
+** `NANOSECONDS`
+** `MICROSECONDS`
+** `MILLISECONDS`
+** `SECONDS`
+** `MINUTES`
+** `HOURS`
+** `DAYS` | A time unit that qualifies the maxIdleTime attribute |  |
+|===
+
+[[repeatable-in-memory-stream]]
+=== Repeatable In Memory Stream
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Initial Buffer Size a| Number | This is the amount of memory that will be allocated in order to consume the stream and provide random access to it. If the stream contains more data than can be fit into this buffer, then it will be expanded by according to the `bufferSizeIncrement` attribute, with an upper limit of `maxInMemorySize`. |  |
+| Buffer Size Increment a| Number | This is by how much will be buffer size by expanded if it exceeds its initial size. Setting a value of zero or lower will mean that the buffer should not expand, meaning that a `STREAM_MAXIMUM_SIZE_EXCEEDED` error will be raised when the buffer gets full. |  |
+| Max Buffer Size a| Number | This is the maximum amount of memory that will be used. If more than that is used then a `STREAM_MAXIMUM_SIZE_EXCEEDED` error will be raised. A value lower or equal to zero means no limit. |  |
+| Buffer Unit a| Enumeration, one of:
+
+** `BYTE`
+** `KB`
+** `MB`
+** `GB` | The unit in which all these attributes are expressed |  |
+|===
+
+[[repeatable-file-store-stream]]
+=== Repeatable File Store Stream
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Max In Memory Size a| Number | Defines the maximum memory that the stream should use to keep data in memory. If more than that is consumed then it will start to buffer the content on disk. |  |
+| Buffer Unit a| Enumeration, one of:
+
+** `BYTE`
+** `KB`
+** `MB`
+** `GB` | The unit in which maxInMemorySize is expressed |  |
+|===
+
+[[JceAsymmetricKeyInfo]]
+=== Jce Asymmetric Key Info
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Key Id a| String | Internal key ID for referencing from operations. |  | x
+| Alias a| String | Alias of the key in the keystore. |  | x
+| Password a| String | Password used to unlock the private part of the key. |  |
+|===
+
+[[JceSymmetricKeyInfo]]
+=== Jce Symmetric Key Info
+
+[cols=".^20%,.^25%,.^30%,.^15%,.^10%", options="header"]
+|===
+| Field | Type | Description | Default Value | Required
+| Key Id a| String | Internal key ID for referencing from operations. |  | x
+| Alias a| String | Alias of the key in the keystore. |  | x
+| Password a| String | Password used to unlock the key. |  | x
+|===
