@@ -81,6 +81,101 @@ image::mruntime-properties-file.png[properties-file]
 </http:request-config>
 ----
 
+When the application is deployed, the property values are computed from the different possible sources and statically replace the placeholders as if they were written directly in the source code.
+
+Based on the previous example, the configuration looks like this:
+
+[source, xml]
+----
+<http:request-config
+  name="HTTP_Request_config"
+  doc:name="HTTP Request
+  configuration" doc:id="7120494c-0540-4ad1-a118-f5b6db3f1456"
+  basePath="/service" >
+		<http:request-connection
+      host="my-api.cloudhub.io"
+      port="10000" />
+</http:request-config>
+----
+
+There is no escaping special characters based on the context. The resulting values need to be valid in the context from which they are referenced.
+
+Consider the following example, which contains a DataWeave script:
+
+[source, xml]
+----
+<ee:transform>
+  <ee:message>
+    <ee:set-payload>
+      <![CDATA[
+        %dw 2.0
+        output application/json
+        ---
+        {
+          "message": "${message}",
+        }
+      ]]>
+    </ee:set-payload>
+  </ee:message>
+</ee:transform>
+----
+
+The contents of the `.properties` file:
+
+----
+message=I love $
+----
+
+After property replacements take place, the application looks like this:
+
+[source, xml]
+----
+<ee:transform>
+  <ee:message>
+    <ee:set-payload>
+      <![CDATA[
+        %dw 2.0
+        output application/json
+        ---
+        {
+          "message": "I love $",
+        }
+      ]]>
+    </ee:set-payload>
+  </ee:message>
+</ee:transform>
+----
+
+The output is an invalid DataWeave script because the dollar sign ($) has a special meaning and needs to be escaped. See xref:dataweave::dataweave-types.adoc#escape-chars-string[Dataweave - Escaping Special Characters]. Remember the property placeholders are replaced before the DataWeave script is parsed.
+
+To solve conflicts, you can escape the value in the properties file:
+
+----
+message=I love \$
+----
+
+Or use DataWeave xref:dataweave::dw-mule-functions-p[p function] instead of a property placeholder:
+
+[source, xml]
+----
+<ee:transform>
+  <ee:message>
+    <ee:set-payload>
+      <![CDATA[
+        %dw 2.0
+        output application/json
+        ---
+        {
+          "message": Mule::p("message"),
+        }
+      ]]>
+    </ee:set-payload>
+  </ee:message>
+</ee:transform>
+----
+
+The property is evaluated when the script is executed and the script remains syntactically valid at the moment of parsing.
+
 == See Also
 
 * xref:configuring-properties.adoc[Configure Properties]
