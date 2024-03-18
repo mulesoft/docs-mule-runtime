@@ -6,16 +6,16 @@ endif::[]
 
 TLS is a cryptographic protocol that provides communications security for your Mule app. TLS offers many different ways of exchanging keys for authentication, encrypting data, and guaranteeing message integrity. This topic describes TLS as supported by Mule and how to configure TLS in Mule apps.
 
-Mule runtime engine 4.x supports Transport Layer Security (TLS) 1.1, 1.2, and 1.3*.
 
+[[tls_compatibility]]
 == TLS Compatibility Matrix
 
-TLS compatibility can differ by Mule deployment model and TLS version.
+TLS compatibility differs by Mule deployment model and TLS version.
 
 [%header%autowidth.spread]
 |===
 |TLS Version |On-Premises|CloudHub|Anypoint Runtime Fabric
-|1.3|Supported but not enabled by default|Not supported|Supported and enabled
+|1.3|Supported when running Mule on a JDK that supports TLS 1.3 but _not_ enabled by default|Supported for Mule apps hosted in this deployment model|Supported and enabled when running on a JDK that supports TLS 1.3
 |1.2 3+|Supported and enabled by all deployment models
 |1.1 3+|Supported and enabled by all deployment models
 |===
@@ -66,7 +66,20 @@ The keystore contains one or two passwords:
 
 == Client Configuration
 
-If the `tls:context` is empty (no `tls:key-store` or `tls:trust-store` defined), then the default values of the JVM are used, which usually include a truststore with certificates for all the major certifying authorities.
+If the `tls:context` has an empty truststore defined, then the default values of the JVM are used, which usually include a truststore with certificates for all the major certifying authorities. Consider the following scenarios:
+
+* When the truststore is defined inline:
+----
+<tls:context name>
+    <tls:trust-store />
+</tls:context>
+----
+* When the truststore is defined with a global element:
+----
+<tls:context name="example">
+	<tls:trust-store />
+</tls:context>
+---- 
 
 If the client requires a certificate from the server that it is trying to connect to, then add the `tls:trust-store` element. Set `path` to the location of the truststore file that contains the certificates of the trusted servers.
 
@@ -92,7 +105,7 @@ To fully configure TLS for a Mule app:
 
 . <<Generate a Keystore,Generate a keystore and a truststore>>, using the Java Keytool from Oracle.
 . <<Configure TLS in Mule 4,Configure TLS globally for client or server in Mule>>.
-. <<Specify Protocols and Cipher Suites,Optionally, specify protocols and cipher suites in Mule configuration files>>.
+. <<Optional: Specify Protocols and Cipher Suites,Optional: Specify Protocols and Cipher Suites>>.
 
 
 == Keystore Generation
@@ -108,13 +121,17 @@ Use Java 8 to generate your keystores. Using a different JDK version generates a
 Follow these steps to generate a keystore and export a self-signed certificate.
 
 . Generate a keystore that exposes your server's credentials. +
-For example, run the following command:
+For example, run one of the following commands:
 +
 ----
 keytool -genkey -keyalg RSA -alias <key-alias> -keystore <keystore-name>.jks
+
+keytool -genkey -alias <key-alias> -keyalg RSA -keystore <keystore-name>.jks -storepass <password>
 ----
 +
 Replace `<key-alias>` with a unique alias of your choice.
++
+Replace `<password>` with a password of your choice.
 +
 Replace `<keystore-name>` with the name you want for your keystore.
 +
@@ -188,7 +205,7 @@ Replace `<keystore-name>` with the same value used in the previous steps. +
 Replace `<certificate-name>` with the name you want for your certificate sign request file.
 . Send the CSR file generated in the previous step to the Certification Authority and follow their instructions to obtain their signature.
 
-After you receive the CA’s signature, you can import the signed certificate file through the following command:
+After you receive the CA's signature, you can import the signed certificate file through the following command:
 ----
 keytool -import -keystore <keystore-name>.jks -alias <cert-alias> -file <signed_certificate_file>
 ----
@@ -196,6 +213,19 @@ keytool -import -keystore <keystore-name>.jks -alias <cert-alias> -file <signed_
 Replace `<cert-alias>` with the a new desired value, the alias you define must not be linked to any existing key or the process fails. +
 Replace `<keystore-name>` with the same value used in the previous steps. +
 Replace `<signed_certificate_file>` with the name of the signed certificate you received from the Certification Authority.
+
+. Export your certificate in the standard PEM format. First verify the keystore type, then export the certificates:
+----
+keytool -list -v -keystore <keystore-name>.jks
+----
+----
+openssl <keystore-type> -in <keystore-name>.jks -out <pem-name>.key.pem -nocerts -nodes
+openssl <keystore-type> -in <keystore-name>.jks -out <pem-name>.crt.pem -nocerts -nodes
+----
+
+Replace `<keystore-type>` with the new desired value in keystore type format, for example PKCS12. +
+Replace `<keystore-name>` with the name you want for the keystore. +
+Replace `<pem-name>` with the name you want for the PEM file.
 
 == Truststore Generation
 
@@ -229,7 +259,7 @@ Include at least one of the nested elements: key-store and trust-store.
 ----
 <tls:context name="customContext">
     <tls:trust-store path="trustStore" password="mulepassword"/>
-    <tls:key-store path="clientKeystore" keyPassword="mulepassword"
+    <tls:key-store path="clientKeystore" keyPassword="mulepassword" type="pkcs12"
 password="mulepassword"/>
  </tls:context>
 ----
@@ -293,7 +323,6 @@ You can configure TLS for your app in Anypoint Studio (Studio). For example, to 
 
 Save your configuration and test.
 
-
 == Optional: Specify Protocols and Cipher Suites
 
 When a TLS communication takes place between two systems, a negotiation determines which protocol and cipher suite are used. Optionally, administrators can specify the protocols and cipher suites to use, and then app developers can specify which cipher suites and protocols to use in `tls:context`.
@@ -324,6 +353,14 @@ Cipher suite names can be long and reduce the readability of your XML code. To i
 ----
 <tls:context name="serverTlsContext" enabledCipherSuites="${myCipherSuites}" >
 ----
+
+== Test after deployment Example
+----
+time curl -i -k --cert ./<pem-name>.crt.pem --cert-type PEM --key ./<pem-name>.key.pem https://<anypoint-address>:<anypoint-port>
+----
+Replace `<pem-name>` with the value name defined. +
+Replace `<anypoint-address>` with the value name defined by Anypoint Platform. +
+Replace `<anypoint-port>` with the value name defined in the Mule application. 
 
 == TLS Configuration Examples
 
@@ -402,5 +439,5 @@ This example enables a protocol and cipher suite for an app, assuming a Mule adm
 
 == See Also
 
-* http://docs.oracle.com/javase/8/docs/technotes/tools/#security[Oracle security]
-* https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html[Oracle Java keytool]
+* http://docs.oracle.com/javase/8/docs/technotes/tools/#security[Oracle security^]
+* https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html[Oracle Java keytool^]
