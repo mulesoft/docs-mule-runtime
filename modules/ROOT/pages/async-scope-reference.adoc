@@ -1,97 +1,80 @@
-= Async Scope
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+:component-filename: async
 :keywords: Async, scopes, studio, anypoint
 
-The Async scope is a branch processing block that executes simultaneously with the main flow. The main flow continues to execute while it initiates and processes the Async scope. The flow does not have to pause until the last message processor embedded in the asynchronous flow has completed its task.
+//
+//title of this page
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-title]
+//
 
-Async can be useful for executing time-consuming operations that do not require you to send a response back to the initiating flow (such as printing a file or connecting to a mail server).
+//INTRODUCTION
+//short description
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-short-description]
+//
+//long description, if needed
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-long-description]
+//
 
-To facilitate simultaneous branch processing, the Async scope sends one copy of the message it has received to the first embedded message processor in its own processing block. At the same time, it sends another copy of the message to the next message processor in the main flow.
-
+//in docs-mule-runtime only:
 image::async-scope-schematic.png[Async+scope+schematic]
 
-Because the Async scope is executed in a "fire and forget" manner, the result of the processing within the scope is not available in the main flow.
+//
+//COMPONENT XML AND SNIPPET SECTION
+//component XML title
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-title]
+//
+//component XML
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml]
+//
+//component XML variant, as needed
+//TODO_INTRO_AS NEEDED
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml2]
+//
+//
 
-== Async Configuration
+//
+//Component element and attribute descriptions
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-attributes-root]
+//
+// component SNIPPET JSON, if available:
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-snippet-json]
+//
 
-Async scopes are configurable.
-
-[%header,cols="1,4"]
-|===
-| Field | Description
-| Display Name (`name`) | Name for the Async scope.
-| Max Concurrency (`maxConcurrency`) a| Optional. Sets the maximum number of concurrent messages that the scope can process. By default, the container thread pool determines the maximum number of threads to use to optimize the performance when processing messages. When the scope is processing the maximum number of concurrent messages, it cannot receive additional requests.
-
-Set `maxConcurrency` to `1` to cause the scope to process requests one at a time.
-
-See xref:execution-engine.adoc#backpressure[Back-Pressure Management] for details about Mule behavior after reaching the maximum concurrency value.
-|===
-
-== Async Scopes versus Subflows
-
-Unlike a subflow, an Async scope:
-
-* Does not inherit the exception strategy of the main flow.
-+
-To handle errors in an Async scope, use the Try scope.
-+
-* Processes messages asynchronously.
-* Does not pass data back to the main flow.
-* Exists inline with the main flow thread.
-* Is not called by a Flow Reference component.
-* Is not reusable
-
-Note that even though the Async scope receives a copy of the Mule message, the payload is not copied. The same payload objects are referenced by both Mule messages: One that continues down the original flow, and the one processed by the Async scope.
-
-In other words, if the payload of your message is a mutable object (for example, a bean with different fields in it) and a message processor in your Async scope changes the value of one of the fields, the message processors outside of the Async scope see the changed values.
+//Child Element (if needed, repeating as necessary): 
+//Component element and attribute descriptions
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-attributes-child1]
+//
+//Grandchild/Descendant Element (if needed, repeating as necessary): 
+//Component element and attribute descriptions
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-attributes-descendant1]
+//
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=async-vs-subflow]
 
 
-== Example Async Scope Configuration
+// 
+//EXAMPLES SECTION
+//example: title (Examples)
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-examples-title]
+//
+//example: generic intro
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-examples-intro]
+//
+//XML example
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-ex1]
+//
+//
+//XML example 2, if needed
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-xml-ex2]
+//
 
-The following XML fragment shows an example configuration of an Async scope inside an application flow. The Async scope contains a `file:read` operation that executes asynchronously once triggered, while the application continues processing the next operation in the flow, `http:request`:
+//
+//ERROR HANDLING SECTION, if available
+//include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=component-error-handling]
+//
 
-[source,xml,linenums]
-----
-<!-- Main application flow -->
-<flow name="myMainFlow" >
-  <!-- HTTP Listener as event source -->
-  <http:listener doc:name="Listener" />
-  <!-- A Transform operation that executes as part of the main flow -->
-  <ee:transform doc:name="Transform Message" >
-    <ee:message >
-      <ee:set-payload >
-        <![CDATA[%dw 2.0
-        output application/json
-        ---
-        payload]]>
-      </ee:set-payload>
-    </ee:message>
-  </ee:transform>
-    <!-- The Async scope executes its message processors in a different thread, while the main flow continues its execution -->
-    <async doc:name="Async" >
-      <!-- A Try scope to handle errors, because the async scope does not inherit the error strategy from the flow -->
-      <try doc:name="Try" >
-        <!-- A Write operation -->
-        <file:write doc:name="Write" path="/" />
-        <!-- Error handling strategy defined in the Try scope, to handle errors during the Async scope execution -->
-        <error-handler >
-          <on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
-            <!-- Some error handling logic for this strategy -->
-            ...
-          </on-error-continue>
-        </error-handler>
-      </try>
-    </async>
-  <!-- This HTTP Request operation starts executing without waiting for the Async scope to finish its execution -->
-  <http:request method="GET" doc:name="Request" />
-  ...
-</flow>
-----
-
-== See Also
-
-* xref:about-components.adoc[Core Components]
-* xref:transaction-management.adoc#tx_scopes_routers[How Transactions Affect Scopes and Routers]
-* xref:tuning-backpressure-maxconcurrency.adoc[Back-Pressure and MaxConcurrency]
+//
+//SEE ALSO SECTION, if needed
+include::anypoint-code-builder::partial$mule-components/4.4/component-{component-filename}.adoc[tag=see-also]
+//
