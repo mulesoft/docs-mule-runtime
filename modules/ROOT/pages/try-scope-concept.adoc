@@ -2,56 +2,69 @@
 ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
+//:page-aliases: try-scope-xml-reference.adoc
 
-The Try scope enables you to handle errors that may occur when attempting to execute any of the components inside the Try scope. It also supports transactions. A Try scope wraps one or more operations, then catches and handles any exceptions that might be thrown by any of these enclosed operations. The behavior is as if you extracted those enclosed event components into a separate flow with its own error handling strategy, but inline, without having to actually define a new flow.
+The Try scope (`<try />`) sequentially executes one or more connector operations or Mule components (processors) that you add to the scope.
 
-== Error Handling with the Try Scope
+The Try scope enables transaction management and error handling for processing within the scope. xref:transaction-management.adoc[Transactions] force a group of processors to succeed or fail as a unit. The scope accepts xref:xa-transactions.adoc[Extended Architecture (XA)] and, by default, xref:single-resource-transaction.adoc[Local (LOCAL)] transactions.
 
-When designing your flow, try to group those operations that are likely to experience errors inside a Try scope. The Try scope enables you to isolate potentially troublesome operations in your flow and assign them an error-handling method. You can also configure the operations inside the Try scope to be processed as a transaction.
+The Try scope's error handling capability is useful for components, such as the xref:for-each-scope-concept.adoc[For Each scope], that do not propagate errors to the flow's error handler and within other components, such as xref:flow-component.adoc#subflow-configuration[Subflow], that do not provide their own error handler. The Try scope can also help you isolate errors that occur within error-prone operations.
 
-The Try scope has an error handling strategy that you configure in the same way you configure error handling for a flow.
+[[architecture]]
+== Architecture
 
-The Try scope can distinguish among various error type conditions and apply different behaviors. If an error is raised by a component inside a Try scope, then the Try scope's error handler is executed. At this point, the error is available for inspection, so the handlers can execute and act accordingly:
+The Try scope has the following XML structure:
 
-* On Error Continue
-+
-Executes and sends the result of the execution to its container Try scope, which uses that result to complete the execution successfully. Any transactions at this point are also committed.
-* On Error Propagate
-+
-Rolls back any transactions, then executes and uses that result to re-throw the existing error, causing its container Try scope's execution to fail.
+[source,xml,linenums]
+----
+<try>
+  <!-- COMPONENTS TO TRY TO USE -->
+  <error-handler>
+    <on-error-continue>
+      <!-- COMPONENTS TO USE IN CASE OF ERROR -->
+    </on-error-continue>
+    <on-error-propagate>
+      <!-- COMPONENTS TO USE IN CASE OF ERROR -->
+    </on-error-propagate>
+  </error-handler>
+</try>
+----
 
-Example Try Scope Configuration
+* The scope's root element `<try />` has configurable attributes described in <<reference>>.
 
-image::error-handling-try-scope.png[Error Handling with the Try Scope]
+* Components that execute under the scope's error handling rules are child elements of `<try />`. You can place one or many components within the Try scope.
 
-In the previous example, any database connection errors (`DB:CONNECTIVITY`) are propagated because of the On Error Propagate (`on-error-propagate`) error handler. Propagation of this error causes the Try scope's execution to fail and the flow’s error handler to execute. Other errors are handled through the On Error Continue (`on-error-continue`) error handler, so the Try scope's execution is treated as successful when they occur, meaning that the next operation, an HTTP request, continues its execution.
+* A single `<error-handler>` element holds all error handling strategies that you define for the scope.
 
-If the Try scope has several components, then after a component raises an exception, subsequent components in the Try scope are not executed, regardless of the type of error handler that catches the exception. In the case of On Error Propagate, the error is propagated to the flow's error handler, as if the Try scope did not exist. In the case of On Error Continue, processing continues outside the Try scope at the next flow component, as if the Try scope never threw an exception.
+* Within the error handler, define the strategies within one or more On Error Continue (`<on-error-continue />`) and On Error Propagate (`<on-error-propagate />`) error handlers. On Error Propagate (`<on-error-propagate />`) is the default for any (`ANY`) error type.
 
-== Handling Transactions
+* Components and operations that you add as children to On Error components execute when a matching error that you configure (such as `ANY` or `DB:CONNECTIVITY`) occurs within the Try scope.
 
-A transaction is a series of actions that should never be partially executed. Configure a Try scope so that it is a set of operations that are considered one unit that either succeeds or fails, depending on whether errors are propagated and the transaction rolled back, or handled and the transaction committed. In either case, the process flow in which the Try scope resides continues.
+See <<error_handling>> for more information about Mule error handling components.
 
-image::error-handling-try-scope-config.png[Try Scope Configuration]
+[[transactions]]
+== Managing Transactions
 
-The Try scope treats child operations as a transaction when the Transactional Action (`transactionalAction`) is set to `ALWAYS_BEGIN` or `BEGIN_OR_JOIN`. It can be configured in the following ways:
+//TODO: DO WE HAVE A LIST OF COMPONENTS AND OPERATIONS THAT SUPPORT TRANSACTIONS
+//TODO: Does the Set Transaction Id component have
+//      anything to do with these transactions?
+//      https://docs.mulesoft.com/mule-runtime/4.3/set-transaction-id
+//TODO: HOW TO TELL IF A COMPONENT IS TREATED AS PART OF THE TRANSACTION?
+//TODO: CAN A COMPONENT W/O A TRANSACTIONAL ACTION OPTION be part of a transaction?
 
-* Ignore (`INDIFFERENT`)
-+
-Default. If a transaction is active, the scope joins it. If not, the scope does not create a transaction.
+A transaction is a series of actions that fail or succeed as a group. If the execution of one component or operation that is part of the transaction fails, the entire transaction fails. A transaction can be Local (single resource) or an XA transaction. XA transactions can group a series of operations from different transactional resources, such as VM, JMS, or Database operations, into a single, reliable global transaction.
+//TODO: WHAT DOES COMMIT MEAN? COMMITS WHERE?
+Success or failure depends on whether the errors propagate and roll back the transaction, or whether an error handler commits the transaction. For configuration options, see <<reference>>.
+//TODO: Really continues? Propagate doesn't seem to continue.
+//See source:
+//https://docs.mulesoft.com/mule-runtime/4.4/try-scope-concept#handling-transactions
+In both cases, the flow in which the Try scope resides continues.
 
-* Always Begin (`ALWAYS_BEGIN`)
-+
-A new transaction is started every time the scope is executed.
+In the Anypoint Studio UI, transaction options look like this:
 
-* Begin or Join (`BEGIN_OR_JOIN`)
-+
-Relevant only when execution order might vary (for example, due to asynchronous actions occurring outside the flow).
-If current flow processing has already started a transaction, the scope joins it. If not, the scope initiates a new transaction.
+image::transaction-try-scope-config.png[Try Scope Configuration]
 
-=== Analyzing Different Transactional Actions in Try Scope
-
-The following example shows a `jms:listener` operation configured to initiate a transaction at flow level, a Try scope that tries to initiate or join the transaction (depending on its configuration), and a `jms:publish` operation configured to run outside of the transaction:
+The following example shows a JMS Listener `<jms:listener />` operation that starts a transaction at the flow level, a Try scope that sets a `transactionalAction` value based on a custom xref:configuring-properties.adoc[configuration property] `${action}`, and a `<jms:publish />` operation configured to run outside of the transaction:
 
 [source,xml,linenums]
 ----
@@ -69,24 +82,138 @@ The following example shows a `jms:listener` operation configured to initiate a 
 </flow>
 ----
 
-If the operations within the Try scope do not produce an error, the scope finishes the execution and commits the transaction, independently of the configured `transactionalAction` value.
+If operations within the Try scope execute without producing an error, the scope finishes the execution and commits the transaction, independently of its configured `transactionalAction` value.
 
-The transaction and the messages are handled differently when a `<raise-error/>` component is added, depending on the `transactionalAction` of the Try scope:
+When an error occurs within the Try scope, the success or failure of the transaction depends on the value of `transactionalAction` in the scope and in other operations in the flow. The example adds the `<raise-error/>` component within the Try scope to demonstrate an error case.
 
 * Ignore (`INDIFFERENT`)
 +
-In this case, the transaction continues while executing the operations inside the Try scope. When the error is raised, it is propagated to the source (which does not handle it with an `<on-error-continue>` error handler). The transaction is rolled back, and the message is available again in the JMS queue. This rollback does not affect the completed `jms:publish` operation, which was outside of the transaction scope because `transactionAction` was set to its default, `NOT_SUPPORTED`.
+If the Try scope's `transactionalAction` is set to this value in the example, the transaction continues while executing the operations within the scope, unless that behavior is overridden within the scope.
+//TODO: Re "propagates to the source" below,
+//      WHERE DOES THE ERROR PROPAGATE TO? THE SCOPE OR THE FLOW OR WHERE?
+When raised within the Try scope, the error propagates to the source by default, the transaction rolls back, and the message becomes available again in the JMS queue. This rollback does not affect the completed `<jms:publish />` operation, which is outside of the transaction scope because its `transactionAction` property is set to `NOT_SUPPORTED`.
 +
-Had `transactionAction` been set to `JOIN_IF_POSSIBLE`, the `jms:publish` operation would have been rolled back.
+To roll back the `<jms:publish />` operation as part of the transaction, it is necessary to use the default setting (`JOIN_IF_POSSIBLE`) or to configure the setting `transactionAction="ALWAYS_JOIN"`.
 +
 * Always Begin (`ALWAYS_BEGIN`)
 +
-This raises an error because an active transaction already exists.
+//TODO: WHAT HAPPENS IN THIS CASE?
+If the Try scope's `transactionalAction` is set to this value in the example, an error occurs because an active transaction started by `<jms:listener ... transactionalAction="ALWAYS_BEGIN"/>` already exists.
 * Begin or Join (`BEGIN_OR_JOIN`)
 +
-In this case, a transaction was already initiated so the scope joins the active transaction. The result is the same as in `INDIFFERENT`.
+If the Try scope's `transactionalAction` is set to this value in the example, the scope joins the active transaction started by `<jms:listener ... transactionalAction="ALWAYS_BEGIN"/>`. In this case, the result is the same as using `INDIFFERENT`.
 
-==== Error Handler at Flow Level
+For another example, see xref:transaction-management.adoc#configuring-a-transaction-in-a-try-scope[Configuring a Transaction in a Try Scope].
+
+[[error_handling]]
+== Handling Errors Within the Try Scope
+
+As with the Flow component, you can configure the Try scope to handle errors differently based on the error type, such as `DB:CONNECTIVITY` or `DB:BAD_SQL_SYNTAX` database error types. The scope's embedded Error Handler component (`<error-handler />`) accepts the same components as the Flow component's error handler:
+
+* On Error Continue (`<on-error-continue />`)
++
+Executes, sends the result of its execution to Try scope, and commits any transactions. The Try scope uses the result to complete its execution successfully.
+* On Error Propagate (`<on-error-propagate />`)
++
+Executes, re-throws the error, and rolls back any transactions. Re-throwing the error causes the Try scope's execution to fail.
+
+The following example shows a Try Scope configuration within Anypoint Studio:
+
+image::error-handling-try-scope.png[Error Handling with the Try Scope]
+
+The configuration XML for this basic example looks like this:
+
+[source,XML]
+----
+<!-- Database Connector Configuration -->
+<db:config name="Database_Config1" doc:name="Database Config" >
+	<db:my-sql-connection host="localhost" port="3306"
+	                      user="root" password="mysecretpw"
+												database="my_db_example"/>
+</db:config>
+<!-- Flow -->
+<flow name="try-scope-errorhandling-ex" >
+	<scheduler doc:name="Scheduler" >
+		<scheduling-strategy >
+			<fixed-frequency frequency="15" timeUnit="SECONDS"/>
+		</scheduling-strategy>
+	</scheduler>
+	<!-- Try Scope -->
+	<try doc:name="Try" >
+	  <!-- Database Select Operation -->
+		<db:select doc:name="Select"
+		           config-ref="Database_Config1">
+			<db:sql ><![CDATA[SELECT title FROM movies;]]></db:sql>
+		</db:select>
+		<!-- Logger Inside Try Scope -->
+		<logger level="INFO" doc:name="Logger"
+		        message="#[%dw 2.0&#10;output application/json&#10;---&#10;payload]"/>
+		<!-- File Write Operation -->
+		<file:write doc:name="Write" path="/Users/me/testing/db/mydbdata">
+			<file:content ><![CDATA[#[%dw 2.0
+output application/csv
+---
+payload]]]></file:content>
+		</file:write>
+		<!-- Error Handler -->
+		<error-handler >
+		  <!-- On Error Propagate for DB:CONNECTIVITY errors -->
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" type="DB:CONNECTIVITY">
+				<logger level="INFO" doc:name="Logger"
+				        message="#[onErrorPropagate : error]"/>
+			</on-error-propagate>
+			<!-- On Error Continue for ANY other errors -->
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" type="ANY">
+				<logger level="INFO" doc:name="Logger"
+				        message="#[onErrorContinue : error.description]"/>
+			</on-error-continue>
+		</error-handler>
+	</try>
+	<!-- Logger After Try Scope -->
+	<logger level="INFO" doc:name="Logger" message='"Example: Logger After Try"'/>
+</flow>
+----
+
+In this example, a database connection error `DB:CONNECTIVITY` propagates because of the On Error Propagate (`<on-error-propagate />`) error handler. Propagation of this error causes the Try scope's (`<try />`) execution to fail and the scope's error handler to execute the Logger within the Try scope but not the Logger after the scope:
+
+[source,logs]
+----
+INFO  ...LoggerMessageProcessor: {onErrorPropagate=DB:CONNECTIVITY}
+----
+
+On Error Continue (`on-error-continue`) accepts other errors that occur within the scope. The Logger within _and after_ the Try scope execute when these errors occur.
+
+[source,logs]
+----
+INFO  ...LoggerMessageProcessor: {onErrorContinue=DB:BAD_SQL_SYNTAX}
+INFO  ...LoggerMessageProcessor: "Example: Logger After Try"
+----
+
+After a component within the Try scope raises an exception, any subsequent components in the scope _do not_ execute, regardless of the type of error handler that catches the exception.
+
+Each error handling strategy in a Try scope (`on-error-*`) follows a condition. This condition is typically an error type (or a list of several) which must match the current error. You can also define this condition as a DataWeave expression, such as `error.cause.message.contains("fatal")`.
+
+[NOTE]
+Conditions are evaluated in order, and only the first strategy to match is executed.
+
+Below is an example that includes two error handling strategies, each executing a logger component:
+
+[source,xml,linenums]
+----
+<try>
+  <http:request config-ref="HTTP-config" method="GET" path="/" />
+  <error-handler>
+    <on-error-continue enableNotifications="true" logException="true" type="CONNECTIVITY">
+      <logger level="INFO" doc:name="Logger" message="Connectivity Error"/>
+    </on-error-continue>
+    <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" type="EXPRESSION">
+      <logger level="INFO" doc:name="Logger" message="Expression error" />
+    </on-error-propagate>
+  </error-handler>
+</try>
+----
+
+=== Error Handler at Flow Level
 
 In the following example, an error handler is added at flow level:
 
@@ -121,7 +248,7 @@ Raises an error because an active transaction already exists.
 +
 Displays the same behavior as `INDIFFERENT`.
 
-==== Error Handler Inside the Try Scope
+=== Error Handler Inside the Try Scope
 
 In this case, the error handler is inside the Try scope and the error occurs after the execution of the scope:
 
@@ -157,30 +284,40 @@ Raises an error because an active transaction already exists.
 +
 Displays the same behavior as `INDIFFERENT`.
 
-=== Configuring Local or XA Transactions
 
-In addition to configuring the Transactional Action, you can also configure the Transaction Type to be Local (single Resource) or XA Transaction.
-
-The Try scope uses the Transaction Type configuration only when a new transaction is created. The type cannot change while a transaction executes.
-
-For each Transactional Action, the behavior changes:
-
-* Ignore (`INDIFFERENT`)
-+
-The Transaction used is the one already created (if there is one). This means that setting the Transactional Type makes no difference for this Transactional Action.
-* Always Begin (`ALWAYS_BEGIN`)
-+
-The Transaction created is of the type set in the Transaction Type configuration. Remember that `ALWAYS_BEGIN` is an invalid configuration when already running within a Single Resource transaction.
-* Begin or Join (`BEGIN_OR_JOIN`)
-+
-If there is a Transaction already created, then the Transactional Type makes no difference, as in the case of `INDIFFERENT`. If there is no Transaction, it creates one of the Type configured in Transaction Type, as in the case of `ALWAYS_BEGIN`.
 
 == Variable and Payload Propagation
 
 Every payload modification or variable addition, modification, or removal is propagated through the rest of the execution. This propagation includes modifications that take place inside the error handlers.
 
+
+[[reference]]
+== Reference
+
+The Try scope provides a set of configurable properties for transaction management and a custom display name.
+
+[[properties]]
+[%header,cols="1a,1a,1a,4a"]
+|===
+|Property | XML | Default |Description
+| *Display Name* | `doc:name` | `"Try"` | Configurable name for a Try scope.
+| *Transaction Action* | `transactionalAction` | `INDIFFERENT` | Indicates whether to treat processing within the scope as a transaction:
+
+* `INDIFFERENT` (Default): Join an existing transaction, but do not start a new  transaction. Components and operations within the Try scope join the active transaction unless they override this setting.
+* `ALWAYS_BEGIN`: Start a new transaction of the type specified by the Transactional Type (`transactionalType`) each time the scope executes.
+//TODO: when WHAT is already running within ...?
+`ALWAYS_BEGIN` is an _invalid_ configuration when already running within a single-resource transaction.
+* `BEGIN_OR_JOIN`: Join the existing transaction within the flow or initiate a new transaction if there is no transaction yet. If a transaction already exists, ignore the Transactional Type (`transactionalType`) setting. This setting is relevant only when execution order might vary, for example, due to asynchronous actions occurring outside the flow.
+
+| *Transaction Type* |`transactionalType` | `LOCAL` | Defines the type of transaction to use. The Try scope uses this configuration only when a new transaction is created. The type cannot change while a transaction executes.
+
+* `LOCAL`
+* `XA`
+
+|===
+
 == See Also
 
-* xref:try-scope-xml-reference.adoc[Try Scope XML Reference]
 * xref:error-handling.adoc[Error Handling]
 * xref:transaction-management.adoc[Transaction Management]
+* xref:jms-connector::index.adoc[]
