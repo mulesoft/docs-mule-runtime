@@ -1,0 +1,142 @@
+= OpenTelemetry support in Mule runtime
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+:page-aliases: otel, otel support, OpenTelemetry
+
+OpenTelemetry is an observability standard consisting of APIs and SDKs. It helps instrument, generate, collect, and export telemetry data, such as metrics, logs, and traces, to analyze software performance and behavior. 
+
+OpenTelemetry enables Mule runtime to provide observability into the behavior of Mule apps. With distributed tracing, Mule runtime also brings observability to the interactions between different Mule apps and non-Mule components when the latter leverages this standard.
+
+Starting in Mule 4.5, Mule runtime supports generating and exporting OpenTelemetry distributed traces. However, metrics and logs aren't yet supported through OpenTelemetry.
+
+== Before You Begin
+
+To use OpenTelemetry, you must be familiar with:
+
+* Distributed tracing concepts, such as traces and spans. If you are just getting started with distributed tracing and OpenTelemetry, we suggest you read https://opentelemetry.io/docs/concepts/what-is-opentelemetry/[What is OpenTelemetry] and https://opentelemetry.io/docs/concepts/observability-primer/#understanding-distributed-tracing[Understanding distributed tracing].
+
+Before starting with the observability standard, ensure that you have:
+
+* For flow tracing, at least Mule runtime 4.5.0.
+* For distributed tracing, at least Mule runtime 4.5.0, HTTP connector 1.8, and the span exporter configured.
+
+== Tracing Mule App
+
+Mule runtime leverages OpenTelemetry to provide:
+
+* Data about app execution 
++
+This includes how each component of the app behaves. The main span involved in a Mule app is the flow span. Each Mule component execution taking part in the message processing is represented as a child span of the corresponding flow.
+* Distributed tracing
++
+This enables you to track Mule app interactions. When multiple systems and services are involved, distributed tracing tracks app requests as they flow through distributed environments providing a comprehensive view of the app's execution.
+
+For example, if an HTTP Listener receives https://www.w3.org/TR/trace-context/[W3C Trace Context] headers, the flow span in Mule acquires the client's remote parent span, the span where the HTTP call originated. Mule automatically propagates the current span to the server endpoints when using the HTTP Requester component. 
+
+The span context format supported for receiving and propagating the context is the https://www.w3.org/TR/trace-context/[W3C Trace Context] format.
+
+=== Mule Span Data
+
+Traces are a sequence of spans representing a complete operation in a distributed system. Spans can be nested and represent a unit of work or operation. Each span includes: 
+
+[%header%autowidth.spread,cols="a,a,a"]
+|===
+| Categories | Description | Possible Values
+| Name | Name of the span | “mule:set-variable”
+| Parent Span ID | Span ID of current span's parent | “86838830d494d679”
+| Start and End Timestamps | Earliest and latest timestamp for a span | "2021-10-22 16:04:01.209458162 +0000 UTC"
+| Span Context | Contains data that uniquely identifies the span: trace ID, span ID, trace flags, trace state | 
+| Attributes | Key-value pairs containing metadata used to annotate a span to carry information about the operation it's tracking. | {
+“location”: “flow/processors/2”,
+“correlation.id”:  “1234abcd”
+}
+| Span Events | A structured log message or annotation on a span, used to denote a meaningful, singular point in time during the span's duration. | {
+      "name": "",
+      "message": "OK",
+      "timestamp": "2021-10-22 16:04:01.209512872 +0000 UTC"
+    }
+| Span Links | Links that associate one span with one or more spans, indicating a causal relationship. | 
+| Span Status | Status attached to a span. You can set a span status when there is a known error in the app code, such as an exception. | “ERROR”, “OK”, “UNSET”
+| Span Kind | Provides information about how the trace is assembled. | “CLIENT”, “INTERNAL”, “PRODUCER”
+|===
+
+=== Example of Flow Tracing Feature
+
+When tracing a flow execution, each Mule component execution involved in processing the message is represented as spans. The component spans describe the relevant aspects of the execution, which can range from a single span for simple components, such as the Set Payload, to more complex structures, such as a Batch Job.
+
+.Batch Instance
+image::[]
+
+.Spans Generated
+Each batch record processed by the first step of the Batch Job is shown in the trace with each record span containing a child span representing the unit of work done by the Logger component.
+Then, the Batch Aggregator span is shown, along with the For Each and the processors executed within it, such as the Transform Message and the Logger. 
+Following this, the trace displays the other two batch steps, along with their respective components.
+Finally, the Batch On Complete span is shown, along with the Logger component that appears after the Batch Job in the flow. 
+
+=== Example of Distributed Tracing Feature
+
+Consider two Mule apps where the first sends a request to the second.
+
+image::[]
+
+image::[]
+
+Even though these are two different flows, distributed tracing captures both as part of the same trace because OpenTelemetry is instrumentation in Mule runtime and HTTP Connector.
+
+=== Errors in Tracing
+
+If the execution of the unit of work represented by a span produces an error, the span's status is set to `Error`. MuleSoft follows the semantic convention defined by OpenTelemetry that adds one or more `exception` events to the span:
+
+* `exception.type`: Mule error type
+* `exception.message`: Mule error message
+* `exception.stacktrace`: Mule flow stack string representation
+
+In the following example, when an error is produced, the span corresponding to the Raise Error component shows an error status in the Lightstep platform. 
+
+image::[]
+
+This status is propagated to the parent span, for example, the flow span. A detailed view of the span shows the error status and the exception events.
+
+=== Http Conventions
+
+The HTTP Listener and the HTTP Request operations contribute additional attributes to the spans, providing more context for tracing the HTTP interactions.
+
+For flows with an HTTP Listener:
+
+* Span name: Combination of HTTP Method and path. For example, `POST /api`.
+* Span kind: `SERVER`.
+
+Additional attributes for an HTTP Listener associated flow span:
+
+[%header%autowidth.spread]
+|===
+| Attribute | Description 
+| `net.host.name` | The host address of the HTTP Listener
+| `net.host.port` | The port of the HTTP Listener
+| `http.user_agent` | The user agent of the received request
+| `http.route` | The path of the listener
+| `http.method` | the HTTP Method
+| `http.flavor` | the HTTP version
+|===
+
+For flows with an HTTP Request: 
+
+* Span name: HTTP Method. For example, `GET`.
+* Span kind: `CLIENT`.
+
+Additional attributes for an HTTP Request associated flow span:
+
+[%header%autowidth.spread]
+|===
+| Attribute | Description 
+| `http.url` | The target URL
+| `net.host.port` | The port of the HTTP Request
+| `net.peer.name` | The target IP address
+| `http.route` | The path of the HTTP Request
+| `http.flavor` | the HTTP Version
+|===
+
+== See Also
+
+* xref:monitoring::telemetry-exporter.adoc[Export Telemetry Data to Third-Party Monitoring Systems]
