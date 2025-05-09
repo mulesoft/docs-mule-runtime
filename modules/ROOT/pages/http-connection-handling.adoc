@@ -1,0 +1,74 @@
+= Understanding HTTP Connection Handling during Mule Runtime Shutdown
+
+Mule runtime engine (Mule) manages HTTP connections during shutdown through a two-stage graceful shutdown process followed by a forceful termination. 
+
+This process first refuses new connections while allowing existing ones to complete with a "Connection: close" signal, then rejects new requests entirely while finishing in-flight processing, before finally forcefully terminating all remaining connections upon timeout. 
+
+This supports seamless scale-down scenarios, enabling the reduction of Mule replicas while maintaining the stability and reliability of the application by progressively draining traffic.
+
+== HTTP Connection Handling Diagram
+
+This diagram illustrates the behavior of HTTP connection handling during Mule shutdown:
+
+image::runtime-http-connections-diagram.png[]
+
+Phase 1: Mule Started
+
+* Mule State: Mule started and is running normally.
+* HTTP Behavior: All incoming HTTP traffic is routed to Mule and processed without any special handling.
+
+Transition: Send Stop Signal to Mule +
+The shutdown sequence starts by sending a stop signal to the Mule instance.
+
+Phase 2: HTTP Graceful Shutdown - Mule Stopping
+
+* Trigger: Reception of the stop signal.
+* Duration: Up to the configured HTTP Graceful Timeout (default: 5 seconds). However, if all existing HTTP connections are closed before this timeout period elapses, the HTTP Graceful Shutdown phase will end early, and Mule won't wait for the full timeout duration.
+* Mule State: Mule is initiating a shutdown or transitioning to stopped.
+* HTTP Behavior:
+
+** No new connections: The HTTP server stops accepting new incoming TCP connections (the acceptor socket is closed).
+** Existing and In-Flight requests: Ongoing HTTP requests (both those already being processed  in-flight and those on existing, established connections) will continue to be handled normally. However, all responses will include the `Connection: close` header, signaling to the HTTP client to close the connection after the current request-response cycle.
+** Early termination: If there are no active HTTP connections when the stop signal is received, the HTTP Graceful Shutdown phase will end immediately, even before the timeout period expires.
+** Late-Arriving requests: If an HTTP request arrives just before the HTTP Graceful Timeout is reached, it'll still be processed normally, even if the processing extends beyond the HTTP Graceful Shutdown timeout.
+
+Transition: HTTP Graceful Shutdown Timeout Elapsed +
+The configured duration for the HTTP Graceful Shutdown has ended.
+
+Phase 3: Mule Graceful Shutdown - Mule Stopping
+
+* Trigger: Expiration of the HTTP Graceful Shutdown Timeout.
+* Duration: Up to the configured Mule Graceful Shutdown Timeout (default: 5 seconds).
+* Mule State: Mule is shutting down gracefully
+* HTTP Behavior:
+
+** Reject new requests (503): Any new HTTP requests arriving at the runtime will be immediately rejected with a 503 Service Unavailable error.
+** Reject new Requests (404): Once the Mule app code unregisters the HTTP endpoint from the underlying HTTP server, subsequent new HTTP requests will receive a 404 Not Found error.
+** Complete In-Flight messages: HTTP requests that were already fully read and are being processed (in-flight messages) will be allowed to complete their execution normally.
+
+Transition: Mule Graceful Shutdown Timeout Elapsed +
+The configured duration for the overall Mule Graceful Shutdown has ended.
+
+Phase 4: Mule Stopped 
+
+* Trigger: Expiration of the Mule Graceful Shutdown Timeout.
+* Mule State: Mule stopped.
+* Behavior: The Mule process proceeds to a forceful shutdown and will eventually exit. As a result:
+
+** All remaining open HTTP connections will be abruptly closed.
+** Clients connected to these forcibly closed connections will likely receive a connection reset error or a broken pipe error, depending on the TCP status of their socket at the time of closure.
+
+== Configure Shutdown Timeout
+
+Note that while the HTTP Graceful Shutdown Timeout and the overall Mule Graceful Shutdown Timeout serve distinct purposes in the shutdown sequence, you configure them using the same `shutdownTimeout` parameter within the `<configuration>` element of your Mule application's XML file. 
+
+Specify the value in milliseconds (default 5000 milliseconds), which controls the maximum duration for both graceful shutdown periods. For example:
+
+[source,xml,linenums]
+----
+<mule ...>
+  <configuration shutdownTimeout="10000" /> </mule>
+----
+
+For details, refer to xref:global-settings-configuration.adoc#global-configurations-reference[Global Configurations Reference]
+
