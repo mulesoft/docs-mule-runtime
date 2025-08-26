@@ -1,412 +1,399 @@
-= Mule Upgrade Tool
+= Mule Troubleshooting Tool
+ifndef::env-site,env-github[]
+include::
+endif::[]
 
-include::release-notes::partial$mule-upgrade-tool/mule-upgrade-tool-1.1.0.adoc[tag=intro]
+Use the Mule Troubleshooting tool to generate structured diagnostic information, simplify troubleshooting, and provide consistent data for Mule runtime support.  
 
-If the Runtime Manager agent is installed in your current Mule instance, the upgrade tool also updates the agent version as part of the upgrade process.
+The Mule Troubleshooting tool provides a unified way to collect diagnostic data from Mule runtime environments. It generates a structured diagnostic archive called the Diagnostic Information Analysis File (DIAF), which consolidates Mule runtime information, application metrics, and system data into a single, standardized output.  
 
-Upgrading the Anypoint Monitoring agent isn't supported. To proceed with an upgrade, you must first uninstall the agent, and reinstall it after the Mule instance upgrade is complete. See xref:monitoring::am-installing.adoc#update-the-anypoint-monitoring-agent[Update the Anypoint Monitoring Agent].
-
-The upgrade tool doesn't modify Mule applications running on the runtime you're upgrading.
-
-The Mule upgrade tool supports upgrading clustered Mule instances by manually upgrading each node using the tool. For additional information on how to proceed with the upgrade, see <<upgrade_clustered_mule_instances>>. Though highly recommended, using the tool isn't strictly necessary to upgrade your current Mule instance. For a completely manual upgrade, see xref:release-notes::mule-runtime/updating-mule-4-versions.adoc#mulerunvers[Upgrading an On-Premises Mule Instance Managed Through Runtime Manager].
+This Java-based tool provides an extensible, environment-agnostic solution that simplifies troubleshooting for Mule runtime engineers, MuleSoft Support teams, customers running self-service diagnostics, and AI-assisted analysis.
 
 == Before You Begin
 
-Before starting your upgrade, ensure that you have:
+Before starting your upgrade, make sure that you have the following prerequisites:
 
-include::partial$upgrade-tool.adoc[tag=BeforeYouBegin]
+* Mule runtime distribution starting with 4.10, with patches available for 4.6 and 4.9.
+* Java 8 or later, matching the Mule runtime version requirements.
+* Access to `$MULE_HOME`. The CLI script `diag` automatically locates the Mule home directory.
 
-== Upgrade or Update Mule
+The tool works out-of-the-box in all deployment models (Standalone, CloudHub, CloudHub 2.0, Runtime Fabric) without installing additional dependencies.
 
-include::partial$upgrade-tool.adoc[tag=UpgradeOrUpdateMule]
+== Using the Mule Troubleshooting Tool
 
-== Roll Back an Upgrade or Update
+Run the following command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, this creates a ZIP file named `mule_dump_[timestamp].diaf`.
+Use the `./diag --support` command to generate a heap dump. The Mule dump is saved in the `logs` directory by default, or use the `./diag --output` command to save the dump to a different path.
 
-include::partial$upgrade-tool.adoc[tag=RollBackUpgradeOrUpdate]
+The tool's help output lists the available commands and options.
 
-== Solving File Conflicts
-
-The Mule upgrade tool compares configuration files from the _current_ Mule distribution and the _new_ distribution to detect changes and prevent losing them. When the Mule upgrade tool detects changes in the _new_ Mule distribution configuration files, it tries to resolve conflicts automatically and continue with the upgrade. If conflicts cannot be resolved automatically, the tool performs the following actions:
-
-* Fails the execution of the `upgrade` subcommand, showing an error message.
-* Logs the names of the Mule configuration files with conflicts into the log output.
-* Copies the configuration files with conflicts from the `${MULE_HOME}/conf` directory of the current Mule distribution to `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review`.
-* Copies the original content of the configuration files from the _new_ Mule distribution to the `${MULE_HOME}/upgrade-tool/mule-configs-conflicts/new-${MULE_HOME_NEW_FOLDER_NAME}` folder.
-
-If the upgrade process fails due to conflicts with the configuration files, follow the next steps to resolve the conflicts and continue the upgrade process.
-
-[[steps-to-solve-conflicts]]
-=== Steps to Solve Conflicts with Mule Configuration Files
-
-Follow these steps to resolve conflicts during an upgrade:
-
-. Inside the `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review/` folder of the current Mule distribution that you are upgrading, locate one of the files that has a conflict.
-. Use any file comparison or `diff` tool to compare the contents of the files in the following paths:
-** `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review/fileWithConflicts.conf`
-** `${MULE_HOME}/upgrade-tool/mule-configs-files/new-${MULE_HOME_NEW_FOLDER_NAME}/fileWithConflicts.conf`
-. After reviewing the differences, merge or discard the changes:
-* If you decide to merge the changes, modify the previous configuration file `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review/fileWithConflicts.conf` adding the desired changes from the new configuration file `${MULE_HOME}/upgrade-tool/mule-config-conflicts/new-${MULE_HOME_NEW_FOLDER_NAME}/fileWithConflicts.conf`. Then, copy the merged file to the `${MULE_HOME}/upgrade-tool/mule-config-conflicts/ready` folder.
-* If you decide to discard the changes maintaining your previous configuration, move the previous configuration file `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review/fileWithConflicts.conf` to the `${MULE_HOME}/upgrade-tool/mule-config-conflicts/ready` folder.
-+
-Note that discarding the changes sometimes lead to using deprecated settings in the updated Mule distribution.
-. Repeat steps 1 to 3 for each configuration file in the `${MULE_HOME}/upgrade-tool/mule-config-conflicts/to_review` folder.
-. Retry running the `upgrade` subcommand.
-+
-When the upgrade finishes successfully, the tool deletes the `${MULE_HOME}/upgrade-tool/mule-config-conflicts` folder to have a clean environment for future upgrades.
-
-=== Unattended Upgrades or Updates
-
-You can perform an unattended upgrade or update by resolving the conflicts in a different environment before running the upgrade in the target environment. This procedure works only if the _current_ and _new_ Mule distributions that you configure in the secondary environment match the versions of the _current_ and _new_ Mule distributions, respectively, that you have in the main environment:
-
-. In an environment where user interaction is possible, review and resolve all the conflicts as explained in <<steps-to-solve-conflicts>>.
-. In the target environment, copy the files from `${MULE_HOME_WITH_USER_INTERACTION}/upgrade-tool/mule-config-conflicts/ready/` to `${MULE_HOME_WITHOUT_USER_INTERACTION}/upgrade-tool/mule-config-conflicts/ready/`.
-. Run the `upgrade` subcommand in the target environment.
-
-== Configure Logging for the Mule Upgrade Tool
-
-You can enable debug logging to add detailed information about each operation, change the folder where the tool stores the logs, and also use a customized log configuration file for the Mule upgrade tool.
-
-=== Specify a Custom Log4j File
-
-By default, the Mule upgrade tool uses the `log4j2-upgrade-tool.xml` file that is located in the `$MULE_HOME/tools/upgrade-tool` folder.
-
-To use a custom Log4j file, use the `-l` parameter and specify the file name of the custom Log4j configuration file to use, for example:
-
-[source,bash,linenums]
+[source,bash]
 ----
-$MULE_HOME/tools/upgrade-tool -l myLog4j2File.xml upgrade
+➜  mule-enterprise-standalone-4.6.21-SNAPSHOT ./tools/diag help
+Mule Troubleshooting Tool
+=========================
+
+Usage: ./diag [options] [command] [command-options]
+
+Commands:
+  diaf                    Generate a complete Mule diagnostic dump (default)
+  help                    Show this help message
+  <operation-name>        Execute a specific troubleshooting operation
+
+Global Options:
+  --stdout                Output the diagnostic dump to standard output
+  --output <path>         Specify custom output directory or file path
+  --support               Enable support mode (includes heap dump)
+  --debug                 Enable debug mode with remote debugging on port 5005
+
+Examples:
+  ./diag                          # Generate diagnostic dump to logs directory
+  ./diag --stdout                 # Output diagnostic dump to stdout
+  ./diag --support                # Include heap dump in diagnostic
+  ./diag --output /tmp/mule.zip   # Save to specific file
+  ./diag --output /tmp/           # Save to specific directory
+  ./diag <operation-name>         # Execute specific operation
+
+Output:
+  By default, the tool creates a ZIP file containing:
+  - mule_dump_<timestamp>.diaf    # Diagnostic information
+  - thread_dump_<timestamp>.txt   # Thread dump
+  - heap_dump_<timestamp>.hprof   # Heap dump (if --support is used)
+
+  The ZIP file is saved to the 'logs' directory by default.
 ----
 
-=== Enable DEBUG Level Logs
+== Diagnostic Information Analysis File (DIAF) Contents
 
-To enable debug logging:
+The Diagnostic Information Analysis File (DIAF) groups all diagnostic data collected by the Mule Troubleshooting tool into structured sections. Use this reference to understand the content of each section:
 
-. Open the Log4j file you are using with the tool.
-. Replace the `level` property value `INFO` with `DEBUG`, in the following line of the Log4j file:
-+
-[source,xml,linenums]
-----
-<Logger level="INFO" name="com.mulesoft.runtime.upgrade.tool.service" additivity="false">
-----
+* <<diaf-title>>
+* <<diaf-basic-info>>
+* <<diaf-statistics>>
+* <<diaf-fuse-board>>
+* <<diaf-event-dump>>
+* <<diaf-schedulers>>
 
-=== Customize the Logs Output
+[[diaf-title]]
+=== Title
 
-By default, the Mule upgrade tool stores logs in the `./mule-runtime-upgrade-tool-logs directory`.
+This section shows the report generation timestamp.
 
-To change the file name, output path, and log pattern:
-
-. Open the Log4j file you are using with the tool.
-. Specify the desired values for the `fileName` and `filePattern` properties:
-+
-[source,xml,linenums]
-----
-<RollingFile name="RollingFile"
-  fileName="./mule-runtime-upgrade-tool-logs/mule-runtime-upgrade-tool-logs.log"
-  filePattern="./mule-runtime-upgrade-tool-logs/$${date:yyyy-MM}/mule-runtime-upgrade-tool-logs-%d{-dd-MMMM-yyyy}-%i.log.gz" >
-----
-
-== Mule Upgrade Tool Subcommands and Options
-
-The following table describes the subcommands and options you can use when running the Mule upgrade tool:
-
-[%header%autowidth.spread,cols=".^a,.^a"]
+[cols="1,3", options="header"]
 |===
-|Subcommand | Description
-| `upgrade`
-| Upgrades the local Mule instance to the latest available version. +
-The following are the supported options for this subcommand.
+| Field | Description
 
-[%header%autowidth.spread,cols=".^a,.^a"]
-!===
-  ! Options ! Description
-  ! `-n <newMuleDistributionPath>`
-  ! Upgrades the local Mule instance to the distribution that is downloaded and unpacked in your file system. Parameter `<newMuleDistribution>` specifies the path to the new Mule distribution, for example:
-  +
-  `$ ./upgrade-tool upgrade -n /<newMuleDistributionPath>`
-  ! `-o <localMuleInstancePath>`
-  ! Upgrades the local Mule instance located in path `<localMuleInstancePath>`. This option enables you to upgrade a different Mule instance than the one located in the same `$MULE_HOME` path as the upgrade tool, for example:
-  +
-  `$ ./upgrade-tool upgrade -o /<localMuleInstancePath>`
-  ! `-d` ! Simulates the upgrade process without performing any permanent changes to the current Mule instance.
-  ! `-f` ! Performs the upgrade without requesting user confirmation for destructive operations like overwriting a backup or removing applied patches.
-  ! `-h` ! Displays the help message for this subcommand.
-!===
-| `rollback`
-| Restores the Mule instance to its previous state. This subcommand works only after performing a successful upgrade with the tool. +
-The following are the supported options for this subcommand.
-
-[%header%autowidth.spread,cols=".^a,.^a"]
-!===
-  ! Options ! Description
-  ! `-o <localMuleInstancePath>`
-  ! Restores the local Mule instance located in path `<localMuleInstancePath>`. This option enables you to restore a different Mule instance than the one located in the same `$MULE_HOME` path as the upgrade tool, for example:
-  +
-  `$ ./upgrade-tool rollback -o /<localMuleInstancePath>`
-  ! `-d` ! Simulates the rollback process without performing any permanent changes to the current Mule instance.
-  ! `-f` ! Restores the Mule instance without requesting user confirmation.
-  ! `-h` ! Displays the help message for this subcommand.
-!===
-| `status`
-| Provides information about the current Mule instance, including:
-
-* The Mule runtime engine version
-* A message confirming that the current Mule instance meets conditions to upgrade or roll back
-* Any existing backup and its location
-* The integrity of the backup, if it exists
-
+| Report Generation Timestamp
+| The report generation time, expressed in the local time zone.
 |===
 
-== Troubleshooting Common Errors
+[[diaf-basic-info]]
+=== Basic Information
 
-The following are some of the most common error messages from the upgrade tool and include the error description and a proposed solution.
+This section shows details about the environment where the Mule runtime instance is running.
 
-=== Missing Required Subcommand
+[cols="1,3", options="header"]
+|===
+| Field | Description
 
+| Mule Product/version
+| The product (CE/EE), version, and build number of the Mule runtime. Formatted as `[productName] [version] (build [buildNumber])`.
+
+| `mule_home`
+| Absolute path to `MULE_HOME` for the Mule runtime.
+
+| `mule_base`
+| Absolute path to MULE_BASE for the Mule runtime.
+
+| `mule.*` System Properties
+| All system properties starting with `mule.`, including those defined by DataWeave and API Gateway. Listed with values and sorted alphabetically.
+
+| Java Version
+| Version of the JVM running the Mule runtime.
+
+| Java Vendor
+| Vendor of the JVM running the Mule runtime.
+
+| Java VM Name
+| Full name of the JVM running the Mule runtime.
+
+| `JAVA_HOME`
+| Location of the JVM running the Mule runtime.
+
+| OS Name
+| Name of the OS running the Mule runtime.
+
+| OS Version
+| Version of the OS running the Mule runtime.
+
+| OS Arch
+| Architecture of the OS (for example, `amd64`, `aarch`).
+
+| Running Time
+| The total time the Mule runtime has been running.
+
+| PID
+| Process ID of the JVM running the Mule runtime.
+
+| Report Millis Time
+| Report generation time in milliseconds since epoch (`System.currentTimeMillis`).
+
+| Report Nano Time
+| Report generation time in nanoseconds (`System.nanoTime`).
+
+| `memory.used`
+| Amount of used memory in the JVM.
+
+| `memory.free`
+| Amount of free memory in the JVM.
+
+| `memory.total`
+| Total amount of memory in the JVM.
+
+| `memory.max`
+| Maximum amount of memory the JVM attempt to use.
+
+| `memory.used/total`
+| Percentage of used memory compared to the total allocated memory.
+
+| `memory.used/max`
+| Percentage of used memory compared to the maximum available memory.
+
+| `load.process`
+| Percentage of recent CPU usage for the JVM process; negative value if unavailable.
+
+| `load.system`
+| Percentage of recent CPU usage for the whole system; negative value if unavailable.
+
+| `load.systemAverage`
+| System load average for the last minute; negative value if unavailable.
+|===
+
+[[diaf-statistics]]
+=== Statistics
+
+This section shows detailed statistics information about deployed Mule applications and their performance metrics.
+
+==== General Application Metrics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Events Received
+| Number of events received by the application or flow.
+
+| Events Processed
+| Number of events processed by the application or flow.
+
+| Messages Dispatched
+| Total number of messages dispatched from message sources within the application.
+
+| Execution Errors
+| Number of execution errors encountered.
+
+| Fatal Errors
+| Number of fatal errors that cause the application to fail or stop processing.
+
+| Connection Errors
+| Number of connection-related errors that occur.
+
+| Average Processing Time
+| Average time (in milliseconds) required to process an event.
+
+| Min Processing Time
+| Minimum time (in milliseconds) required to process an event.
+
+| Max Processing Time
+| Maximum time (in milliseconds) required to process an event.
+
+| Total Processing Time
+| Cumulative time (in milliseconds) spent processing all events.
+|===
+
+==== Flow Summary Statistics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Private Flows Declared
+| Total number of private flows declared in the application. A private flow doesn't contain a `MessageSource` and isn't used by an APIkit router.
+
+| Private Flows Active
+| Number of private flows that are currently in a started state.
+
+| Trigger Flows Declared
+| Total number of trigger flows declared in the application. A trigger flow contains a MessageSource.
+
+| Trigger Flows Active
+| Number of trigger flows currently in a started state.
+
+| API Kit Flows Declared
+| Total number of APIkit flows declared in the application. An APIkit flow is used by an APIkit router but doesn't contain a `MessageSource`.
+
+| API Kit Flows Active
+| Number of APIkit flows currently in a started state.
+|===
+
+==== Flow Statistics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Events Received
+| Total number of events received by the application since it started.
+
+| Events Processed
+| Total number of events successfully processed by the application.
+
+| Messages Dispatched
+| Total number of messages dispatched from message sources within the application.
+
+| Execution Errors
+| Number of execution errors that occur during event processing.
+
+| Fatal Errors
+| Number of fatal errors that cause the application to fail or stop processing.
+
+| Connection Errors
+| Number of connection-related errors that occur.
+
+| Average Processing Time
+| Average time (in milliseconds) required to process an event.
+|===
+
+[[diaf-fuse-board]]
+=== Fuse Board
+
+This section shows alerts for known Mule runtime issues. The report lists how many times each alert triggers during the last 1, 5, 15, and 60 minutes along with the context of the alert at the time of triggering. Some alerts trigger multiple times with the same context, such as the backpressure alert, so the tool shows the context once and indicates how many times it happens to avoid flooding the report. Alerts that don't trigger in any of the time intervals aren't included in the report.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `MULE:UNKNOWN` error raised
+| `MULE:UNKNOWN` errors are generated by the runtime and go unhandled. If such an error raises or appears in the app log, it indicates a bug in the Mule runtime. The context shows the details of the errors catalogued as `MULE:UNKNOWN`.
+
+| Reactor discarded event 
+| A discarded event is one that a component explicitly filters in a flow. This effectively cuts the processing of such event, causing the execution to hang. The context shows the correlation ID of each discarded event. 
+
+| Reactor dropped event
+| A dropped event doesn't properly pass to the following component in a flow through a reactor chain and doesn't complete. Its symptom is that the event is “hanged”. No context is shown for this alert because information is already available in the event dump.
+
+| Reactor dropped error
+| A dropped error doesn't properly pass to the corresponding error handler in a flow through a reactor chain, and so doesn't complete. Its symptom is that the event is “hanged” when an error occurs. The context shows the string representation of each dropped error.
+
+| Not consumed stream
+| A stream that is garbage collected before being completely consumed may provoke leaks on certain conditions (the most common one is connections from a DB connection pool that remain taken until the data is fully read). The context shows the originating location of the components that generated the streams.
+
+| Backpressure triggered
+| Backpressure is the mechanism by which incoming events in excess of current capacity are rejected. This happens because of a spike of incoming events or a longer than usual processing time of the flows. A common sign is when backpressure triggers on systems that have a CPU and memory capacity. The context shows the flow or component that exceeded capacity and the reason for backpressure.
+
+| XA recovery start error
+| Triggered when recovery of an XA connection fails to start. The context shows the unique name (including the config name) of the connection for which recovery fails.
+
+| Async logger ringbuffer full
+| When a log appender writes logs slower than the log entries are generated, the logger ringbuffer fills up. When full, threads attempting to log either wait for space in the ringbuffer or log synchronously, depending on the configuration. In either case, a thread that shouldn't block or wait does so, causing performance issues in the Mule runtime. No context is available for this alert because it always means the same, the buffer is full.
+|===
+
+[NOTE]
+--
+Keep in mind that this report provides hints about what might be causing an issue. For details on a specific alert, query the log. This report isn't intended to replace the log for detailed analysis.
+--
+
+[[diaf-event-dump]]
+=== Event Dump
+
+This section shows a hierarchical listing of in-flight events. For each event hierarchy executing through a flow in Mule has at least one entry in the report. For each child context for the event, a nested entry appears, sorted in a stack order: children on top, parents on bottom. If an event is dropped, the legend `DROPPED` appears next to it.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `eventId`
+| A unique identifier for the event. For child events, it has the ID of the parent event context as prefix.
+
+| `runningTime`
+| How long the event has been running. For child events, this time refers to the execution of this child context. The format is “mm:ss”.
+
+| `eventContextState`
+a|
+* `EXECUTING`: Event is being executing by the flow or executable component, or has finished but the response is still being processed.
+* `RESPONSE_PROCESSED`: Event execution is complete and the response is handled.
+* `COMPLETE`: Same as `RESPONSE_PROCESSED`, and all child events are `RESPONSE_PROCESSED`.
+* `TERMINATED`: After `COMPLETE`, and all completion callbacks of the context execute.
+
+| `flowStack` 
+a| `flowStack` is composed by zero-to-many lines, each with this format.
+[source,xml]
 ----
-./upgrade-tool
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-Missing required subcommand
-Usage: upgrade-tool [-hV] [COMMAND]
-Try 'upgrade-tool --help' for more information.
+at [componentId]@[componentLocation]([muleFileName]:[muleFileLineNumber]) [timeInLocation] ms
 ----
 
-==== Cause
+| `flowStack.componentId`
+| Identifier of the component (for example, `http:request`).
 
-This error indicates that the specified subcommand is either unknown or missing. The only supported subcommands are `upgrade`, `rollback`, or `status`.
+| `flowStack.componentLocation`
+| Unique identifier of a component within a Mule application. The first part is the flow or policy name, followed by the index and chains where the component is nested.
 
-==== Solution
+| `flowStack.muleFileName`
+| Name of the Mule config file where the component is located.
 
-Ensure you are running the `upgrade-tool` command and specifying any of the supported subcommands: `upgrade`, `rollback`, or `status`.
+| `flowStack.muleFileLineNumber`
+| Line number in the Mule configuration file where the component is located.
 
-The `-h` or `--help` options enable you to get additional details for a certain subcommand, for example:
+| `flowStack.timeInLocation`
+| Duration in milliseconds the event spends at the `flowStack` entry.
+|===
 
+[[diaf-schedulers]]
+=== Schedulers
 
-----
-$ ./upgrade-tool rollback --help
-----
+This section shows the status and metrics of each scheduler. For Mule runtime instances with multiple deplyed applications, entries are grouped by application.
 
-=== Missing Required Option
+[cols="1,3", options="header"]
+|===
+| Field | Description
 
-----
-./upgrade-tool upgrade
+| `schedulerName`
+| Name assigned to the scheduler when created, showing where in the code it happened.
 
-Mule Runtime Upgrade Tool
-─────────────────────────
+| `threadType`
+a| Type of tasks the scheduler runs:
 
-Missing required option: '--new-mule-distro=<newMuleDistro>'
-Usage: upgrade-tool upgrade [-dfh] -n=<newMuleDistro> [-o=<oldMuleDistro>]
-Try 'upgrade-tool upgrade --help' for more information.
-----
+* `IO`: A task that spends most of its execution waiting for I/O operations to complete.
+* `CPU_INTENSIVE`: A task that runs longer than 10 milliseconds, with less than 20% of time blocked.
+* `CPU_LIGHT`: A task that never blocks and runs is less than 10 milliseconds.
+* `CUSTOM`: Threads that aren't managed by Mule runtime or shared between schedulers. Used when a thread pool needs exclusive use (for example, NIO selectors).
 
-==== Cause
+| `shutdown`
+| A shutdown scheduler doesn't accept new tasks. Tasks still running are allowed a graceful period to complete.
 
-This error indicates that the chosen subcommand needs more arguments, for example, when upgrading, the argument  `--new-mule-distro` is required.
+| `terminated`
+| A terminated scheduler is shut down and all in progress tasks are completed or forcefully terminated after a graceful shutdown period.
 
-==== Solution
+| `activeTasks`
+| Number of tasks currently executing by the scheduler.
 
-Run the following command to get information about which arguments are required for a specific subcommand:
+| `queuedTasks`
+| Number of tasks waiting in a queue. Not shown if there's no queue, the queue size can't be queried, or no tasks are queued.
 
-----
-./upgrade-tool upgrade --help
-----
+| `rejections`
+| Number of tasks rejected because the scheduler is at capacity. Shows rejections in the last 1, 5, 15, and 601 minutes. If there aren't any in those intervals, the alert isn't shown.
 
-After running the command, the tool outputs additional information:
+| `throttles`
+| Number of tasks throttled because the scheduler is at capacity. Shows throttles in the last 1, 5, 15, and 601 minutes. If there aren't any in those intervals, the alert isn't shown.
+|===
 
-----
-Mule Runtime Upgrade Tool
-─────────────────────────
+== Technical Considerations
 
-Usage: upgrade-tool upgrade [-dfh] -n=<newMuleDistro> [-o=<oldMuleDistro>]
-Upgrades a Mule Runtime to a newer version
-  -d, --dry-run   Simulate upgrade process without performing any permanent
-                    changes to the current Mule Runtime Distribution.
-  -f, --force     Perform all the destructive operations like overwriting the
-                    backup or removing the applied patches without user
-                    confirmation
-  -h, --help      Display this help message
-  -n, --new-mule-distro=<newMuleDistro>
-                  File path of the newer Mule Runtime distribution used for the
-                    upgrade
-  -o, --old-mule-distro=<oldMuleDistro>
-                  File path of Mule Runtime distribution to upgrade
-----
+* DIAF provides investigation hints. Check the logs for complete details.  
+* Heap dumps may contain sensitive data. Enable `--support` only in secure environments.  
+* In Mule runtime instances with multiple applications, DIAF sections are grouped by application.  
 
-The `Usage:` line specifies which options and arguments are optional by enclosing them in square brackets (`[`,`]`). Options and arguments without square brackets are mandatory.
+== Best Practices
 
-=== No Space Left on Device
-
-----
-$ ./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process...
-INFO: Upgrading distribution at path [/opt/mule-enterprise-standalone-4.4.0-20211026] with version: [4.4.0-20211104] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211104] with version [4.4.0-20211104] ...
-ERROR: Version of new Mule distribution 4.4.0-20211104 should be newer than old Mule distribution: 4.4.0-20211104
-ERROR: There's not enough disk space for performing the upgrade.
-ERROR: No space left on device
-No space left on device
-----
-
-==== Cause
-
-This error indicates that there is no available disk space to run the upgrade.
-
-==== Solution
-
-The tool requires at least 2 GB of space available in the file system in which the Mule instance is running. Ensure that your system has
-enough disk space available and that any other requirements are met.
-
-On Linux environments, use the `df` command to check available disk space:
-
-----
-$ df -h /opt
-Filesystem              Size  Used Avail Use% Mounted on
-/dev/mapper/vg-opt      419G  205G  193G  52% /opt
-----
-
-=== Version Should Be Newer
-
-----
-./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process...
-INFO: Upgrading distribution at path [/opt/mule-enterprise-standalone-4.4.0-20211026] with version: [4.4.0-20211104] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211104] with version [4.4.0-20211104] ...
-ERROR: Version of new Mule distribution 4.4.0-20211104 should be newer than old Mule distribution: 4.4.0-20211104
-----
-
-==== Cause
-
-This error occurs when the upgrade command specifies a new Mule distribution that is in the same version as the current Mule instance.
-
-==== Solution
-
-Verify that the downloaded Mule distribution is in a later version than your current Mule instance. If you continue to receive this error message during the upgrade, it means that the current Mule instance is already updated or running the latest available version.
-
-=== Missing Reading Permissions
-
-----
-./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process...
-INFO: Upgrading distribution at path [/opt/mule-enterprise-standalone-4.4.0-20211026] with version: [4.4.0-20211026] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211104] with version [4.4.0-20211104] ...
-ERROR: Error validating required reading permissions under Mule distribution [/tmp/mule-enterprise-standalone-4.4.0-20211104]
-java.nio.file.AccessDeniedException: /tmp/mule-enterprise-standalone-4.4.0-20211104/lib/mule/mule-module-cache-ee-4.4.0-20211104.jar
-[...]
-----
-
-==== Cause
-
-Read permissions in the new Mule distribution are required but not set for the user who is performing the upgrade, so that user cannot read the file referenced in the stack trace.
-
-==== Solution
-
-Obtain read permission for files that the upgrade identifies as unreadable. Contact your system administrator for assistance, if necessary.
-
-=== Missing Writing Permissions
-
-----
-./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process...
-INFO: Upgrading distribution at path [/opt/mule-enterprise-standalone-4.4.0-20211026] with version: [4.4.0-20211026] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211104] with version [4.4.0-20211104] ...
-ERROR: Error validating required writing permissions under Mule distribution [/opt/mule-enterprise-standalone-4.4.0-20211026]
-java.nio.file.AccessDeniedException: /opt/mule-enterprise-standalone-4.4.0-20211026/lib/boot/libwrapper-linux-ppcle-64.so
-[...]
-----
-
-==== Cause
-
-Write permissions in the old Mule distribution are required but not set for the user who is performing the upgrade, so that user cannot write to the file referenced in the stack trace.
-
-==== Solution
-
-Obtain write permission to files that the upgrade tool identifies. Contact your system administrator for assistance, if necessary.
-
-=== Mule Runtime Should Be Stopped
-
-----
-./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process...
-INFO: Upgrading distribution at path [/opt/mule-enterprise-standalone-4.4.0-20211026] with version: [4.4.0-20211026] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211104] with version [4.4.0-20211104] ...
-ERROR: Mule Runtime should be stopped.
-ERROR: Not all preconditions are met to perform the upgrade. Review the log for details.
-Not all preconditions are met to perform the upgrade. Review the log for details.
-----
-
-==== Cause
-
-The upgrade tool detected that Mule is running.
-
-==== Solution
-
-Stop Mule before starting the upgrade process. To check the current status, use the command `${MULE_HOME}/bin/mule status`.
-
-=== Mule Version Isn't Supported for an Upgrade
-
-----
-./upgrade-tool upgrade -n /tmp/mule-enterprise-standalone-4.4.0-20211104
-
-Mule Runtime Upgrade Tool
-─────────────────────────
-
-INFO: Initiating upgrade process... 
-INFO: Upgrading distribution at path [/tmp/mule-enterprise-standalone-4.1.1-20211222] with version: [4.1.1] to distribution at path [/tmp/mule-enterprise-standalone-4.4.0-20211026] with version [4.4.0-20211026] ...
-ERROR: Your Mule version cannot be upgraded to the new one, you need to upgrade to a version greater than 4.1.5, or for versions between 4.1.1 to 4.1.4, then packages released after January 20, 2022.
-ERROR: Not all preconditions are met to perform the upgrade. Review the log for details.
-Not all preconditions are met to perform the upgrade. Review the log for details.
-----
-
-==== Cause
-
-The Mule upgrade tool requires both the current Mule instance and the new Mule instance (`/new-${MULE_HOME_NEW_FOLDER_NAME}`) to be running version 4.1.5 or later.
-
-==== Solution
-
-Perform a manual upgrade to ensure that the current and new Mule instances are in version 4.1.5 or later before attempting to upgrade using the Mule upgrade tool.
-
-[[upgrade_clustered_mule_instances]]
-== Upgrading Clustered Mule Instances
-
-To upgrade clustered Mule instances, use the Mule upgrade tool to automate the upgrade process of your local Mule instances by manually upgrading each node.
-
-=== Before You Begin
-
-Before starting your upgrade, ensure that you have:
-
-* The new Mule runtime distribution (target version) and the Mule upgrade tool copied to each node that you are upgrading, to reduce downtime.
-+
-include::partial$upgrade-tool.adoc[tag=BeforeYouBegin]
-
-=== Upgrade or Update Mule
-
-include::partial$upgrade-tool.adoc[tag=UpgradeOrUpdateMule]
-
-Note that every node must be upgraded or updated to the same Mule runtime version to work.
-
-=== Roll Back an Upgrade or Update
-
-include::partial$upgrade-tool.adoc[tag=RollBackUpgradeOrUpdate]
-
-Note that every node must be rolled back to the same Mule runtime version to work.
-
-== See Also
-
-* xref:release-notes::mule-runtime/upgrade-update-mule.adoc[Mule Upgrades and Patch Updates]
+* Use DIAF for initial troubleshooting before collecting heap or thread dumps manually.  
+* Correlate events in the event dump section with logs by using the `eventId` for deeper analysis. 
+* Collect schedule diagnostics during maintenance windows in production environments.
