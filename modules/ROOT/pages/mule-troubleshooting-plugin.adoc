@@ -3,32 +3,35 @@ ifndef::env-site,env-github[]
 include::
 endif::[]
 
-Use the Mule Troubleshooting plugin to generate structured diagnostic information, simplify troubleshooting, and provide consistent data for Mule runtime support.  
+Use the Mule Troubleshooting plugin to generate structured diagnostic information, simplify troubleshooting, and provide consistent data for Mule runtime support.
 
-The Mule Troubleshooting plugin provides a unified way to collect diagnostic data from Mule runtime environments. It generates a structured diagnostic archive called the Diagnostic Information Analysis File (DIAF), which consolidates Mule runtime information, application metrics, and system data into a single, standardized output.  
+The Mule Troubleshooting plugin provides a unified way to collect diagnostic data from Mule runtime environments. It generates a structured diagnostic archive called the Diagnostic Information Analysis File (DIAF), which consolidates Mule runtime information, application metrics, and system data into a single, standardized output.
 
 This Java-based plugin provides an extensible, environment-agnostic solution that simplifies troubleshooting for Mule runtime engineers, MuleSoft Support teams, customers running self-service diagnostics, and AI-assisted analysis.
 
 == Before You Begin
 
-Before using the plugin, make sure that you have the following prerequisites:
+Before using the plugin, make sure that you have these prerequisites:
 
-* Mule runtime distribution starting with 4.10, with patches available for 4.6 and 4.9.
+* Supported Mule runtime distributions include version 4.10 and later, or LTS versions 4.9 (with patch 4.9.10 or later) and 4.6 (with patch 4.6.23 or later).
 * Java 8 or later, matching the Mule runtime version requirements.
-* Access to `$MULE_HOME`. The CLI script `diag` automatically locates the Mule home directory.
+* Access to the `$MULE_HOME` directory. The CLI script `diag` automatically locates the Mule home directory.
 
-The plugin works out-of-the-box in all deployment models (Standalone, CloudHub, CloudHub 2.0, Runtime Fabric) without installing additional dependencies.
+The plugin works out-of-the-box in the Standalone and CloudHub deployment models without installing additional dependencies.
 
 == Using the Mule Troubleshooting Plugin
 
-Run the following command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, this creates a ZIP file named `mule_dump_[timestamp].zip`.
-Use the `./diag --support` command to generate a heap dump. The Mule dump is saved in the `logs` directory by default, or use the `./diag --output` command to save the dump to a different path.
+Run this command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, the tool saves the files unzipped in the `logs` directory of the distribution.
+
+Use the `./diag --extended` command to generate a heap dump. Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create a ZIP file at that path containing all output files.
+
+On Windows, run `diag.bat`. The `--stdout` option isn't supported.
 
 The plugin's help output lists the available commands and options.
 
 [source,bash]
 ----
-➜  mule-enterprise-standalone-4.6.21-SNAPSHOT ./tools/diag help
+➜  mule-enterprise-standalone-4.6.23 ./tools/diag help
 Mule Troubleshooting Tool
 =========================
 
@@ -42,13 +45,13 @@ Commands:
 Global Options:
   --stdout                Output the diagnostic dump to standard output
   --output <path>         Specify custom output directory or file path
-  --support               Enable support mode (includes heap dump)
+  --extended              Enable extended mode (includes heap dump)
   --debug                 Enable debug mode with remote debugging on port 5005
 
 Examples:
   ./diag                          # Generate diagnostic dump to logs directory
   ./diag --stdout                 # Output diagnostic dump to stdout
-  ./diag --support                # Include heap dump in diagnostic
+  ./diag --extended               # Include heap dump in diagnostic
   ./diag --output /tmp/mule.zip   # Save to specific file
   ./diag --output /tmp/           # Save to specific directory
   ./diag <operation-name>         # Execute specific operation
@@ -57,19 +60,19 @@ Output:
   By default, the tool creates a ZIP file containing:
   - mule_dump_<timestamp>.diaf    # Diagnostic information
   - thread_dump_<timestamp>.txt   # Thread dump
-  - heap_dump_<timestamp>.hprof   # Heap dump (if --support is used)
+  - heap_dump_<timestamp>.hprof   # Heap dump (if --extended is used)
 
   The ZIP file is saved to the 'logs' directory by default.
 ----
 
 == Understanding Diagnostic Information Analysis File (DIAF)
 
-The Diagnostic Information Analysis File (DIAF) groups all diagnostic data collected by the Mule Troubleshooting plugin into structured sections. Use this reference to understand the content of each section:
+The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data collected by the Mule Troubleshooting plugin into structured sections. Use this reference to understand the content of each section:
 
 * <<diaf-title>>
 * <<diaf-basic-info>>
 * <<diaf-statistics>>
-* <<diaf-fuse-board>>
+* <<diaf-alerts>>
 * <<diaf-event-dump>>
 * <<diaf-schedulers>>
 
@@ -102,7 +105,7 @@ This section shows details about the environment where the Mule runtime instance
 | Absolute path to `MULE_HOME` for the Mule runtime.
 
 | `mule_base`
-| Absolute path to MULE_BASE for the Mule runtime.
+| Absolute path to `MULE_BASE` for the Mule runtime.
 
 | `mule.*` System Properties
 | All system properties starting with `mule.`, including those defined by DataWeave and API Gateway. Listed with values and sorted alphabetically.
@@ -144,7 +147,7 @@ This section shows details about the environment where the Mule runtime instance
 | Amount of used memory in the JVM.
 
 | `memory.free`
-| Amount of free memory in the JVM.
+| Amount of available memory in the JVM.
 
 | `memory.total`
 | Total amount of memory in the JVM.
@@ -171,7 +174,34 @@ This section shows details about the environment where the Mule runtime instance
 [[diaf-statistics]]
 === Statistics
 
-This section shows detailed statistics information about deployed Mule applications and their performance metrics.
+This section shows detailed statistics information about deployed Mule applications and their performance metrics. Metrics reflect the runtime state since the last start or redeployment. They reset after redeployments and don't capture complete historical data. Note that this information represents a snapshot, or point in time, of the runtime behavior and can differ from the information in the Anypoint Platform usage report, which reflects a period of time.
+
+Set the `mule.enable.statistics` system property to collect General Application Metrics and Flow Statistics.
+
+==== Flow Summary Statistics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Private Flows Declared
+| Total number of private flows declared in the application. A private flow doesn't contain a `MessageSource` and isn't used by an APIkit router.
+
+| Private Flows Active
+| Number of private flows that are currently in a started state.
+
+| Trigger Flows Declared
+| Total number of trigger flows declared in the application. A trigger flow contains a MessageSource.
+
+| Trigger Flows Active
+| Number of trigger flows currently in a started state.
+
+| API Kit Flows Declared
+| Total number of APIkit flows declared in the application. An APIkit router uses an APIkit flow, but the flow doesn't contain a `MessageSource`.
+
+| API Kit Flows Active
+| Number of APIkit flows currently in a started state.
+|===
 
 ==== General Application Metrics
 
@@ -210,31 +240,6 @@ This section shows detailed statistics information about deployed Mule applicati
 | Cumulative time (in milliseconds) spent processing all events.
 |===
 
-==== Flow Summary Statistics
-
-[cols="1,3", options="header"]
-|===
-| Field | Description
-
-| Private Flows Declared
-| Total number of private flows declared in the application. A private flow doesn't contain a `MessageSource` and isn't used by an APIkit router.
-
-| Private Flows Active
-| Number of private flows that are currently in a started state.
-
-| Trigger Flows Declared
-| Total number of trigger flows declared in the application. A trigger flow contains a MessageSource.
-
-| Trigger Flows Active
-| Number of trigger flows currently in a started state.
-
-| API Kit Flows Declared
-| Total number of APIkit flows declared in the application. An APIkit flow is used by an APIkit router but doesn't contain a `MessageSource`.
-
-| API Kit Flows Active
-| Number of APIkit flows currently in a started state.
-|===
-
 ==== Flow Statistics
 
 [cols="1,3", options="header"]
@@ -263,35 +268,35 @@ This section shows detailed statistics information about deployed Mule applicati
 | Average time (in milliseconds) required to process an event.
 |===
 
-[[diaf-fuse-board]]
-=== Fuse Board
+[[diaf-alerts]]
+=== Alerts
 
-This section shows alerts for known Mule runtime issues. The report lists how many times each alert triggers during the last 1, 5, 15, and 60 minutes along with the context of the alert at the time of triggering. Some alerts trigger multiple times with the same context, such as the backpressure alert, so the plugin shows the context once and indicates how many times it happens to avoid flooding the report. Alerts that don't trigger in any of the time intervals aren't included in the report.
+This section shows alerts for known Mule runtime issues. The report lists how many times each alert triggers during the last 1, 5, 15, and 60 minutes along with the context of the alert at the time of triggering. Some alerts, like the backpressure alert, trigger multiple times with the same context, so the plugin shows the context once and indicates how many times it happens to avoid flooding the report. Alerts that don't trigger in any of the time intervals aren't included in the report.
 
 [cols="1,3", options="header"]
 |===
 | Field | Description
 
 | `MULE:UNKNOWN` error raised
-| `MULE:UNKNOWN` errors are generated by the runtime and go unhandled. If such an error raises or appears in the app log, it indicates a bug in the Mule runtime. The context shows the details of the errors catalogued as `MULE:UNKNOWN`.
+| The runtime generated `MULE:UNKNOWN` errors, which go unhandled. If such an error raises or appears in the app log, it indicates an error in the Mule runtime. The context shows the details of the errors categorized as `MULE:UNKNOWN`.
 
-| Reactor discarded event 
-| A discarded event is one that a component explicitly filters in a flow. This effectively cuts the processing of such event, causing the execution to hang. The context shows the correlation ID of each discarded event. 
+| Reactor discarded event
+| A discarded event is one that a component explicitly filters in a flow. This cuts the processing of such an event, causing the execution to hang. The context shows the correlation ID of each discarded event.
 
 | Reactor dropped event
-| A dropped event doesn't properly pass to the following component in a flow through a reactor chain and doesn't complete. Its symptom is that the event is “hanged”. No context is shown for this alert because information is already available in the event dump.
+| A dropped event doesn't pass to the following component in a flow through a reactor chain and doesn't complete. Its symptom is that the event is “hanged”. The alert doesn't show context because the event dump provides the information.
 
 | Reactor dropped error
-| A dropped error doesn't properly pass to the corresponding error handler in a flow through a reactor chain, and so doesn't complete. Its symptom is that the event is “hanged” when an error occurs. The context shows the string representation of each dropped error.
+| A dropped error doesn't pass to the corresponding error handler in a flow through a reactor chain, and so doesn't complete. Its symptom is that the event is “hanged” when an error occurs. The context shows the string representation of each dropped error.
 
 | Not consumed stream
-| A stream that is garbage collected before being completely consumed may provoke leaks on certain conditions (the most common one is connections from a DB connection pool that remain taken until the data is fully read). The context shows the originating location of the components that generated the streams.
+| A stream that is garbage collected before being completely consumed can provoke leaks on certain conditions (the most common one is connections from a DB connection pool that remain taken until the data is fully read). The context shows the originating location of the components that generated the streams.
 
 | Backpressure triggered
-| Backpressure is the mechanism by which incoming events in excess of current capacity are rejected. This happens because of a spike of incoming events or a longer than usual processing time of the flows. A common sign is when backpressure triggers on systems that have a CPU and memory capacity. The context shows the flow or component that exceeded capacity and the reason for backpressure.
+| Backpressure is the mechanism that rejects incoming events that exceed the current capacity. This happens because of a spike of incoming events or a longer than usual processing time of the flows. A common sign is when backpressure triggers on systems that have a CPU and memory capacity. The context shows the flow or component that exceeded capacity and the reason for backpressure.
 
 | XA recovery start error
-| Triggered when recovery of an XA connection fails to start. The context shows the unique name (including the config name) of the connection for which recovery fails.
+| Triggered if recovery of an XA connection fails to start. The context shows the unique name (including the configuration name) of the connection for which recovery fails.
 
 | Async logger ringbuffer full
 | When a log appender writes logs slower than the log entries are generated, the logger ringbuffer fills up. When full, threads attempting to log either wait for space in the ringbuffer or log synchronously, depending on the configuration. In either case, a thread that shouldn't block or wait does so, causing performance issues in the Mule runtime. No context is available for this alert because it always means the same, the buffer is full.
@@ -324,8 +329,8 @@ a|
 * `COMPLETE`: Same as `RESPONSE_PROCESSED`, and all child events are `RESPONSE_PROCESSED`.
 * `TERMINATED`: After `COMPLETE`, and all completion callbacks of the context execute.
 
-| `flowStack` 
-a| `flowStack` is composed by zero-to-many lines, each with this format.
+| `flowStack`
+a| `flowStack` contains zero-to-many lines, each with this format.
 [source,xml]
 ----
 at [componentId]@[componentLocation]([muleFileName]:[muleFileLineNumber]) [timeInLocation] ms
@@ -335,13 +340,13 @@ at [componentId]@[componentLocation]([muleFileName]:[muleFileLineNumber]) [timeI
 | Identifier of the component (for example, `http:request`).
 
 | `flowStack.componentLocation`
-| Unique identifier of a component within a Mule application. The first part is the flow or policy name, followed by the index and chains where the component is nested.
+| Unique identifier of a component within a Mule application. The first part is the flow or policy name, followed by the index and chains that nests the component.
 
 | `flowStack.muleFileName`
-| Name of the Mule config file where the component is located.
+| Name of the Mule configuration file that contains the component.
 
 | `flowStack.muleFileLineNumber`
-| Line number in the Mule configuration file where the component is located.
+| Line number in the Mule configuration file that contains the component.
 
 | `flowStack.timeInLocation`
 | Duration in milliseconds the event spends at the `flowStack` entry.
@@ -350,7 +355,7 @@ at [componentId]@[componentLocation]([muleFileName]:[muleFileLineNumber]) [timeI
 [[diaf-schedulers]]
 === Schedulers
 
-This section shows the status and metrics of each scheduler. For Mule runtime instances with multiple deployed applications, entries are grouped by application.
+This section shows the status and metrics of schedulers provided by the scheduler service, which the Mule runtime manages internally, not the xref:scheduler-concept.adoc[source components] themselves. For Mule runtime instances with multiple deployed applications, entries are grouped by application.
 
 [cols="1,3", options="header"]
 |===
@@ -365,7 +370,7 @@ a| Type of tasks the scheduler runs:
 * `IO`: A task that spends most of its execution waiting for I/O operations to complete.
 * `CPU_INTENSIVE`: A task that runs longer than 10 milliseconds, with less than 20% of time blocked.
 * `CPU_LIGHT`: A task that never blocks and runs is less than 10 milliseconds.
-* `CUSTOM`: Threads that aren't managed by Mule runtime or shared between schedulers. Used when a thread pool needs exclusive use (for example, NIO selectors).
+* `CUSTOM`: Threads that aren't managed by Mule runtime or shared among schedulers. Used when a thread pool needs exclusive use (for example, NIO selectors).
 
 | `shutdown`
 | A shutdown scheduler doesn't accept new tasks. Tasks still running are allowed a graceful period to complete.
@@ -388,12 +393,13 @@ a| Type of tasks the scheduler runs:
 
 == Technical Considerations
 
-* DIAF provides investigation hints. Check the logs for complete details.  
-* Heap dumps may contain sensitive data. Enable `--support` only in secure environments.  
-* In Mule runtime instances with multiple applications, DIAF sections are grouped by application.  
+* DIAF provides investigation hints. Check the logs for complete details.
+* Heap dumps can contain sensitive data. Enable the `--extended` option only in secure environments.
+* In Mule runtime instances with multiple applications, DIAF sections are grouped by application.
 
 == Best Practices
 
-* Use DIAF for initial troubleshooting before collecting heap or thread dumps manually.  
-* Correlate events in the event dump section with logs by using the `eventId` for deeper analysis. 
+* Use DIAF for initial troubleshooting before collecting heap or thread dumps manually.
+* Correlate events in the event dump section with logs by using the `eventId` for deeper analysis.
 * Collect scheduled diagnostics during maintenance windows in production environments.
+* To verify if all the hosts defined in your deployable artifacts (domains, applications, policies) support TLS 1.2 and 1.3 connectivity, enable the `mule.extractConnectionData.enable` system property. On UNIX, the tool generates `<ORIGINAL_CSV_NAME>_tls_results.csv` along with DIAF output. Enable the `mule.extractConnectionData.silentErrors` system property to log errors without failing deployment. Not available for Windows.
