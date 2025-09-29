@@ -1,0 +1,362 @@
+= Mule Troubleshooting Plugin
+ifndef::env-site,env-github[]
+include::
+endif::[]
+
+Use the Mule Troubleshooting plugin to generate structured diagnostic information, simplify troubleshooting, and provide consistent data for Mule runtime support.
+
+The Mule Troubleshooting plugin provides a unified way to collect diagnostic data from Mule runtime environments. It generates a structured diagnostic archive called the Diagnostic Information Analysis File (DIAF), which consolidates Mule runtime information, application metrics, and system data into a single, standardized output.
+
+This Java-based plugin provides an extensible, environment-agnostic solution that simplifies troubleshooting for Mule runtime engineers, MuleSoft Support teams, customers running self-service diagnostics, and AI-assisted analysis.
+
+== Before You Begin
+
+Before using the plugin, make sure that you have these prerequisites:
+
+* Supported Mule runtime distributions include version 4.10 and later, or LTS versions 4.9 (with patch 4.9.10 or later) and 4.6 (with patch 4.6.23 or later).
+* Java 8 or later, matching the Mule runtime version requirements.
+* Access to the `$MULE_HOME` directory. The CLI script `diag` automatically locates the Mule home directory.
+
+The plugin works out-of-the-box in the Standalone and CloudHub deployment models without installing additional dependencies.
+
+== Using the Mule Troubleshooting Plugin
+
+Run this command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, the tool saves the files unzipped in the `logs` directory of the distribution.
+
+Use the `./diag --extended` command to generate a heap dump. Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create a ZIP file at that path containing all output files.
+
+On Windows, run `diag.bat`. The `--stdout` option isn't supported.
+
+The plugin's help output lists the available commands and options.
+
+[source,bash]
+----
+➜  mule-enterprise-standalone-4.6.23 ./tools/diag help
+Mule Troubleshooting Tool
+=========================
+
+Usage: ./diag [options] [command] [command-options]
+
+Commands:
+  diaf                    Generate a complete Mule diagnostic dump (default)
+  help                    Show this help message
+  <operation-name>        Execute a specific troubleshooting operation
+
+Global Options:
+  --stdout                Output the diagnostic dump to standard output
+  --output <path>         Specify custom output directory or file path
+  --extended              Enable extended mode (includes heap dump)
+  --debug                 Enable debug mode with remote debugging on port 5005
+
+Examples:
+  ./diag                          # Generate diagnostic dump to logs directory
+  ./diag --stdout                 # Output diagnostic dump to stdout
+  ./diag --extended               # Include heap dump in diagnostic
+  ./diag --output /tmp/mule.zip   # Save to specific file
+  ./diag --output /tmp/           # Save to specific directory
+  ./diag <operation-name>         # Execute specific operation
+
+Output:
+  By default, the tool creates a ZIP file containing:
+  - mule_dump_<timestamp>.diaf    # Diagnostic information
+  - thread_dump_<timestamp>.txt   # Thread dump
+  - heap_dump_<timestamp>.hprof   # Heap dump (if --extended is used)
+
+  The ZIP file is saved to the 'logs' directory by default.
+----
+
+== Understanding Diagnostic Information Analysis File (DIAF)
+
+The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data collected by the Mule Troubleshooting plugin into structured sections. Use this reference to understand the content of each section:
+
+* <<diaf-title>>
+* <<diaf-basic-info>>
+* <<diaf-statistics>>
+* <<diaf-event-dump>>
+* <<diaf-schedulers>>
+
+[[diaf-title]]
+=== Title
+
+This section shows the report generation timestamp.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Report Generation Timestamp
+| The report generation time, expressed in the local time zone.
+|===
+
+[[diaf-basic-info]]
+=== Basic Information
+
+This section shows details about the environment where the Mule runtime instance is running.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Mule Product/version
+| The product (CE/EE), version, and build number of the Mule runtime. Formatted as `[productName] [version] (build [buildNumber])`.
+
+| `mule_home`
+| Absolute path to `MULE_HOME` for the Mule runtime.
+
+| `mule_base`
+| Absolute path to `MULE_BASE` for the Mule runtime.
+
+| `mule.*` System Properties
+| All system properties starting with `mule.`, including those defined by DataWeave and API Gateway. Listed with values and sorted alphabetically.
+
+| Java Version
+| Version of the JVM running the Mule runtime.
+
+| Java Vendor
+| Vendor of the JVM running the Mule runtime.
+
+| Java VM Name
+| Full name of the JVM running the Mule runtime.
+
+| `JAVA_HOME`
+| Location of the JVM running the Mule runtime.
+
+| OS Name
+| Name of the OS running the Mule runtime.
+
+| OS Version
+| Version of the OS running the Mule runtime.
+
+| OS Arch
+| Architecture of the OS (for example, `amd64`, `aarch`).
+
+| Running Time
+| The total time the Mule runtime has been running.
+
+| PID
+| Process ID of the JVM running the Mule runtime.
+
+| Report Millis Time
+| Report generation time in milliseconds since epoch (`System.currentTimeMillis`).
+
+| Report Nano Time
+| Report generation time in nanoseconds (`System.nanoTime`).
+
+| `memory.used`
+| Amount of used memory in the JVM.
+
+| `memory.free`
+| Amount of available memory in the JVM.
+
+| `memory.total`
+| Total amount of memory in the JVM.
+
+| `memory.max`
+| Maximum amount of memory the JVM attempts to use.
+
+| `memory.used/total`
+| Percentage of used memory compared to the total allocated memory.
+
+| `memory.used/max`
+| Percentage of used memory compared to the maximum available memory.
+
+| `load.process`
+| Percentage of recent CPU usage for the JVM process; negative value if unavailable.
+
+| `load.system`
+| Percentage of recent CPU usage for the whole system; negative value if unavailable.
+
+| `load.systemAverage`
+| System load average for the last minute; negative value if unavailable.
+|===
+
+[[diaf-statistics]]
+=== Statistics
+
+This section shows detailed statistics information about deployed Mule applications and their performance metrics. Metrics reflect the runtime state since the last start or redeployment. They reset after redeployments and don't capture complete historical data. Note that this information represents a snapshot, or point in time, of the runtime behavior and can differ from the information in the Anypoint Platform usage report, which reflects a period of time.
+
+Set the `mule.enable.statistics` system property to collect General Application Metrics and Flow Statistics.
+
+==== Flow Summary Statistics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Private Flows Declared
+| Total number of private flows declared in the application. A private flow doesn't contain a `MessageSource` and isn't used by an APIkit router.
+
+| Private Flows Active
+| Number of private flows that are currently in a started state.
+
+| Trigger Flows Declared
+| Total number of trigger flows declared in the application. A trigger flow contains a MessageSource.
+
+| Trigger Flows Active
+| Number of trigger flows currently in a started state.
+
+| API Kit Flows Declared
+| Total number of APIkit flows declared in the application. An APIkit router uses an APIkit flow, but the flow doesn't contain a `MessageSource`.
+
+| API Kit Flows Active
+| Number of APIkit flows currently in a started state.
+|===
+
+==== General Application Metrics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Events Received
+| Number of events received by the application or flow.
+
+| Events Processed
+| Number of events processed by the application or flow.
+
+| Messages Dispatched
+| Total number of messages dispatched from message sources within the application.
+
+| Execution Errors
+| Number of execution errors encountered.
+
+| Fatal Errors
+| Number of fatal errors that cause the application to fail or stop processing.
+
+| Connection Errors
+| Number of connection-related errors that occur.
+
+| Average Processing Time
+| Average time (in milliseconds) required to process an event.
+
+| Min Processing Time
+| Minimum time (in milliseconds) required to process an event.
+
+| Max Processing Time
+| Maximum time (in milliseconds) required to process an event.
+
+| Total Processing Time
+| Cumulative time (in milliseconds) spent processing all events.
+|===
+
+==== Flow Statistics
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Events Received
+| Total number of events received by the application since it started.
+
+| Events Processed
+| Total number of events successfully processed by the application.
+
+| Messages Dispatched
+| Total number of messages dispatched from message sources within the application.
+
+| Execution Errors
+| Number of execution errors that occur during event processing.
+
+| Fatal Errors
+| Number of fatal errors that cause the application to fail or stop processing.
+
+| Connection Errors
+| Number of connection-related errors that occur.
+
+| Average Processing Time
+| Average time (in milliseconds) required to process an event.
+|===
+
+[[diaf-event-dump]]
+=== Event Dump
+
+This section shows a hierarchical listing of in-flight events. For each event hierarchy executing through a flow in Mule has at least one entry in the report. For each child context for the event, a nested entry appears, sorted in a stack order: children on top, parents on bottom. Dropped events aren't flagged.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `eventId`
+| A unique identifier for the event. For child events, it has the ID of the parent event context as prefix.
+
+| `runningTime`
+| How long the event has been running. For child events, this time refers to the execution of this child context. The format is “mm:ss”.
+
+| `eventContextState`
+a|
+* `EXECUTING`: Event is being executing by the flow or executable component, or has finished but the response is still being processed.
+* `RESPONSE_PROCESSED`: Event execution is complete and the response is handled.
+* `COMPLETE`: Same as `RESPONSE_PROCESSED`, and all child events are `RESPONSE_PROCESSED`.
+* `TERMINATED`: After `COMPLETE`, and all completion callbacks of the context execute.
+
+| `flowStack`
+a| `flowStack` contains zero-to-many lines, each with this format.
+[source,xml]
+----
+at [componentId]@[componentLocation]([muleFileName]:[muleFileLineNumber]) [timeInLocation] ms
+----
+
+| `flowStack.componentId`
+| Identifier of the component (for example, `http:request`).
+
+| `flowStack.componentLocation`
+| Unique identifier of a component within a Mule application. The first part is the flow or policy name, followed by the index and chains that nests the component.
+
+| `flowStack.muleFileName`
+| Name of the Mule configuration file that contains the component.
+
+| `flowStack.muleFileLineNumber`
+| Line number in the Mule configuration file that contains the component.
+
+| `flowStack.timeInLocation`
+| Duration in milliseconds the event spends at the `flowStack` entry.
+|===
+
+[[diaf-schedulers]]
+=== Schedulers
+
+This section shows the status and metrics of schedulers provided by the scheduler service, which the Mule runtime manages internally, not the xref:scheduler-concept.adoc[source components] themselves. For Mule runtime instances with multiple deployed applications, entries are grouped by application.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `schedulerName`
+| Name assigned to the scheduler when created, showing where in the code it happened.
+
+| `threadType`
+a| Type of tasks the scheduler runs:
+
+* `IO`: A task that spends most of its execution waiting for I/O operations to complete.
+* `CPU_INTENSIVE`: A task that runs longer than 10 milliseconds, with less than 20% of time blocked.
+* `CPU_LIGHT`: A task that never blocks and runs is less than 10 milliseconds.
+* `CUSTOM`: Threads that aren't managed by Mule runtime or shared among schedulers. Used when a thread pool needs exclusive use (for example, NIO selectors).
+
+| `shutdown`
+| A shutdown scheduler doesn't accept new tasks. Tasks still running are allowed a graceful period to complete.
+
+| `terminated`
+| A terminated scheduler is shut down and all in progress tasks are completed or forcefully terminated after a graceful shutdown period.
+
+| `activeTasks`
+| Number of tasks currently executing by the scheduler.
+
+| `queuedTasks`
+| Number of tasks waiting in a queue. Not shown if there's no queue, the queue size can't be queried, or no tasks are queued.
+
+| `rejections`
+| Number of tasks rejected because the scheduler is at capacity. Shows rejections in the last 1, 5, 15, and 60 minutes. If there aren't any in those intervals, the alert isn't shown.
+
+| `throttles`
+| Number of tasks throttled because the scheduler is at capacity. Shows throttles in the last 1, 5, 15, and 60 minutes. If there aren't any in those intervals, the alert isn't shown.
+|===
+
+== Considerations
+
+* DIAF provides investigation hints. Check the logs for complete details.
+* Heap dumps can contain sensitive data. Enable the `--extended` option only in secure environments.
+* In Mule runtime instances with multiple applications, DIAF sections are grouped by application.
+* Use DIAF for initial troubleshooting before collecting heap or thread dumps manually.
+* Correlate events in the event dump section with logs by using the `eventId` for deeper analysis.
+* Collect scheduled diagnostics during maintenance windows in production environments.
+* To verify if all the hosts defined in your deployable artifacts (domains, applications, policies) support TLS 1.2 and 1.3 connectivity, enable the `mule.extractConnectionData.enable` system property. On UNIX, the tool generates `<ORIGINAL_CSV_NAME>_tls_results.csv` along with DIAF output. Enable the `mule.extractConnectionData.silentErrors` system property to log errors without failing deployment. Not available for Windows.
