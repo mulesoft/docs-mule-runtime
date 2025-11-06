@@ -22,11 +22,11 @@ If you're new to distributed tracing and OpenTelemetry, we recommend starting wi
 Before starting with the observability standard, you must have:
 
 * For OpenTelemetry application tracing, Mule runtime 4.6.0 or later.
-* For distributed tracing, Anypoint Connector for HTTP (HTTP Connector) 1.8 or later.
+* For OpenTelemetry tracing context propagation, Anypoint Connector for HTTP (HTTP Connector) 1.8 or later.
 * For OpenTelemetry logs and OpenTelemetry direct export, Mule runtime 4.10.0 version or later.
 * Telemetry exporter or Mule runtime direct export configured.
 
-== Tracing a Mule App
+== Tracing a Mule application
 
 Mule leverages OpenTelemetry to provide:
 
@@ -41,7 +41,7 @@ For example, if an HTTP Listener receives https://www.w3.org/TR/trace-context/[W
 
 The span context format supported for receiving and propagating the context is the https://www.w3.org/TR/trace-context/[W3C Trace Context] format.
 
-=== Mule Span Data
+=== Mule span data
 
 A trace is a sequence of spans representing a complete operation in a distributed system. Spans can be nested and represent a unit of work or operation. Each span includes: 
 
@@ -81,7 +81,7 @@ Next, it displays the Batch Aggregator span, along with the For Each component a
 Then, the trace displays the other two batch steps and their respective components. 
 Finally, it shows the Batch On Complete span, along with the Logger component that appears after the Batch Job in the flow.
 
-=== Example of Distributed Tracing Feature
+=== Example of distributed tracing context propagation Feature
 
 In this example, one Mule app sends a request to another Mule app:
 
@@ -91,7 +91,7 @@ image::otel-mule-app2.png["A flow showing the process flow for an asynchronous a
 
 Distributed tracing captures both flows as part of the same trace because OpenTelemetry is instrumented in Mule and HTTP Connector.
 
-=== Errors in Tracing
+=== Mule Errors in Tracing
 
 If the execution of the unit of work represented by a span produces an error, the span's status is set to `Error`. MuleSoft follows the semantic convention defined by OpenTelemetry that adds one or more `exception` events to the span:
 
@@ -146,10 +146,11 @@ Additional attributes for an HTTP Request associated flow span:
 
 == OpenTelemetry Logs
 
-The Mule runtime implements its logging by leveraging Log4j, where appenders can be configured in order to send logging to different locations: a file, a remote server, etc. Logging levels can also be configured, impacting which log entries will actually be sent.
+The Mule runtime implements its xref:logging-in-mule.adoc[logging] by leveraging Log4j, where appenders and logging levels can be configured in order to send the logs to different locations.
 
-The OpenTelemetry logging export is implemented along with Log4j logging. This means that users can configure the OpenTelemetry logs export and Log4j appenders at the same time.
-Additionally, logging levels must still be configured as part of the Log4j logging configuration and will also apply to the OpenTelemetry logging exporter.
+The OpenTelemetry logging export is implemented along with Log4j logging. This means that users can configure the OpenTelemetry logging export but also Log4j logging, at the same time. This architecture allows flexibility and a does not force a total transition between Open Telemetry and Log4j.
+
+Additionally, logging levels must still be configured as part of the Log4j logging configuration but will also apply to the OpenTelemetry logging exporter.
 
 Exported logs will include application, domain and Mule runtime server logs.
 
@@ -251,12 +252,17 @@ Tracing export setup properties:
 |===
 | Property | Default value | Description
 | mule.openTelemetry.tracer.exporter.enabled | false | Set to true to enable the Open Telemetry tracing exporter.
+| mule.openTelemetry.tracer.exporter.endpoint | http://localhost:4317 for GRPC, http://localhost:4318/v1/traces for HTTP | Endpoint where the traces will be exported to.
+| mule.openTelemetry.tracer.exporter.type | GRPC | Whether to export using the GRPC or the HTTP transport. Available values: GRPC, HTTP.
+| mule.openTelemetry.tracer.exporter.headers | Empty list | List of headers that will be included on every export call made to the export endpoint.
+|===
+
+Tracing export tuning properties:
+
+|===
 | mule.openTelemetry.tracer.level | MONITORING |  Defines the mule runtime tracing level. Available values: OVERVIEW, MONITORING, DEBUG.
 | mule.openTelemetry.tracer.exporter.sampler | parentbased_traceidratio | Head sampling strategy to be used. Available values: always_on, always_off, traceidratio, parentbased_always_off, parentbased_traceidratio.
 | mule.openTelemetry.tracer.exporter.sampler.arg | 0.1 | Argument to be passed to the defined head sampling strategy. For example, it will define the sampling percentage for the traceidratio strategies.
-| mule.openTelemetry.tracer.exporter.type | GRPC | Whether to export using the GRPC or the HTTP transport. Available values: GRPC, HTTP.
-| mule.openTelemetry.tracer.exporter.endpoint | http://localhost:4317 for GRPC, http://localhost:4318/v1/traces for HTTP | Endpoint where the traces will be exported to.
-| mule.openTelemetry.tracer.exporter.headers | Empty list | List of headers that will be included on every export call made to the export endpoint.
 | mule.openTelemetry.tracer.exporter.timeout | 10 Seconds | Timeout that will be used for every export call made to the export endpoint.
 | mule.openTelemetry.tracer.exporter.tls.enabled | false | True to enable the use of TLS for every export call made to the export endpoint.
 | mule.openTelemetry.tracer.exporter.tls.certFileLocation | - | TLS certificate file path.
@@ -280,9 +286,14 @@ Logging export setup properties:
 |===
 | Property | Default value | Description
 | mule.openTelemetry.logging.exporter.enabled | false | Set to true to enable the OpenTelemetry logging exporter.
-| mule.openTelemetry.logging.exporter.type | GRPC | Whether to export using the GRPC or the HTTP transport. Available values: GRPC, HTTP.
 | mule.openTelemetry.logging.exporter.endpoint | http://localhost:4317 for GRPC, http://localhost:4318/v1/logs for HTTP | Endpoint where the logs will be exported to.
+| mule.openTelemetry.logging.exporter.type | GRPC | Whether to export using the GRPC or the HTTP transport. Available values: GRPC, HTTP.
 | mule.openTelemetry.logging.exporter.headers | Empty list | list of headers that will be included on every export call made to the export endpoint.
+|===
+
+Logging export tuning properties:
+
+|===
 | mule.openTelemetry.logging.exporter.timeout | 10 Seconds | Timeout that will be used for every export call made to the export endpoint.
 | mule.openTelemetry.logging.exporter.compression | none | Compression algorithm that will be used to compress the logging data to be sent on every export call made to the export endpoint. Available values: none, gzip.
 | mule.openTelemetry.logging.exporter.tls.enabled | false | True to enable the use of TLS for every export call made to the export endpoint.
