@@ -23,6 +23,8 @@ com.mulesoft.mule.runtime.module.batch
 
 Avoid using the DEBUG mode in a production environment when processing very large data sets.
 
+NOTE: From 4.11 onwards, the batch error handling relies on BatchError objects instead of exceptions.
+
 [[default_logging]]
 == Logs of Failing Records Inside a Batch Step
 
@@ -39,25 +41,25 @@ The first time the runtime encounters this error, Mule logs the error and produc
 [source,logs]
 ----
 com.mulesoft.mule.runtime.module.batch.internal.DefaultBatchStep:
-Found exception processing record on step 'batchStep1'
+Found error processing record on step 'batchStep1'
 for job instance 'Batch Job Example' of job 'CreateLeadsBatch'.
 
-This is the first record to show this exception on this step
+This is the first record to show this error on this step
 for this job instance. Subsequent records with the same failures
 will not be logged for performance and log readability reasons:
 ----
 +
 Mule logs on a "by step" basis. If another step also raises the same error, the runtime logs it again for that step.
 . When the batch job reaches the On Complete phase, Mule displays an error summary with every error type and the number of occurrences in each batch step. +
-The error summary for a batch job with two batch steps that raised a `batch.exception` type:
+The error summary for a batch job with two batch steps that raised an `APP:FAILURE` error:
 +
 [source,logs]
 ----
 *******************************************************************************
-* - - + Exception Type + - - * - - + Step + - - * - - + Count + - - *
+* - - + Error Type + - - * - - + Step + - - * - - + Count + - - *
 *******************************************************************************
-* com.mulesoft.mule.runtime.module.batch.exception.B * batchStep1 * 10 *
-* com.mulesoft.mule.runtime.module.batch.exception.B * batchStep2 * 9 *
+* APP:FAILURE * batchStep1 * 10 *
+* APP:FAILURE * batchStep2 * 9 *
 *******************************************************************************
 ----
 +
@@ -74,8 +76,21 @@ Mule 4.x includes a set of DataWeave functions that you can use in the context o
 [cols="9a,10a",options="header"]
 |===
 | DataWeave Function | Description
-| `#[Batch::isSuccessfulRecord()]` | A boolean function that returns true if the current record has not thrown exceptions in any prior step.
-| `#[Batch::isFailedRecord()]` | A boolean function that returns true if the current record has thrown exceptions in any prior step.
+| `#[Batch::isSuccessfulRecord()]` | A boolean function that returns true if the current record has not presented errors in any prior step.
+| `#[Batch::isFailedRecord()]` | A boolean function that returns true if the current record has presented errors in any prior step.
+| `#[Batch::failureErrorForStep(String)]` | Receives the name of a step as a String argument. If the current record presented an error on that step, then it returns the actual `BatchError` object. Otherwise it returns null.
+| `#[Batch::getStepErrors()]` | Returns a `Map<String, BatchError>` in which the keys are the name of a batch step in which the current record has failed, and the value is the error itself. +
+If the record hasn’t failed in any step, this Map will be empty but will never be null. Also, the Map contains no entries for steps in which the record hasn’t failed.
+| `#[Batch::getFirstError()]` | Returns the `BatchError` for the very first step in which the current record has failed. If the record hasn’t failed in any step, then it returns null.
+| `#[Batch::getLastError()]` | Returns the `BatchError` for the last step in which the current record has failed. If the record hasn’t failed in any step, then it returns null.
+|===
+
+There are also bindings to work with the old Batch error handling mechanism, which relied in exceptions rather than `BatchError`s. These bindings won't work for apps with Min Mule Version 4.12 and higher.
+
+
+[cols="9a,10a",options="header"]
+|===
+| DataWeave Function | Description
 | `#[Batch::failureExceptionForStep(String)]` | Receives the name of a step as a String argument. If the current record threw exception on that step, then it returns the actual Exception object. Otherwise it returns null
 | `#[Batch::getStepExceptions()]` | Returns a java `Map<String, Exception>` in which the keys are the name of a batch step in which the current record has failed, and the value is the exception itself. +
 If the record hasn’t failed in any step, this Map will be empty but will never be null. Also, the Map contains no entries for steps in which the record hasn’t failed.
@@ -88,18 +103,18 @@ If the record hasn’t failed in any step, this Map will be empty but will never
 Imagine a batch job that polls files containing contact information. +
 In the first step, the batch job aggregates the contacts information and transforms them using the Transform Message component to then being pushed to Salesforce. +
 In the second step, the job transforms the same contacts again to match the data structure of another third-party contacts application  (say, Google Contacts for example) and pushes them to this service using HTTP request. +
-Now, assume that as a third step, you need to be able to write into a JMS dead-letter queue per each record that has failed. To keep it simple, let’s say that the message will be the exception itself. This requirement holds a trick: each record could have failed in both steps, which means that the same record would translate into two JMS messages.
+Now, assume that as a third step, you need to be able to write into a JMS dead-letter queue per each record that has failed. To keep it simple, let’s say that the message will be the error itself. This requirement holds a trick: each record could have failed in both steps, which means that the same record would translate into two JMS messages.
 
 Such an application would look like this:
 
 image::batch-error-handling-faq-f34d5.png["A flow showing a batch process for lead management with detailed steps and error handling in Anypoint Studio"]
 
 Since the goal is to gather failures, it makes sense to configure the `Failures` step with an ONLY_FAILURES filter (see xref:batch-filters-and-batch-aggregator.adoc[] for more details about batch filters). 
-The set-payload processor in this step can be configured to use the `Batch::getStepExceptions()` function.
+The set-payload processor in this step can be configured to use the `Batch::getStepErrors()` function.
 
-image::batch-error-handling-faq-6269e.png["A Set Payload component with a value expression related to batch exceptions in Anypoint Studio"]
+image::batch-error-handling-faq-6269e.png["A Set Payload component with a value expression related to batch errors in Anypoint Studio"]
 
-As stated above, this function returns a map with all errors found in all steps. And since our goal is to send the exceptions through JMS and we don’t care about the steps, we can use a foreach scope to iterate over the map’s values (the errors) and send them through a JMS outbound endpoint:
+As stated above, this function returns a map with all errors found in all steps. And since our goal is to send the errors through JMS and we don’t care about the steps, we can use a foreach scope to iterate over the map’s values (the errors) and send them through a JMS outbound endpoint:
 
 image::batch-error-handling-faq-b822e.png["A For Each component processing error in Anypoint Studio"]
 
