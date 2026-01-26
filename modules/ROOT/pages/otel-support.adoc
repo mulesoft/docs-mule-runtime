@@ -23,8 +23,8 @@ Before starting with the observability standard, you must have:
 
 * For OpenTelemetry application tracing, Mule runtime 4.6.0 or later.
 * For OpenTelemetry tracing context propagation, Anypoint Connector for HTTP (HTTP Connector) 1.8 or later.
-* For OpenTelemetry logs and OpenTelemetry direct export, Mule runtime 4.10.0 or later.
-* Telemetry exporter or Mule runtime direct export configured.
+* For OpenTelemetry logs and OpenTelemetry Direct Telemetry Stream, Mule runtime 4.11.0 or later.
+* Anypoint monitoring Telemetry Exporter or Mule runtime Direct Telemetry Stream configured.
 
 == Tracing a Mule Application
 
@@ -35,7 +35,7 @@ Mule leverages OpenTelemetry to provide:
 Tracing a Mule runtime application allows you to observe its execution while maintaining the mental model of a Mule engineer. Its main objective is to clearly show how the Mule application processes messages, helping you to develop, monitor, and troubleshoot more effectively.
 * Distributed tracing
 +
-Tracing also enables you to track Mule application interactions. When multiple systems and services are involved, distributed tracing tracks application requests as they flow through distributed environments, providing a comprehensive view of the overall execution.
+Tracing also enables you to track Mule application interactions. When multiple systems and services are involved, distributed tracing can track requests as they flow through distributed environments, providing a comprehensive view of the overall execution.
 
 Distributed tracing is achieved via the tracing context propagation. For example, if an HTTP Listener receives https://www.w3.org/TR/trace-context/[W3C Trace Context] headers, the flow span in Mule acquires the client's remote parent span, the span where the HTTP call originated. Mule automatically propagates the current span to the server endpoints when using the HTTP Requester component.
 
@@ -99,11 +99,11 @@ If the execution of the unit of work represented by a span produces an error, th
 * `exception.message`: Mule error message
 * `exception.stacktrace`: Mule flow stack string representation
 
-In this example, when an error is produced, the span corresponding to the Raise Error component shows an error status in the Lightstep platform:
+In this example, when an error is produced, the span corresponding to the Raise Error component will have an `Error` status:
 
 image::otel-errors-in-tracing.png["A flow of a telemetry flow with error handling"]
 
-This status propagates to the parent span, for example, the flow span. A detailed view of the span shows the error status and the exception events.
+Given that the flow does not have error handling in place, the error will be propagated and fail the flow execution causing the `Error` status to also propagate to the flow span. A detailed view of the span will also show the exception events.
 
 === HTTP Conventions
 
@@ -146,11 +146,9 @@ Additional attributes for an HTTP Request associated flow span:
 
 == OpenTelemetry Logs
 
-The Mule runtime implements its xref:logging-in-mule.adoc[logging] by leveraging Log4j, where you can configure appenders and logging levels to send logs to different locations.
+The Mule runtime implements its xref:logging-in-mule.adoc[logging] by leveraging Log4j, where you can configure appenders and logging levels to send logs to different destinations.
 
-The OpenTelemetry logging export is implemented along with Log4j logging. You can configure both OpenTelemetry logging export and Log4j logging at the same time. This flexible architecture doesn't force a full transition between OpenTelemetry and Log4j.
-
-You must still configure logging levels as part of the Log4j logging configuration, and these settings also apply to the OpenTelemetry logging exporter.
+The OpenTelemetry logging export is implemented along with Log4j logging. This means you can configure OpenTelemetry logging export on top of your existing logging setup. This flexible architecture doesn't force a full transition to OpenTelemetry.
 
 Exported logs include application, domain, and Mule runtime server logs.
 
@@ -183,14 +181,14 @@ OpenTelemetry Log Records define fields for the Trace ID and Span ID. When traci
 If you are not exporting OpenTelemetry logs, you can still correlate Log4j logs by configuring the MDC logging.
 Any entry added to the Log4j MDC is added to the OpenTelemetry logs as Log Record attributes, so all MDC data is exported as part of OpenTelemetry logs.
 
-== Direct Export from Mule Runtime
+== Direct Telemetry Stream from Mule Runtime
 
-Starting with Mule runtime 4.10.0, you can configure OpenTelemetry traces and logs outside Anypoint Monitoring.
-This means Mule runtime supports exporting its OpenTelemetry data to a customer-managed OpenTelemetry collector instead of the Anypoint Monitoring OpenTelemetry ingestion pipeline.
+Starting with Mule runtime 4.11.0, you can configure OpenTelemetry traces and logs export outside Anypoint Monitoring.
+This means Mule runtime supports exporting its OpenTelemetry data to a customer-managed OpenTelemetry collector instead of the Anypoint Monitoring OpenTelemetry pipeline.
 
-When using this direct export feature, Anypoint Monitoring OpenTelemetry features aren't available.
+When using this direct telemetry stream feature, Anypoint Monitoring OpenTelemetry features such as Telemetry Exporter aren't available.
 
-=== Recommended Architecture for Direct Export
+=== Recommended Architecture for Direct Telemetry Stream
 
 Mule runtime supports exporting all its telemetry data using the OpenTelemetry (OTLP) protocol and binary/protobuf format. You can configure an endpoint for each signal type (traces and logs), and data will be sent there.
 However, we strongly recommend using a collector because it provides the most flexible and feature-rich architecture for a wide range of use cases and deployment scenarios.
@@ -230,26 +228,49 @@ Collectors include multiple built in metrics and health checks.
 
 A collector can centralize data enrichment and transformation for Mule runtime telemetry and additional non-Mule services.
 
-=== Direct Export Configuration
+=== Direct Telemetry Stream Configuration
 
-Mule runtime ships with predefined configuration templates that allow you to configure both traces and logs.
+Mule runtime ships with predefined configuration templates that allow you to configure both traces and logs export.
 
-Standalone and Hybrid Standalone:
+==== Standalone
 
-You can access and modify the configuration templates as needed. Configuration templates include Java system properties placeholders that you can modify or replace by fixed values if required.
-Providing all the configuration values when using Java System properties placeholders isn't necessary. If a system property isn't defined, the default value of the corresponding configuration entry is used instead.
-Tracing and logs export configurations apply to all the corresponding Mule runtime applications deployed, with no support for individual application configuration.
+Configuration is done via Java system properties.
+Providing all the configuration parameter values isn't necessary. If a system property isn't defined, the default value of the corresponding configuration parameter is used instead.
+Tracing and logging export configurations apply to all the Mule runtime applications deployed, with no support for individual deployment configuration.
 
-RTF, CloudHub, and CloudHub 2.0:
+==== Hybrid Standalone
 
-The Mule runtime configuration templates are managed internally and can't be accessed or modified. Configure these deployments by using Runtime Manager application properties:
+Configuration via Java system properties is still an option, but it is recommended to configure your hybrid instances by using xref:hybrid-standalone::managing-servers.adoc#_configure_server_properties[Runtime Manager hybrid server properties]
 
-* For Runtime Fabric, configure exports by setting xref:runtime-fabric::protect-app-properties.adoc#protect-property-values-in-runtime-manager[protected application properties] only.
-* For CloudHub and CloudHub 2.0, configure exports by setting both secure and non-secure xref:cloudhub-2::ch2-manage-props.adoc#add-application-properties-in-runtime-manager[application properties].
+Additionally https://docs.mulesoft.com/hybrid-standalone/deploying-apps-hybrid-standalone#deployment-configuration[Application level configuration] can be done via application deployment properties, and is limited to a subset of the configuration:
 
-=== Direct Export for Traces Configuration
+Service identification
 
-Tracing export setup properties include:
+* mule.openTelemetry.tracer.exporter.resource.service.name
+* mule.openTelemetry.tracer.exporter.resource.service.namespace
+
+Sampling
+
+* mule.openTelemetry.tracer.exporter.sampler.type
+* mule.openTelemetry.tracer.exporter.sampler.arg
+
+TLS
+
+* mule.openTelemetry.tracer.exporter.tls.certificatesStrategy
+* mule.openTelemetry.tracer.exporter.tls.certFileLocation
+* mule.openTelemetry.tracer.exporter.tls.keyFileLocation
+* mule.openTelemetry.tracer.exporter.tls.caFileLocation
+* mule.openTelemetry.tracer.exporter.tls.certBase64
+* mule.openTelemetry.tracer.exporter.tls.keyBase64
+* mule.openTelemetry.tracer.exporter.tls.caBase64
+
+==== CloudHub, CloudHub 2.0 and Runtime Fabric
+
+Configure these deployments by using xref:configuring-properties.adoc#_setting_properties_values_in_runtime_manager[Runtime Manager application properties].
+
+=== Direct Telemetry Stream for Traces Configuration
+
+Tracing export setup properties:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -260,7 +281,7 @@ Tracing export setup properties include:
 | `mule.openTelemetry.tracer.exporter.headers` | Empty list | Comma-separated list of headers included in every export call made to the export endpoint. Example: `headerName1=headerValue1,headerName2=headerValue2`.
 |===
 
-Tracing export tuning properties include:
+Tracing export tuning properties:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -279,14 +300,16 @@ Tracing export tuning properties include:
 | `mule.openTelemetry.tracer.exporter.backoff.maximum` | 5 seconds | Maximum wait time before a retry attempt.
 | `mule.openTelemetry.tracer.exporter.backoff.multiplier` | 1.5 | Multiplier applied to the last wait time before a new retry attempt.
 | `mule.openTelemetry.tracer.exporter.batch.scheduledDelay` | 5000 milliseconds | Maximum interval between two consecutive exports.
-| `mule.openTelemetry.tracer.exporter.batch.queueSize` | 2048 spans | Export queue size. When full, non-fitting spans are dropped, and a WARNING log appears. Example, "Export queue overflow: 1 spans have been dropped. Total spans dropped since the export started: 2".
+| `mule.openTelemetry.tracer.exporter.batch.queueSize` | 2048 spans | Export queue size. When full, non-fitting spans are are handled according to the configured backpressure strategy, and a WARNING log is triggered. Example, "Export queue overflow: 1 spans have been dropped. Total spans dropped since the export started: 2".
 | `mule.openTelemetry.tracer.exporter.batch.maxSize` | 512 spans | Maximum size of batches exported per span.
+| `mule.openTelemetry.tracer.exporter.batch.backPressure.strategy` | `DROP` | Strategy for handling full export queues. Available values: `BLOCK`, `DROP`.
 |===
 
-Minimal configuration example that exports 50% of the traces to a gRPC OpenTelemetry collector endpoint:
+Minimal configuration example that exports 50% of the traces to an HTTP OpenTelemetry collector endpoint:
 
 ----
 mule.openTelemetry.tracer.exporter.enabled=true
+mule.openTelemetry.tracer.exporter.type=HTTP
 mule.openTelemetry.tracer.exporter.endpoint=https://your-collector.com/api/v1/otlp
 mule.openTelemetry.tracer.exporter.sampler.arg=0.5
 ----
@@ -294,9 +317,9 @@ mule.openTelemetry.tracer.exporter.sampler.arg=0.5
 [NOTE]
 The `mule.openTelemetry.tracer.exporter.sampler.arg` represents the percentage of sampling where 0.1 is 10% and 1 is 100%.
 
-=== Direct Export for Logs Configuration
+=== Direct Telemetry Stream for Logs Configuration
 
-Logging export setup properties include:
+Logging export setup properties:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -307,7 +330,7 @@ Logging export setup properties include:
 | `mule.openTelemetry.logging.exporter.headers` | Empty list | Comma-separated list of headers included in every export call made to the export endpoint. Example: `headerName1=headerValue1,headerName2=headerValue2`.
 |===
 
-Logging export tuning properties include:
+Logging export tuning properties:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -323,17 +346,17 @@ Logging export tuning properties include:
 | `mule.openTelemetry.logging.exporter.backoff.maximum` | 5 seconds | Maximum wait time before a retry attempt.
 | `mule.openTelemetry.logging.exporter.backoff.multiplier` | 1.5 | Multiplier applied to the last wait time before a new retry attempt.
 | `mule.openTelemetry.logging.exporter.batch.scheduledDelay` | 5000 milliseconds | Maximum interval between two consecutive exports.
-| `mule.openTelemetry.logging.exporter.batch.queueSize` | 2048 log records | Export queue size. When full, non-fitting log records are dropped, and a WARNING log appears. Example, "Export queue overflow: 1 log records have been dropped. Total dropped log records since the export started: 2".
+| `mule.openTelemetry.logging.exporter.batch.queueSize` | 2048 log records | Export queue size. When full, non-fitting log records are handled according to the configured backpressure strategy, and a WARNING log is triggered. Example, "Export queue overflow: 1 log records have been dropped. Total dropped log records since the export started: 2".
 | `mule.openTelemetry.logging.exporter.batch.maxSize` | 512 log records | Maximum size of batches exported per log record.
 | `mule.openTelemetry.logging.exporter.batch.backPressure.strategy` | `BLOCK` | Strategy for handling full export queues. Available values: `BLOCK`, `DROP`.
 |===
 
-Minimal configuration example that sends logs with trace correlation information to a gRPC OpenTelemetry collector endpoint:
+Minimal configuration example that sends logs to an HTTP OpenTelemetry collector endpoint:
 
 ----
 mule.openTelemetry.logging.exporter.enabled=true
+mule.openTelemetry.logging.exporter.type=HTTP
 mule.openTelemetry.logging.exporter.endpoint=https://your-collector.com/api/v1/otlp
-mule.put.trace.id.and.span.id.in.mdc=true
 ----
 
 [NOTE]
@@ -343,23 +366,21 @@ The `mule.put.trace.id.and.span.id.in.mdc` property won't be needed after GA bec
 
 This section describes advanced features that are available for OpenTelemetry support in Mule runtime.
 
-=== Custom Service Name and Namespace
+=== Custom Service Name and Service Namespace
 
 Service attributes identify the source of the telemetry data. Mule runtime supports setting the `service.name` and `service.namespace` properties to custom values:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
 | Property | Default Value | Description
-| `mule.openTelemetry.tracer.exporter.resource.service.name` | Artifact ID | Service name used by the exporter for traces.
-| `mule.openTelemetry.tracer.exporter.resource.service.namespace` | `mule` | Service namespace used by the exporter for traces.
-| `mule.openTelemetry.logging.exporter.resource.service.name` | Artifact ID | Service name used by the exporter for logs.
-| `mule.openTelemetry.logging.exporter.resource.service.namespace` | `mule` | Service namespace used by the exporter for logs.
+| `mule.openTelemetry.exporter.resource.service.name` | Artifact ID | Service name used by the exporter for traces.
+| `mule.openTelemetry.exporter.resource.service.namespace` | `mule` | Service namespace used by the exporter for traces.
 |===
 
 [NOTE]
 ====
 * The configured service namespace applies to both traces and logs.
-* For Standalone and Hybrid Standalone, setting a custom service namespace applies to all the applications deployed. Setting `service.name` isn't supported.
+* For Standalone, setting a custom service namespace applies to all the applications deployed. Setting `service.name` isn't supported.
 ====
 
 === Custom Attributes
@@ -383,14 +404,19 @@ While useful, custom attributes must be handled with care. Include only relevant
 
 Backpressure occurs when export queues for traces or logs are full. Backpressure strategies define how to deal with that event:
 
-* Traces backpressure: When the queue is full, non-fitting spans are dropped.
-* Logs backpressure: The default strategy is to block until space is generated for the log records that cannot enter the export queue, matching the Log4j logging behavior. You can also configure a drop strategy.
+* DROP backpressure strategy: When the queue is full, non-fitting spans/logs are dropped. It is the default strategy for traces.
 
-When spans or log records are dropped, a WARNING log is generated. Internal statistics track the total drops, so the log messages show the totals.
+* BLOCK backpressure strategy: This strategy will block the call until space is generated for at the export queue for the non fitting spans/logs. It is the default strategy for logs because it matches the log4j behavior.
+
+When spans or log records either dropped or blocked, a WARNING log is generated. Internal statistics track the total drops, so the log messages also show the totals since the export begun.
 
 Example of a drop warning:
 
-"Export queue overflow: 1 spans have been dropped. Total spans dropped since the export started: 2"
+"Export queue overflow: 2 spans have been dropped. Total spans dropped since the export started: 4"
+
+Example of a block warning:
+
+"Export queue overflow: 2 spans have been delayed. Total spans delayed since the export started: 4"
 
 === Tracing Levels
 
@@ -424,6 +450,20 @@ If needed, implement Tail sampling in the OpenTelemetry collector.
 
 When errors occur during export requests, Mule runtime uses an exponential back-off with jitter mechanism to avoid overwhelming the destination until recovery.
 Only errors marked as retryable defined by OpenTelemetry standards trigger retry logic. See https://opentelemetry.io/docs/specs/otlp/#failures[HTTP transport protocol reference] and https://opentelemetry.io/docs/specs/otlp/#retryable-response-codes[gRPC transport protocol reference] for more information.
+
+=== TLS support
+
+ TBC
+
+== Troubleshooting
+
+=== Mule Diagnostics
+
+ TBC
+
+=== Recommendations
+
+ TBC
 
 == See Also
 
