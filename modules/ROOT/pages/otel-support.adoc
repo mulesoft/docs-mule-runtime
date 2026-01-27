@@ -174,12 +174,21 @@ Each log record contains:
 }
 |===
 
+=== MDC propagation
+
+Any entry added to the Log4j MDC is added to the OpenTelemetry logs as Log Record attributes, so all the log4j MDC data is exported as part of OpenTelemetry logs.
+
+For adding custom attributes on both traces and logs, consider the xref:otel-support.adoc#_custom_attributes feature.
+
 === Correlation with Traces
 
-OpenTelemetry Log Records define fields for the Trace ID and Span ID. When tracing is enabled, the Mule runtime exports OpenTelemetry logs that include these values, enabling correlation between application traces and logs.
+* When using OpenTelemetry logs:
 
-If you are not exporting OpenTelemetry logs, you can still correlate Log4j logs by configuring the MDC logging.
-Any entry added to the Log4j MDC is added to the OpenTelemetry logs as Log Record attributes, so all MDC data is exported as part of OpenTelemetry logs.
+OpenTelemetry Log Records define fields for the Trace ID and Span ID. When tracing is also enabled, the Mule runtime exports OpenTelemetry logs that include these values, enabling correlation between application traces and logs.
+
+* When using log4j logs:
+
+If you are exporting traces only, the Trace ID and Span ID are still automatically added to the xref:logging-mdc.adoc[log4j MDC] under the keys `trace_id` and `span_id`.
 
 == Direct Telemetry Stream from Mule Runtime
 
@@ -254,7 +263,7 @@ Sampling
 * mule.openTelemetry.tracer.exporter.sampler.type
 * mule.openTelemetry.tracer.exporter.sampler.arg
 
-TLS
+mTLS
 
 * mule.openTelemetry.tracer.exporter.tls.certificatesStrategy
 * mule.openTelemetry.tracer.exporter.tls.certFileLocation
@@ -290,10 +299,6 @@ Tracing export tuning properties:
 | `mule.openTelemetry.tracer.exporter.sampler` | `parentbased_traceidratio` | Head sampling strategy used. Available values: `always_on`, `always_off`, `traceidratio`, `parentbased_always_off`, `parentbased_traceidratio`.
 | `mule.openTelemetry.tracer.exporter.sampler.arg` | 0.1 | Argument for head sampling strategy. For example, sampling percentage for the `traceidratio` strategy.
 | `mule.openTelemetry.tracer.exporter.timeout` | 10 Seconds | Timeout for every export call made to the export endpoint.
-| `mule.openTelemetry.tracer.exporter.tls.enabled` | `false` | Set to `true` to enable the use of TLS for every export call made to the export endpoint.
-| `mule.openTelemetry.tracer.exporter.tls.certFileLocation` | - | TLS certificate file path.
-| `mule.openTelemetry.tracer.exporter.tls.keyFileLocation` | - | TLS certificate public key file path.
-| `mule.openTelemetry.tracer.exporter.tls.caFileLocation` | - | TLS certificate authority file path.
 | `mule.openTelemetry.tracer.exporter.compression` | `none` | Compression algorithm used to compress the tracing date to be sent on every export call made to the export endpoint. Available values: `none`, `gzip`.
 | `mule.openTelemetry.tracer.exporter.backoff.maxAttempts` | 5 | Maximum retry attempts to export a batch of spans when the export endpoint responds with a retryable error.
 | `mule.openTelemetry.tracer.exporter.backoff.initial` | 1 second | Wait time before the first retry attempt.
@@ -337,10 +342,6 @@ Logging export tuning properties:
 | Property | Default Value | Description
 | `mule.openTelemetry.logging.exporter.timeout` | 10 Seconds | Timeout for every export call made to the export endpoint.
 |`mule.openTelemetry.logging.exporter.compression` | `none` | Compression algorithm used to compress the logging data to be sent on every export call made to the export endpoint. Available values: `none`, `gzip`.
-| `mule.openTelemetry.logging.exporter.tls.enabled` | `false` | Set to `true` to enable the use of TLS for every export call made to the export endpoint.
-| `mule.openTelemetry.logging.exporter.tls.certFileLocation` | - | TLS certificate file path.
-| `mule.openTelemetry.logging.exporter.tls.keyFileLocation` | - | TLS certificate public key file path
-| `mule.openTelemetry.logging.exporter.tls.caFileLocation` | - | TLS certificate authority file path
 | `mule.openTelemetry.logging.exporter.backoff.maxAttempts` | 5 | Maximum retry attempts to export a batch of log records when the export endpoint responds with a retryable error.
 | `mule.openTelemetry.logging.exporter.backoff.initial` | 1 second | Wait time before the first retry attempt.
 | `mule.openTelemetry.logging.exporter.backoff.maximum` | 5 seconds | Maximum wait time before a retry attempt.
@@ -359,27 +360,53 @@ mule.openTelemetry.logging.exporter.type=HTTP
 mule.openTelemetry.logging.exporter.endpoint=https://your-collector.com/api/v1/otlp
 ----
 
-[NOTE]
-The `mule.put.trace.id.and.span.id.in.mdc` property won't be needed after GA because Mule runtime sets it automatically when traces are exported.
-
 == Advanced Features
 
 This section describes advanced features that are available for OpenTelemetry support in Mule runtime.
 
+=== Tracing Sampling
+
+Sampling helps reduce the costs of observability. Mule runtime supports Head sampling, which makes the sampling decision as early as possible. In case of a Mule application, that moment is when a message source is about to trigger a message processing, for example, when an HTTP listener has received a request.
+
+Head sampling is a good fit for:
+
+* Supporting use cases with limited budgets for observability.
+* Accommodating use cases when there isn't a collector involved (consider early development stages) where observability is also useful.
+
+Regarding decision algorithms, Mule runtime currently supports these standardized OpenTelemetry algorithms: `AlwaysOn`, `AlwaysOff`, `ParentBasedAlwaysOn`, `ParentBasedAlwaysOff`, `TraceIdRatio`, and `ParentBasedTraceIdRatio`.
+
+While Head sampling is simple and efficient, it has some drawbacks:
+
+* Always sampling traces that contain an error
+* Sampling traces based on overall latency
+* Sampling traces based on specific attributes on one or more spans in a trace, for example, sampling more traces originating from a newly deployed service
+* Applying different sampling rates to traces based on certain criteria, for example, when traces only come from low-volume services versus traces with high-volume services
+
+Tail sampling supports these advanced cases but is costly and can affect performance, therefore Mule runtime only supports Head sampling.
+If needed, implement Tail sampling can be implementer in the OpenTelemetry collector.
+
+=== Tracing Levels (direct telemetry stream only)
+
+Mule runtime tracing is structured in a way that offers a base tracing level that can be `OVERVIEW`, `MONITORING` or `DEBUG`.
+Every generated span has a corresponding tracing level. Flow spans are of level `OVERVIEW`, flow component spans are of level `MONITORING`, and flow component internal execution spans (parameter resolution, connection obtention) are of level `DEBUG`.
+
+Normally, the default tracing level is the best choice. Use `DEBUG` for troubleshooting.
+
 === Custom Service Name and Service Namespace
 
-Service attributes identify the source of the telemetry data. Mule runtime supports setting the `service.name` and `service.namespace` properties to custom values:
+Service attributes identify the source of the telemetry data, mule applications in our case. Mule runtime supports setting the `service.name` and `service.namespace` properties to custom values:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
 | Property | Default Value | Description
-| `mule.openTelemetry.exporter.resource.service.name` | Artifact ID | Service name used by the exporter for traces.
-| `mule.openTelemetry.exporter.resource.service.namespace` | `mule` | Service namespace used by the exporter for traces.
+| `mule.openTelemetry.exporter.resource.service.name` | Artifact ID | Service name used by the exporter for traces and logs.
+| `mule.openTelemetry.exporter.resource.service.namespace` | `mule` | Service namespace used by the exporter for traces and logs .
 |===
+
+Additionally, a `service.instance.id` identifies the instance of the mule application and is automatically generated using a unique identifier on every deployment or redeployment.
 
 [NOTE]
 ====
-* The configured service namespace applies to both traces and logs.
 * For Standalone, setting a custom service namespace applies to all the applications deployed. Setting `service.name` isn't supported.
 ====
 
@@ -409,59 +436,62 @@ Backpressure occurs when export queues for traces or logs are full. Backpressure
 * BLOCK backpressure strategy: This strategy will block the call until space is generated for at the export queue for the non fitting spans/logs. It is the default strategy for logs because it matches the log4j behavior.
 
 The drop of spans or log records means missing data at the export destination. On the other hand, the wait of the threads can cause performance issues in the Mule Runtime.
-Because of this, when spans or log records are either dropped or blocked, a WARNING log is generated. Internal statistics track the total drops, so the log messages also show the totals since the export begun.
-An alert is also triggered and will be available at the mule diagnostics reports.
+Because of this, when spans or log records are either dropped or blocked, a WARNING log is generated. Internal statistics track historical occurrences, so the log messages also show the totals since the export begun.
+An alert is also triggered and will be available at the  xref:mule-troubleshooting-plugin.adoc#_understanding_diagnostic_information_analysis_file_diaf[Mule troubleshooting plugin DIAF files].
 
-Example of a drop warning:
+Example of a drop warning (application log):
 
 "Export queue overflow: 2 spans have been dropped. Total spans dropped since the export started: 4"
 
-Example of a block warning:
+Example of a block warning (application log):
 
 "Export queue overflow: 2 spans have been delayed. Total spans delayed since the export started: 4"
 
-Example of a mule diagnostics alert:
+Example of a mule diagnostics alert (DIAF report):
 
 TBC
-
-=== Tracing Levels
-
-Mule runtime tracing is structured in a way that offers a base tracing level that can be `OVERVIEW`, `MONITORING` or `DEBUG`.
-Every generated span has a corresponding tracing level. Flow spans are of level `OVERVIEW`, flow component spans are of level `MONITORING`, and flow component internal execution spans (parameter resolution, connection obtention) are of level `DEBUG`.
-
-Normally, the default tracing level is the best choice. Use `DEBUG` for troubleshooting.
-
-=== Tracing Sampling
-
-Sampling helps reduce the costs of observability. Mule runtime supports Head sampling, which makes the sampling decision as early as possible. In case of a Mule application, that moment is when a message source is about to trigger a message processing, for example, when an HTTP listener has received a request.
-
-Head sampling is a good fit for:
-
-* Supporting use cases with limited budgets for observability.
-* Accommodating use cases when there isn't a collector involved (consider early development stages) where observability is also useful.
-
-Regarding decision algorithms, Mule runtime currently supports these standardized OpenTelemetry algorithms: `AlwaysOn`, `AlwaysOff`, `ParentBasedAlwaysOn`, `ParentBasedAlwaysOff`, `TraceIdRatio`, and `ParentBasedTraceIdRatio`.
-
-While Head sampling is simple and efficient, it has some drawbacks:
-
-* Always sampling traces that contain an error
-* Sampling traces based on overall latency
-* Sampling traces based on specific attributes on one or more spans in a trace, for example, sampling more traces originating from a newly deployed service
-* Applying different sampling rates to traces based on certain criteria, for example, when traces only come from low-volume services versus traces with high-volume services
-
-Tail sampling supports these advanced cases but is costly and can affect performance, therefore Mule runtime only supports Head sampling.
-If needed, implement Tail sampling in the OpenTelemetry collector.
 
 === Retry Logic
 
 When errors occur during export requests, Mule runtime uses an exponential back-off with jitter mechanism to avoid overwhelming the destination until recovery.
 Only errors marked as retryable defined by OpenTelemetry standards trigger retry logic. See https://opentelemetry.io/docs/specs/otlp/#failures[HTTP transport protocol reference] and https://opentelemetry.io/docs/specs/otlp/#retryable-response-codes[gRPC transport protocol reference] for more information.
 
-=== TLS support
+=== TLS support (direct telemetry stream only)
 
- TBC
+Direct telemetry stream supports configuring the export for traces and logs to use mutual TLS authentication, that can be used to secure the communication with an external collector.
 
-== Troubleshooting
+[%header%autowidth.spread,cols="a,a,a"]
+|===
+| Property | Default Value | Description
+| `mule.openTelemetry.exporter.tls.enabled` | `false` | Set to `true` to enable the use of TLS for every export call made to the export endpoint.
+| `mule.openTelemetry.exporter.tls.certificatesStrategy` | `CERTIFICATES_PATH` | The strategy used to load the certificates. Can also be set to `CERTIFICATES_BASE64`
+|===
+
+* CERTIFICATES_PATH strategy is supported for Standalone and Hybrid Standalone deployments. Configure the certificates location when using this strategy.
+
+[%header%autowidth.spread,cols="a,a,a"]
+|===
+| Property | Default Value | Description
+| `mule.openTelemetry.exporter.tls.certFileLocation` | - | TLS certificate file path.
+| `mule.openTelemetry.exporter.tls.keyFileLocation` | - | TLS certificate public key file path.
+| `mule.openTelemetry.exporter.tls.caFileLocation` | - | TLS certificate authority file path.
+|===
+
+* CERTIFICATES_BASE64 strategy is supported for all the deployments. Encode the certificates in Base64 when using this strategy.
+
+[%header%autowidth.spread,cols="a,a,a"]
+|===
+| Property | Default Value | Description
+| `mule.openTelemetry.exporter.tls.caBase64` | - | TLS certificate encoded in Base64.
+| `mule.openTelemetry.exporter.tls.certBase64` | - | TLS certificate public key encoded in Base64.
+| `mule.openTelemetry.exporter.tls.keyBase64` | - | TLS certificate authority encoded in Base64.
+|===
+
+Example about how to encode a certificate:
+
+TBC
+
+== Troubleshooting direct telemetry stream
 
 === Mule Diagnostics
 
