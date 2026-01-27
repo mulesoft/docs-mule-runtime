@@ -376,47 +376,51 @@ Regarding decision algorithms, Mule runtime currently supports these standardize
 
 While Head sampling is simple and efficient, it has limitations. It can't:
 
-* Only sample traces that contain an error.
+* Sample only traces that contain an error.
 * Sample traces based on overall latency.
 * Sample traces based on specific attributes on one or more spans in a trace, for example, sample more traces originating from a newly deployed service.
 * Apply different sampling rates to traces based on certain criteria, for example, traces from low-volume services versus high-volume services.
 
 Tail sampling supports these advanced cases but is costly and can affect performance. Therefore, Mule runtime only supports Head sampling. If needed, implement Tail sampling in the OpenTelemetry collector.
 
-Regarding decision algorithms, Mule runtime currently supports these standardized OpenTelemetry algorithms: `AlwaysOn`, `AlwaysOff`, `ParentBasedAlwaysOn`, `ParentBasedAlwaysOff`, `TraceIdRatio`, and `ParentBasedTraceIdRatio`.
+Regarding sampling algorithms, Mule runtime currently supports these standardized OpenTelemetry algorithms: `AlwaysOn`, `AlwaysOff`, `ParentBasedAlwaysOn`, `ParentBasedAlwaysOff`, `TraceIdRatio`, and `ParentBasedTraceIdRatio`.
 
 ==== AlwaysOn
-Samples 100% of traces. Every span is recorded and exported. Can be expensive in production due to high data volume.
+
+Samples 100% of traces. Every span is recorded and exported. This option is expensive in production due to high data volume.
 
 ==== AlwaysOff
-Samples 0% of traces. No spans are recorded or exported. Useful when you want to completely disable tracing.
+
+Samples 0% of traces. No spans are recorded or exported. Use this option to completely disable tracing.
 
 ==== ParentBasedTraceIdRatio
+
 A parent-aware sampler that:
 
-* If a parent span exists then inherits the parent's sampling decision.
-* If no parent (root span) then uses ratio-based sampling (like TraceIdRatio).
+* Inherits the parent's sampling decision if a parent span exists.
+* Uses ratio-based sampling (like `TraceIdRatio`) if no parent span exists (root span).
 
-This is the most commonly recommended sampler for production and therefore the default one. It balances cost control (via ratio) while maintaining trace integrity across distributed services.
+This is the default and most commonly recommended sampler for production. It balances cost control through ratio-based sampling while preserving trace continuity across distributed services.
 
 ==== TraceIdRatio
+
 Samples a configurable percentage of traces based on the trace ID. The decision is deterministic based on the trace ID, ensuring all spans within the same trace are consistently sampled or not.
 
 ==== ParentBasedAlwaysOn
+
 A parent-aware sampler that:
 
-* If a parent span exists → inherits the parent's sampling decision.
-* If no parent (root span) → always samples (like AlwaysOn).
-
-Ensures trace continuity across service boundaries.
+* Inherits the parent's sampling decision if a parent span exists.
+* Always samples (like `AlwaysOn`) if no parent span exists (root span).
 
 ==== ParentBasedAlwaysOff
+
 A parent-aware sampler that:
 
-If a parent span exists → inherits the parent's sampling decision.
-If no parent (root span) → never samples (like AlwaysOff).
+* Inherits the parent's sampling decision if a parent span exists.
+* Never samples (similar to `AlwaysOff`) if no parent span exists (root span).
 
-Useful for services that should only participate in traces initiated elsewhere.
+Use this option for services that should only participate in traces initiated elsewhere.
 
 === Tracing Levels (Direct Telemetry Stream Only)
 
@@ -482,8 +486,6 @@ An alert is also triggered and is available at the xref:mule-troubleshooting-plu
 
 .Example of a Mule diagnostics alert (DIAF report):
 
-Example of a mule diagnostics alert (DIAF report):
-
 ----
 * OTEL_EXPORT_QUEUE_FULL      1 /   3 /    5 /    8
 Details:
@@ -527,7 +529,7 @@ Direct telemetry stream supports configuring the export for traces and logs to u
 | `mule.openTelemetry.exporter.tls.keyBase64` | - | TLS certificate authority encoded in Base64.
 |===
 
-.Example of how to encode a certificate file in Linux:
+.Example of how to encode a certificate file on Linux:
 
 ----
 base64 -w 0 client.crt > client.crt.b64
@@ -537,31 +539,32 @@ base64 -w 0 client.crt > client.crt.b64
 
 === Logs
 
-Mule runtime logs are the place to check for connection or export errors and also for delayed or dropped traces and logs.
+Mule runtime logs are the place to check for connection issues, export errors, and delayed or dropped traces and logs.
 
-* Connection errors will log an error.
-* Every export error will log an error.
-* Every export error will log an error.
-* Drops and delays will log warnings.
+* Connection issues log errors.
+* Export failures log errors.
+* Dropped or delayed exports log warnings.
 
 === Mule Diagnostics
 
-Mule diagnostics offer information about delayed or dropped traces and logs and is useful for quick checks. Take into account its temporality (last 60 minutes).
-Complement the analysis with checking the logs.
+Mule diagnostics provides information about delayed or dropped traces and logs and are useful for quick checks. Note that diagnostics are temporal and cover only the last 60 minutes.
+
+Use diagnostics as a starting point and complement your analysis by reviewing the logs.
 
 === Recommendations
 
-Use an OpenTelemetry collector configured to report its internal metrics: https://opentelemetry.io/docs/collector/internal-telemetry/
+Use an OpenTelemetry collector configured to report its internal metrics. See https://opentelemetry.io/docs/collector/internal-telemetry/[Collector internal metrics] for more information.
 Having a collector with that setup can greatly improve the troubleshooting capabilities while moving the hard limits of your particular setup from the 3rd party solution to your own infrastructure where full observability is possible.
 
-Keep your regular log4j logs or at least a variation that still logs the errors in order to allow troubleshooting (otherwise in the case of OpenTelemetry logs export errors you will not be able to check those errors).
+Keep standard Log4j logging enabled, or at least a variation that continues to log errors, to allow troubleshooting. Without this, you won't be able to troubleshoot OpenTelemetry log export failures.
 
-Most probable reason of export errors, delays or drops is a bottleneck in your ingestion pipeline (OTEL Collector + 3rd party solution). Make sure that they are operating under an acceptable performance.
+The most common cause of export errors, delays, or drops is a bottleneck in the ingestion pipeline (the OpenTelemetry Collector and the third-party solution). Make sure these components operate within acceptable performance limits.
 
-Always consider the limits of your 3rd party solution and configure your exports accordingly. The mule runtime cannot compensate poor downstream performance scenarios without compromising its own.
+Always consider the limits of your third-party solution and configure your exports accordingly. Mule runtime can't compensate for poor downstream performance scenarios without compromising its own stability.
 
-Be aware that a change in the tuning properties such as the queue size can modify the overall performance of the mule applications and therefore must be thoughtfully tested.
+Be aware that tuning changes, such as modifying the queue size, can impact Mule application performance. Test these changes carefully before applying them to production.
 
 == See Also
 
 * xref:monitoring::telemetry-exporter.adoc[]
+* xref:mule-troubleshooting-plugin.adoc[]
