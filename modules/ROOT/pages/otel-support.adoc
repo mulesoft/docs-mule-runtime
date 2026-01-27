@@ -314,7 +314,7 @@ Minimal configuration example that exports 50% of the traces to an HTTP OpenTele
 ----
 mule.openTelemetry.tracer.exporter.enabled=true
 mule.openTelemetry.tracer.exporter.type=HTTP
-mule.openTelemetry.tracer.exporter.endpoint=https://your-collector.com/api/v1/otlp
+mule.openTelemetry.tracer.exporter.endpoint=https://your-collector.com/api/v1/traces
 mule.openTelemetry.tracer.exporter.sampler.arg=0.5
 ----
 
@@ -356,7 +356,7 @@ Minimal configuration example that sends logs to an HTTP OpenTelemetry collector
 ----
 mule.openTelemetry.logging.exporter.enabled=true
 mule.openTelemetry.logging.exporter.type=HTTP
-mule.openTelemetry.logging.exporter.endpoint=https://your-collector.com/api/v1/otlp
+mule.openTelemetry.logging.exporter.endpoint=https://your-collector.com/api/v1/logs
 ----
 
 == Advanced Features
@@ -376,12 +376,47 @@ Regarding decision algorithms, Mule runtime currently supports these standardize
 
 While Head sampling is simple and efficient, it has limitations. It can't:
 
-* Always sample traces that contain an error.
+* Only sample traces that contain an error.
 * Sample traces based on overall latency.
 * Sample traces based on specific attributes on one or more spans in a trace, for example, sample more traces originating from a newly deployed service.
 * Apply different sampling rates to traces based on certain criteria, for example, traces from low-volume services versus high-volume services.
 
 Tail sampling supports these advanced cases but is costly and can affect performance. Therefore, Mule runtime only supports Head sampling. If needed, implement Tail sampling in the OpenTelemetry collector.
+
+Regarding decision algorithms, Mule runtime currently supports these standardized OpenTelemetry algorithms: `AlwaysOn`, `AlwaysOff`, `ParentBasedAlwaysOn`, `ParentBasedAlwaysOff`, `TraceIdRatio`, and `ParentBasedTraceIdRatio`.
+
+==== AlwaysOn
+Samples 100% of traces. Every span is recorded and exported. Can be expensive in production due to high data volume.
+
+==== AlwaysOff
+Samples 0% of traces. No spans are recorded or exported. Useful when you want to completely disable tracing.
+
+==== ParentBasedTraceIdRatio
+A parent-aware sampler that:
+
+* If a parent span exists then inherits the parent's sampling decision.
+* If no parent (root span) then uses ratio-based sampling (like TraceIdRatio).
+
+This is the most commonly recommended sampler for production and therefore the default one. It balances cost control (via ratio) while maintaining trace integrity across distributed services.
+
+==== TraceIdRatio
+Samples a configurable percentage of traces based on the trace ID. The decision is deterministic based on the trace ID, ensuring all spans within the same trace are consistently sampled or not.
+
+==== ParentBasedAlwaysOn
+A parent-aware sampler that:
+
+* If a parent span exists → inherits the parent's sampling decision.
+* If no parent (root span) → always samples (like AlwaysOn).
+
+Ensures trace continuity across service boundaries.
+
+==== ParentBasedAlwaysOff
+A parent-aware sampler that:
+
+If a parent span exists → inherits the parent's sampling decision.
+If no parent (root span) → never samples (like AlwaysOff).
+
+Useful for services that should only participate in traces initiated elsewhere.
 
 === Tracing Levels (Direct Telemetry Stream Only)
 
@@ -430,8 +465,8 @@ While useful, custom attributes must be handled with care. Include only relevant
 
 Backpressure occurs when export queues for traces or logs are full. Backpressure strategies define how Mule runtime handles this event:
 
-* `DROP`: When the queue is full, non-fitting spans or logs are dropped. This is the default strategy for traces.
-* `BLOCK`: When the queue is full, this strategy blocks the call until space is generated at the export queue for non-fitting spans or log records. This is the default strategy for logs because it aligns with the Log4j behavior.
+* `DROP` backpressure strategy: When the queue is full, non-fitting spans or logs are dropped. This is the default strategy for traces.
+* `BLOCK` backpressure strategy: When the queue is full, this strategy blocks the call until space is generated at the export queue for non-fitting spans or log records. This is the default strategy for logs because it aligns with the Log4j behavior.
 
 Dropping spans or log records results in missing data at the export destination. Blocking threads, on the other hand, can cause performance issues in Mule runtime.
 For both conditions, Mule runtime generates a `WARNING` log. Internal statistics track historical occurrences, and the log messages include cumulative totals since the export started.
@@ -447,7 +482,14 @@ An alert is also triggered and is available at the xref:mule-troubleshooting-plu
 
 .Example of a Mule diagnostics alert (DIAF report):
 
-`TBC`
+Example of a mule diagnostics alert (DIAF report):
+
+----
+* OTEL_EXPORT_QUEUE_FULL      1 /   3 /    5 /    8
+Details:
+- Resource: spans, Action: drop (4 times)
+- Resource: logs, Action: delay (4 times)
+----
 
 === Retry Logic
 
@@ -465,7 +507,7 @@ Direct telemetry stream supports configuring the export for traces and logs to u
 | `mule.openTelemetry.exporter.tls.certificatesStrategy` | `CERTIFICATES_PATH` | The strategy used to load the certificates. It can also be set to `CERTIFICATES_BASE64`.
 |===
 
-`CERTIFICATES_PATH` strategy is supported for Standalone and Hybrid Standalone deployments. Configure the certificates location when using this strategy.
+`CERTIFICATES_PATH` strategy is supported for Standalone and Hybrid Standalone deployments. Configure the certificates location when using this strategy:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -475,7 +517,7 @@ Direct telemetry stream supports configuring the export for traces and logs to u
 | `mule.openTelemetry.exporter.tls.caFileLocation` | - | TLS certificate authority file path.
 |===
 
-`CERTIFICATES_BASE64` strategy is supported for all the deployments. Encode the certificates in Base64 when using this strategy.
+`CERTIFICATES_BASE64` strategy is supported for all the deployments. Encode the certificates in Base64 when using this strategy:
 
 [%header%autowidth.spread,cols="a,a,a"]
 |===
@@ -485,19 +527,40 @@ Direct telemetry stream supports configuring the export for traces and logs to u
 | `mule.openTelemetry.exporter.tls.keyBase64` | - | TLS certificate authority encoded in Base64.
 |===
 
-.Example of how to encode a certificate:
+.Example of how to encode a certificate file in Linux:
 
-`TBC`
+----
+base64 -w 0 client.crt > client.crt.b64
+----
 
 == Troubleshooting Direct Telemetry Stream
 
+=== Logs
+
+Mule runtime logs are the place to check for connection or export errors and also for delayed or dropped traces and logs.
+
+* Connection errors will log an error.
+* Every export error will log an error.
+* Every export error will log an error.
+* Drops and delays will log warnings.
+
 === Mule Diagnostics
 
- TBC
+Mule diagnostics offer information about delayed or dropped traces and logs and is useful for quick checks. Take into account its temporality (last 60 minutes).
+Complement the analysis with checking the logs.
 
 === Recommendations
 
- TBC
+Use an OpenTelemetry collector configured to report its internal metrics: https://opentelemetry.io/docs/collector/internal-telemetry/
+Having a collector with that setup can greatly improve the troubleshooting capabilities while moving the hard limits of your particular setup from the 3rd party solution to your own infrastructure where full observability is possible.
+
+Keep your regular log4j logs or at least a variation that still logs the errors in order to allow troubleshooting (otherwise in the case of OpenTelemetry logs export errors you will not be able to check those errors).
+
+Most probable reason of export errors, delays or drops is a bottleneck in your ingestion pipeline (OTEL Collector + 3rd party solution). Make sure that they are operating under an acceptable performance.
+
+Always consider the limits of your 3rd party solution and configure your exports accordingly. The mule runtime cannot compensate poor downstream performance scenarios without compromising its own.
+
+Be aware that a change in the tuning properties such as the queue size can modify the overall performance of the mule applications and therefore must be thoughtfully tested.
 
 == See Also
 
