@@ -15,9 +15,7 @@ Mule doesn't run in FIPS security mode by default. To enable it, you must:
 
 FIPS 140-3 support requires:
 
-* Mule 4.10 or later
-+
-For earlier versions of Mule runtime, use xref:fips-140-2-compliance-support.adoc[FIPS 140-2 Compliance Support] which requires:
+* Mule 4.10 or later (for earlier versions of Mule runtime, use xref:fips-140-2-compliance-support.adoc[FIPS 140-2 Compliance Support])
 * Java 17 or later
 * FIPS license from the license `.zip` file provided by MuleSoft (the non-FIPS license isn't valid for FIPS mode)
 
@@ -25,36 +23,34 @@ For earlier versions of Mule runtime, use xref:fips-140-2-compliance-support.ado
 
 This document assumes you're familiar with https://csrc.nist.gov/publications/detail/fips/140/3/final[FIPS 140-3], the US government security standard that requires that compliant parties use only cryptographic algorithms and techniques that have been certified by NIST.
 
-These instructions use Bouncy Castle 2.0.0, the recommended FIPS 140-3 certified security provider for Mule runtime. If you use a different https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules[certified security provider], refer to that provider's documentation for configuration instructions.
+These instructions use BC-FJA, the recommended FIPS 140-3 certified security provider for Mule runtime (https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4943[Certificate #4943]). If you use a different https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules[certified security provider], refer to that provider's documentation for configuration instructions.
 
 [[set_up_environment]]
-== Installing Bouncy Castle Security Provider
 
-Mule runtime uses Bouncy Castle 2.0.0 as its FIPS 140-3 certified cryptography provider.
+== Installing BC-FJA Security Provider
+
+Mule runtime uses BC-FJA 2.1.2 as its FIPS 140-3 certified cryptography provider.
 
 === Installation Steps
 
-These instructions show how to install and configure Bouncy Castle security provider in Java 17 or later.
+These instructions show how to install and configure BC-FJA security provider in Java 17 or later.
 
 . Verify that you're using Java 17 or later and `JAVA_HOME` is set.
-. Download the Bouncy Castle 2.0.0 provider files from https://www.bouncycastle.org/fips-java/[the BouncyCastle website].
-. Copy the required JAR files to the `$MULE_HOME/lib/boot` folder:
+. Download the BC-FJA 2.1.2 provider files from https://www.bouncycastle.org/fips-java/[the BouncyCastle website].
+. Copy the required JAR files to the `${MULE_HOME}/lib/boot` folder:
 +
 ----
-bc-fips-2.0.0.jar
-bctls-fips-2.0.19.jar
-bcpkix-fips-2.0.7.jar
-bcutil-fips-2.0.3.jar
-bcpg-fips-2.0.9.jar
-bcjmail-fips-2.0.5.jar
+bc-fips-2.1.2.jar
+bcutil-fips-2.1.5.jar
+bctls-fips-2.1.22.jar
+bcpkix-fips-2.1.10.jar
 ----
 +
-. Configure the security providers in the `$JAVA_HOME/conf/security/java.security` file:
+. Configure the security providers in the `${JAVA_HOME}/conf/security/java.security` file:
 +
 ----
 security.provider.1=org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 security.provider.2=org.bouncycastle.jsse.provider.BouncyCastleJsseProvider fips:BCFIPS
-security.provider.3=SUN
 ----
 +
 . Configure the key manager and trust manager algorithms in the same `java.security` file:
@@ -66,9 +62,9 @@ ssl.TrustManagerFactory.algorithm=PKIX
 
 == Running Mule in FIPS Security Mode
 
-After installing the Bouncy Castle provider, configure Mule to run in FIPS 140-3 mode:
+After installing the BC-FJA provider, configure Mule to run in FIPS 140-3 mode:
 
-. Open your `wrapper.conf` file (located in `$MULE_HOME/conf`).
+. Open your `wrapper.conf` file (located in `${MULE_HOME}/conf`).
 . Add these properties. Replace `<n>` with the next sequential number in your file:
 +
 ----
@@ -80,6 +76,9 @@ wrapper.java.additional.<n>=-Dorg.bouncycastle.fips.approved_only=true
 
 # Required for Java 17+ module access
 wrapper.java.additional.<n>=--add-opens=java.base/sun.security.provider=org.bouncycastle.fips.core
+
+# Set keystore type to BCFKS
+wrapper.java.additional.<n>=-Dmule.keystore.type=BCFKS
 ----
 +
 . If you're using a clustered environment, also add the cluster encryption key:
@@ -92,9 +91,9 @@ For more information about clustering in FIPS mode, see xref:mule-high-availabil
 +
 . Save your changes and start Mule runtime.
 
-[NOTE]
+[IMPORTANT]
 --
-Starting with Mule 4.10, BCFKS is the default keystore type. Setting `mule.keystore.type=BCFKS` in your `wrapper.conf` file isn't required.
+In FIPS-compliant environments, all keystores and truststores typically require BCFKS format. However, you may need to support legacy JKS stores, such as the default Java truststore at `${JAVA_HOME}/lib/security/cacerts`. See <<FIPS 140-3 Compliant Keystore Formats>> for configuration options.
 --
 
 When Mule launches, the startup logs show that FIPS 140-3 security mode is enabled. Mule automatically restricts protocol negotiations to use only approved cryptographic cipher suites.
@@ -131,41 +130,52 @@ These cipher suites are enabled by default when running Mule in FIPS 140-3 mode.
 
 [NOTE]
 --
-These cipher suites are configured in the `$MULE_HOME/conf/tls-fips140-3.conf` file. FIPS 140-3 requires support for TLS 1.3 and TLS 1.2. Earlier TLS versions aren't supported.
+These cipher suites are configured in the `${MULE_HOME}/conf/tls-fips140-3.conf` file. FIPS 140-3 requires support for TLS 1.3 and TLS 1.2. Earlier TLS versions aren't supported.
 --
 
 == FIPS 140-3 Compliant Keystore Formats
 
-Keystores or truststores in Mule apps are usually formatted as `PKCS12` or `JKS`. These formats aren't FIPS compliant. For compliance, convert them to `BCFKS` format:
+Keystores or truststores in non-FIPS environments are typically formatted as `PKCS12` or `JKS`. Since these formats are not FIPS-compliant, they need to be converted to `BCFKS` format.
 
-. Download the `bc-fips-2.0.0.jar` file from the https://www.bouncycastle.org/download/bouncy-castle-java-fips/[Bouncy Castle website].
-. Use this example command to convert a keystore to `BCFKS` format:
-
+. Use this example command to convert a `JKS` keystore to `BCFKS` format. If the source keystore is `PKCS12`, set `-srcstoretype` to `PKCS12` in the `keytool` command:
++
 ----
-BC_FIPS_JAR=${BC_PATH}/bc-fips-2.0.0.jar  # Replace with a correct path
-OLD_KEYSTORE="keystore.jks"               # Replace with the keystore to convert
-OLD_PASSWD="changeit"                     # Replace with the keystore password
-NEW_KEYSTORE="keystore.bcfks"             # Replace with the new keystore
-NEW_PASSWD="changeit"                     # Replace with the new keystore password
+BC_FIPS_JAR=${MULE_HOME}/lib/boot/bc-fips-2.1.2.jar  # Replace with a correct path
+OLD_KEYSTORE="keystore.jks"                          # Replace with the keystore to convert
+OLD_PASSWD="changeit"                                # Replace with the keystore password
+NEW_KEYSTORE="keystore.bcfks"                        # Replace with the new keystore
+NEW_PASSWD="changeit"                                # Replace with the new keystore password
 
 keytool -importkeystore \
+ -providerclass sun.security.provider.Sun \
  -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
  -providerpath ${BC_FIPS_JAR} \
  -srckeystore  ${OLD_KEYSTORE}   -srcstoretype JKS       -srcstorepass ${OLD_PASSWD} \
  -destkeystore ${NEW_KEYSTORE}   -deststoretype BCFKS    -deststorepass ${NEW_PASSWD}
 ----
-
-[NOTE]
-If the source keystore is `PKCS12`, set `-srcstoretype` to `PKCS12` in the `keytool` command.
-
-[start=4]
-. Update the xref:tls-configuration.adoc[TLS configuration] in the Mule configuration file to use the new keystore or truststore:
-
+. Update the xref:tls-configuration.adoc[TLS configuration] in your Mule application to use the new keystore or truststore:
++
 ----
 <tls:context>
 	<tls:key-store   type="bcfks" path="server.bcfks" password="changeit" keyPassword="changeit" alias="default" />
 	<tls:trust-store type="bcfks" path="client.bcfks" password="changeit" />
 </tls:context>
+----
+. A special case is the truststore of the JVM, which is a `JKS` store by default, located at `${JAVA_HOME}/lib/security/cacerts`. There are two approaches to handle this special case:
+** Convert to BCFKS
+*** Convert the `JKS` store to `BCFKS` using the `keytool` command as described in <<FIPS 140-3 Compliant Keystore Formats>>, pointing OLD_KEYSTORE to `${JAVA_HOME}/lib/security/cacerts` and NEW_KEYSTORE to `${JAVA_HOME}/lib/security/cacerts.bcfks`
+*** Add the following properties to your `wrapper.conf` file:
++
+----
+wrapper.java.additional.<n>=-Djavax.net.ssl.trustStore=${JAVA_HOME}/lib/security/cacerts.bcfks
+wrapper.java.additional.<n>=-Djavax.net.ssl.trustStorePassword=changeit
+wrapper.java.additional.<n>=-Djavax.net.ssl.trustStoreType=bcfks
+----
+** Allow legacy `JKS` store
+*** Add the following property to your `wrapper.conf` file:
++
+----
+wrapper.java.additional.<n>=-Dorg.bouncycastle.jca.enable_jks=true
 ----
 
 == Connectors Compatibility
@@ -188,6 +198,6 @@ Only connectors tagged as `fips-140-3-verified` in Anypoint Exchange are certifi
 
 == See Also
 
-* https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules[Validated FIPS-3 Cryptographic Modules]
+* https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules[Validated FIPS 140-3 Cryptographic Modules]
 * https://csrc.nist.gov/publications/detail/fips/140/3/final[FIPS 140-3 Standard]
 * xref:fips-140-2-compliance-support.adoc[FIPS 140-2 Compliance Support]
