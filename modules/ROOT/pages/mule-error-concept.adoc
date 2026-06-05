@@ -204,6 +204,40 @@ handled. This type does not include errors that occur on the source.
 *** `FLOW_BACK_PRESSURE`: indicates a problem of overloading occurred at the source level. For example, using an HTTP listener as a source.
 ** `FATAL_JVM_ERROR`: indicates that a fatal error occurred, such as stack overflow.
 
+[[fatal_jvm_errors]]
+=== What Happens After a FATAL_JVM_ERROR
+
+When the JVM throws a `VirtualMachineError` (including `OutOfMemoryError` and `StackOverflowError`), the Mule Runtime engine wraps it as a `MULE:FATAL` error and raises a `FATAL_ERROR_RAISED` alert. Because these errors belong to the `CRITICAL` hierarchy, they *cannot* be caught or handled by On-Error components (`on-error-continue`, `on-error-propagate`).
+
+After a `VirtualMachineError` occurs, the Mule Runtime instance, its internal components, or the underlying JVM might be left in an inconsistent or invalid state. Memory might be corrupted, threads might be in undefined states, and further message processing is unreliable.
+
+[IMPORTANT]
+====
+The only safe recovery action after a `VirtualMachineError` is to *restart the Mule Runtime instance*. Do not assume that the application can continue processing correctly after encountering one of these errors.
+====
+
+==== Common Causes
+
+[%header,cols="1,2"]
+|===
+| Error | Common Causes
+
+| `OutOfMemoryError`
+| Unbounded in-memory caching, unconsumed streams accumulating buffers, processing very large payloads without streaming, memory leaks in custom Java code.
+
+| `StackOverflowError`
+| Extremely long flows that generate deeply nested Reactor operator stacks, unbounded recursion in custom Java components or DataWeave expressions. Note that recursive flow references (a flow calling itself via `flow-ref`) are protected by the Mule Runtime's internal nesting limit and result in an `EventContextDeepNestingException` before the JVM stack overflows.
+|===
+
+==== Monitoring and Recovery
+
+* Monitor application logs for messages containing `VirtualMachineError`, `OutOfMemoryError`, or `StackOverflowError`.
+* In managed deployment targets (CloudHub, Runtime Fabric), configure health checks and automatic restarts so that affected instances are replaced promptly.
+* For on-premises deployments, configure your process supervisor (systemd, Tanuki wrapper) to restart the Mule process when it becomes unresponsive.
+* After a restart, investigate the root cause using heap dumps (for `OutOfMemoryError`) or thread dumps (for `StackOverflowError`) captured before the failure.
+
+For design patterns that help prevent these errors, see xref:tuning-app-design.adoc#avoid-recursive-flow-references[Avoid Recursive Flow References] and xref:streaming-about.adoc#consume-streams-promptly[Consume Streams Promptly].
+
 == Custom Error Types
 
 To use custom error types, you need to define them either when mapping or when
