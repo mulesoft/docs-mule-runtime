@@ -230,6 +230,72 @@ increments at 100 objects per increment and allows a maximum buffer size of
  </sfdc:query>
 ----
 
+[[consume-streams-promptly]]
+== Consume Streams Promptly
+
+When a connector operation returns a stream (for example, when reading a file, querying a database, or receiving an HTTP response body), the stream keeps underlying resources open (file handles, database cursors, and network connections) until it's fully consumed or until processing of the originating event completes.
+
+=== Why Prompt Consumption Matters
+
+* Resource exhaustion: Unconsumed streams keep resources (connections, file descriptors, and cursors) allocated. If many streams accumulate without being consumed, the application can run out of available resources and eventually hit `OutOfMemoryError` or connection pool exhaustion.
+* Memory pressure: With repeatable streaming (the default), the runtime buffers stream content in memory or on disk. Large unconsumed streams occupy buffer space until the event completes.
+* Connection starvation: For HTTP and database operations, the underlying connection can't return to the pool until the response stream is consumed or the event finishes.
+
+=== Recommendations
+
+This section describes best practices for consuming streams and minimizing resource retention.
+
+[%header,cols="1,2"]
+|===
+| Practice | Explanation
+
+| Always consume or transform the payload
+| Use a DataWeave transformation, a `<logger>`component that accesses the payload, or a target variable to ensure the stream is fully consumed.
+
+| Avoid storing streams in variables without consuming them
+| If you assign a stream to a variable but never read it, the underlying resources remain open until the event completes.
+
+| Use `target` and `targetValue` appropriately
+| When using `target` to store operation results, make sure the stored value is eventually consumed, or use `targetValue` to force consumption at store time (for example, with a DataWeave expression that reads the stream).
+
+| Prefer non-repeatable streaming for single-read scenarios
+| If you only need to read the stream once, use `<non-repeatable-stream/>` to avoid buffering overhead and release resources immediately after consumption. See <<disable_repeatable_streaming>>.
+|===
+
+=== Antipattern: Unconsumed Stream in Variable or Payload
+
+This example shows an antipattern where a stream is stored in a variable but never consumed:
+
+[source,xml,linenums]
+----
+<!-- ANTIPATTERN: Stream stored but never consumed -->
+<http:request url="http://api.example.com/large-data" target="apiResponse"/>
+<!-- The stream in 'apiResponse' holds the HTTP connection open until the event completes -->
+<logger message="Done"/>
+----
+
+[source,xml,linenums]
+----
+<!-- ANTIPATTERN: Reassigning the stream does NOT consume it -->
+<http:request url="http://api.example.com/large-data"/>
+<set-payload value="#[payload]"/>
+<!-- The stream reference is reassigned but its content is never read -->
+----
+
+=== Correct: Consume the Stream via targetValue
+
+This example shows how to consume the stream via a target value:
+
+[source,xml,linenums]
+----
+<!-- CORRECT: DataWeave expression in targetValue forces stream consumption -->
+<http:request url="http://api.example.com/large-data" target="apiResponse"
+              targetValue="#[payload.items]"/>
+<logger message="#[vars.apiResponse]"/>
+----
+
+For information on what happens when unconsumed streams lead to memory exhaustion, see xref:mule-error-concept.adoc#fatal_jvm_errors[What Happens After a FATAL_JVM_ERROR].
+
 [[disable_repeatable_streaming]]
 == Disabling Repeatable Streaming
 
