@@ -177,7 +177,7 @@ Error Types:
 
 * `ANY`: error type that matches all error types that occur in a Flow and can be
 handled. This type does not include errors that occur on the source.
-** `TRANSFORMATION`: indicates an error occurred while transforming a value. This involves Mule Runtime internal transformations and not DataWeave transformations.
+** `TRANSFORMATION`: indicates an error occurred while transforming a value. This involves Mule runtime internal transformations and not DataWeave transformations.
 ** `EXPRESSION`: indicates an error occurred while evaluating a DataWeave expression.
 ** `VALIDATION`: indicates a validation error occurred.
 *** `DUPLICATE_MESSAGE`: indicates a validation error regarding a message being processed twice. For example, using the xref:idempotent-message-validator.adoc[Idempotent message validator].
@@ -188,7 +188,7 @@ handled. This type does not include errors that occur on the source.
 *** `COMPOSITE_ROUTING`: indicates that one or more errors occurred while routing a message. For example, using a xref:scatter-gather-concept.adoc[Scatter Gather Router].
 ** `SECURITY`: indicates a security error occurred, like invalid credentials being received or an expired token being used.
 *** `CLIENT_SECURITY`: indicates an external entity (e.g., calling an external endpoint) produced a security error.
-*** `SERVER_SECURITY`: indicates a security error enforced by the Mule Runtime.
+*** `SERVER_SECURITY`: indicates a security error enforced by the Mule runtime.
 **** `NOT_PERMITTED`: indicates a security restriction enforced by a filter. For example, using xref:connectors::spring/spring-module.adoc#_to_validate_authentication_using_the_spring_authorization_filter[the Authorization Filter of the Mule Spring Module].
 ** `STREAM_MAXIMUM_SIZE_EXCEEDED`: indicates the maximum size allowed for a stream has been exceeded. For more insight, see xref:streaming-about.adoc[Streaming in Mule Apps].
 ** `TIMEOUT`: indicates timeout occurred while processing a message.
@@ -203,6 +203,40 @@ handled. This type does not include errors that occur on the source.
 ** `OVERLOAD`: indicates a problem of overloading occurred and the execution was rejected.
 *** `FLOW_BACK_PRESSURE`: indicates a problem of overloading occurred at the source level. For example, using an HTTP listener as a source.
 ** `FATAL_JVM_ERROR`: indicates that a fatal error occurred, such as stack overflow.
+
+[[fatal_jvm_errors]]
+=== What Happens After a FATAL_JVM_ERROR
+
+When the JVM throws a `VirtualMachineError` (for example, `OutOfMemoryError` or `StackOverflowError`), Mule runtime wraps it as a `MULE:FATAL` error and raises a `FATAL_ERROR_RAISED` alert. Because these errors are in the `CRITICAL` hierarchy, On-Error components (`on-error-continue`, `on-error-propagate`) can't handle them.
+
+After a `VirtualMachineError` occurs, the Mule runtime instance, its internal components, or the underlying JVM can remain in an invalid state. Memory can be corrupted, threads can enter undefined states, and further message processing is unreliable.
+
+[IMPORTANT]
+====
+The only safe recovery action after a `VirtualMachineError` occurs is to restart the Mule runtime instance. Don't assume that the application can continue processing correctly after encountering one of these errors.
+====
+
+==== Common Causes
+
+[%header,cols="1,2"]
+|===
+| Error | Common Causes
+
+| `OutOfMemoryError`
+| Unbounded in-memory caching, unconsumed streams that accumulate buffers, processing very large payloads without streaming, or memory leaks in custom Java code.
+
+| `StackOverflowError`
+| Extremely long flows that create deeply nested Reactor operator stacks, or unbounded recursion in custom Java components or DataWeave expressions. Recursive flow references (a flow calling itself through `flow-ref`) are protected by Mule runtime internal nesting limit, which raises an `EventContextDeepNestingException` before a JVM stack overflow occurs.
+|===
+
+==== Monitoring and Recovery
+
+* Monitor application logs for messages containing `VirtualMachineError`, `OutOfMemoryError`, or `StackOverflowError`.
+* In managed deployment targets (CloudHub, Runtime Fabric), configure health checks and automatic restarts so that affected instances are replaced quickly.
+* For on-premises deployments, configure your process supervisor (systemd, Tanuki wrapper) to restart the Mule process if it becomes unresponsive.
+* After a restart, investigate the root cause by using heap dumps (for `OutOfMemoryError`) or thread dumps (for `StackOverflowError`) captured before the failure occurs.
+
+For design patterns that help prevent these errors, see xref:tuning-app-design.adoc#avoid-recursive-flow-references[Avoid Recursive Flow References] and xref:streaming-about.adoc#consume-streams-promptly[Consume Streams Promptly].
 
 == Custom Error Types
 
