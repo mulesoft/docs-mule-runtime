@@ -71,12 +71,16 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 
 * <<diaf-title>>
 * <<diaf-basic-info>>
+* <<diaf-system-info>>
+* <<diaf-jvm-agents>>
 * <<diaf-statistics>>
 * <<diaf-alerts>>
 * <<diaf-event-dump>>
 * <<diaf-schedulers>>
 * <<diaf-cpu-usage>>
 * <<diaf-deployments>>
+* <<diaf-connectors-state>>
+* <<diaf-cluster-info>>
 
 [[diaf-title]]
 === Title
@@ -95,6 +99,11 @@ This section shows the report generation timestamp.
 === Basic Information
 
 This section shows details about the environment where the Mule runtime instance is running.
+
+[NOTE]
+====
+Starting in Mule runtime 4.12.1, the JVM resource metrics in this section are grouped under a `JVM Resources` block and prefixed with `jvm.` (for example, `jvm.memory.used`). In earlier patches, these fields appear at the top level without the prefix (for example, `memory.used`). The meaning of each metric is the same. Starting in that same version, the operating system details and the system-wide CPU load moved out of this section into the new <<diaf-system-info,System Info>> section.
+====
 
 [cols="1,3", options="header"]
 |===
@@ -124,15 +133,6 @@ This section shows details about the environment where the Mule runtime instance
 | `JAVA_HOME`
 | Location of the JVM running the Mule runtime.
 
-| OS Name
-| Name of the OS running the Mule runtime.
-
-| OS Version
-| Version of the OS running the Mule runtime.
-
-| OS Arch
-| Architecture of the OS (for example, `amd64`, `aarch`).
-
 | Running Time
 | The total time the Mule runtime has been running.
 
@@ -145,35 +145,216 @@ This section shows details about the environment where the Mule runtime instance
 | Report Nano Time
 | Report generation time in nanoseconds (`System.nanoTime`).
 
-| `memory.used`
+| `memory.used` (`jvm.memory.used`)
 | Amount of used memory in the JVM.
 
-| `memory.free`
+| `memory.free` (`jvm.memory.free`)
 | Amount of available memory in the JVM.
 
-| `memory.total`
+| `memory.total` (`jvm.memory.total`)
 | Total amount of memory in the JVM.
 
-| `memory.max`
+| `memory.max` (`jvm.memory.max`)
 | Maximum amount of memory the JVM attempts to use.
 
-| `memory.used/total`
+| `memory.used/total` (`jvm.memory.used/total`)
 | Percentage of used memory compared to the total allocated memory.
 
-| `memory.used/max`
+| `memory.used/max` (`jvm.memory.used/max`)
 | Percentage of used memory compared to the maximum available memory.
 
-| `processors.available`
+| `processors.available` (`jvm.processors.available`)
 | The number of processors available to the JVM process.
 
-| `load.process`
+| `load.process` (`jvm.load.process`)
 | Percentage of recent CPU usage for the JVM process; negative value if unavailable.
 
-| `load.system`
-| Percentage of recent CPU usage for the whole system; negative value if unavailable.
+| License
+a| (Enterprise Edition only) License information for Enterprise distributions, shown under a `License` block. Not shown on Community Edition or when no Enterprise license is registered. When present, it can include:
 
-| `load.systemAverage`
-| System load average for the last minute; negative value if unavailable.
+* `valid`: Whether the license is valid.
+* `validationError`: The reason the license is not valid, when applicable.
+* `evaluation`: Whether the license is an evaluation license.
+* `expirationDate`: The date the license expires.
+* `licenseFile`: The license file in use.
+* `contact`: A contact block with `name`, `email`, `telephone`, `company`, and `country`.
+* `entitlements`: The list of entitlements granted by the license.
+|===
+
+[NOTE]
+====
+In Mule runtime patches earlier than 4.12.1, this section also reports `OS Name`, `OS Version`, `OS Arch`, `load.system`, and `load.systemAverage`. Starting in 4.12.1, the operating system details (`host.os.*`) and the host CPU load (`host.cpu.load.*`) are reported in the <<diaf-system-info,System Info>> section instead.
+====
+
+[[diaf-system-info]]
+=== System Info
+
+[NOTE]
+====
+This section is available starting in Mule runtime 4.12.1.
+====
+
+This section shows host-level diagnostics for the machine, container, or pod where the Mule runtime is running, collected from the host operating system. Unlike <<diaf-basic-info,Basic Information>>, which reports JVM-level metrics, this section describes the host. CPU load percentages are sampled over a short interval. Some fields are only populated on Linux hosts; on other operating systems they can be absent or shown as `n/a`. If host data can't be collected, the report shows a `Host info not available` line instead.
+
+==== Operating System
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.os.name`
+| Name of the host operating system.
+
+| `host.os.version`
+| Version of the host operating system.
+
+| `host.os.arch`
+| Architecture of the host operating system (for example, `amd64` or `aarch64`).
+|===
+
+==== CPU
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.cpu.model`
+| Processor model name.
+
+| `host.cpu.cores.physical`
+| Number of physical CPU cores on the host.
+
+| `host.cpu.cores.logical`
+| Number of logical CPUs (hardware threads) on the host.
+
+| `host.cpu.load.user`
+| Percentage of CPU time spent in user space during the sampling interval.
+
+| `host.cpu.load.system`
+| Percentage of CPU time spent in kernel or system space during the sampling interval.
+
+| `host.cpu.load.idle`
+| Percentage of idle CPU time during the sampling interval.
+
+| `host.cpu.load.iowait`
+| (Linux only) Percentage of CPU time spent waiting on I/O. High values indicate disk or network I/O bottlenecks rather than CPU saturation.
+
+| `host.cpu.load.steal`
+| (Linux only) Percentage of CPU time taken by the hypervisor to serve other tenants. High values indicate a noisy-neighbor or over-committed virtualized host.
+|===
+
+==== Memory
+
+This block reports host physical memory, not the JVM heap.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.memory.total`
+| Total physical RAM on the host.
+
+| `host.memory.available`
+| Physical RAM currently available.
+
+| `host.memory.used`
+| Physical RAM currently in use (total minus available).
+
+| `host.memory.page.size`
+| Memory page size, in bytes.
+
+| `host.memory.swap.total`
+| Total swap space configured on the host.
+
+| `host.memory.swap.used`
+| Swap space currently in use. Non-zero swap usage often indicates memory pressure.
+
+| `host.memory.virtual.max`
+| Maximum virtual memory (RAM plus swap) available.
+
+| `host.memory.virtual.in.use`
+| Virtual memory currently in use.
+|===
+
+==== Disk I/O
+
+(Linux only) For each physical disk device, the report includes this information. Pseudo-devices such as `loop`, `ram`, and `dm-`, and zero-size devices, are excluded. A device can show `(stats unavailable)` when its per-device counters can't be read.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `model`
+| Disk model.
+
+| `size`
+| Total size of the disk.
+
+| `reads` / `writes`
+| Number of read or write operations served by the device since boot.
+
+| `read.bytes` / `write.bytes`
+| Total bytes read or written by the device since boot.
+
+| `transfer.time.ms`
+| Total time spent on transfers, in milliseconds.
+|===
+
+[[diaf-jvm-agents]]
+=== JVM Agents
+
+[NOTE]
+====
+This section is available starting in Mule runtime 4.12.1.
+====
+
+This section lists the JVM agents attached at JVM startup through the `-javaagent`, `-agentpath`, or `-agentlib` arguments, which helps you identify third-party or APM and observability agents (profilers, monitoring, security, or bytecode instrumentation) that can add overhead, change runtime behavior, or interfere with the Mule runtime. Agents attached dynamically after startup (through the Attach API) can't be enumerated and aren't listed. If no agents were attached at startup, the report shows a `No JVM agents detected.` line.
+
+==== Java Agents
+
+Jar-based agents attached with `-javaagent`. For each agent, the report includes this information.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Agent Jar Path
+| Filesystem path to the agent jar.
+
+| `Options`
+| The arguments passed to the agent after the jar path, if any.
+
+| Manifest Headers
+a| Selected `META-INF/MANIFEST.MF` headers read from the agent jar. When no manifest metadata is available, the report shows `(no manifest metadata available)`. The headers reported are:
+
+* `Premain-Class`
+* `Agent-Class`
+* `Launcher-Agent-Class`
+* `Can-Redefine-Classes`
+* `Can-Retransform-Classes`
+* `Can-Set-Native-Method-Prefix`
+* `Boot-Class-Path`
+* `Implementation-Title`
+* `Implementation-Vendor`
+* `Implementation-Version`
+|===
+
+==== Native Agents
+
+Agents attached with `-agentpath` (by file path) or `-agentlib` (by library name). Native agents carry no manifest, so the report includes this information.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Agent Name
+| The agent name, shown with the flag it was attached with (`-agentpath` or `-agentlib`).
+
+| `Options`
+| The arguments passed to the agent, if any.
+
+| `File exists`
+| (`-agentpath` only) Whether the agent library file exists at the given path.
 |===
 
 [[diaf-statistics]]
@@ -528,6 +709,132 @@ Policy templates appear as separate top-level entries. Each entry represents a u
 | Plugins
 | List of all plugins available in the policy template.
 |===
+
+[[diaf-connectors-state]]
+=== Connectors State
+
+[NOTE]
+====
+This section is available starting in Mule runtime 4.12.1.
+====
+
+This section reports the state of each connector configuration in the deployed applications: connection lifecycle, connection pool information, recent errors, and TLS details. When more than one application is deployed, entries are grouped by application. If an application isn't started, the report shows `Application is not started — no artifact context available.`. If there are no connector configurations, it shows `No connector configurations found.`.
+
+Each connector configuration is shown with a header that reports its name, the `Extension` it belongs to, and whether the configuration is `Dynamic` (resolved per event from expressions). The fields shown depend on whether the configuration is static or dynamic.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Connection Provider
+| Class name of the resolved connection provider. If the configuration doesn't declare one, the report shows `(configuration does not declare a connection provider)`.
+
+| TLS details
+| TLS context information for the connection provider, including certificate validity where applicable. Shown only for providers that use TLS.
+
+| Connection State
+a| A block of connection statistics for the configuration, shown as `(no statistics available)` when none have been recorded. When present, it contains:
+
+* `Last Used`: Timestamp of the most recent use of the connection.
+* `Active Components`: Number of components currently using this configuration.
+* `Last Connection Attempt`: Timestamp of the most recent connection attempt.
+* `Last Successful Conn.`: Timestamp of the most recent successful connection.
+* `Pool Info`: For pooling connection providers, the connection pool state: `active`, `idle`, `maxTotal`, `maxIdle`, `created`, `borrowed`, `returned`, and `destroyed` connection counts. An `active` count at or near `maxTotal` indicates the pool is saturated.
+* `Last Error`: Timestamp and details of the most recent connection error, when one has occurred.
+
+| Usages
+| (Static configurations) The component locations that reference this configuration, or `(not referenced by any component)` / `(no usages created yet)` when there are none.
+
+| Last Resolution Failure
+| (Dynamic configurations) Timestamp and details of the most recent failure to resolve the dynamic configuration, or `Not available` if there were none.
+
+| Last Successful Creation
+| (Dynamic configurations) Timestamp of the most recent successful resolution of a configuration instance, or `Not available`.
+
+| Active Usages
+| (Dynamic configurations) The currently active resolved instances, each with its own `Connection State` block, or `(no active dynamic usages)` when there are none.
+|===
+
+[[diaf-cluster-info]]
+=== Cluster Info
+
+[NOTE]
+====
+This section applies to Enterprise Edition only and is available starting in Mule runtime 4.12.1.
+====
+
+This section reports the clustering configuration of the local node and, when lock diagnostics are enabled, the distributed locks currently held across the cluster. It isn't shown on Community Edition or on non-clustered runtimes. When the node isn't part of an active cluster, the report shows a `Cluster is not active. No cluster information available.` line.
+
+==== Cluster Configuration
+
+Mirrors the cluster configuration of the local node.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `clusterId`
+| Identifier of the cluster the node belongs to.
+
+| `clusterNodeId`
+| Identifier of the local node within the cluster.
+
+| `clusterSize`
+| Number of nodes currently in the cluster.
+
+| `clusterSchema`
+| The cluster schema in use.
+
+| `multicastEnabled`
+| Whether multicast is enabled for cluster discovery.
+
+| `tcpInboundPort`
+| The TCP port the node uses for inbound cluster communication.
+
+| `nodes`
+| The IP addresses of the nodes in the cluster.
+
+| `networkInterfaces`
+| The network interfaces used for cluster communication.
+|===
+
+==== Lock Diagnostics
+
+Shown only when lock diagnostics are enabled on the runtime. Reports the local member, how many members are reporting, and the distributed locks currently held. For each held lock, the report shows the `lockId` and the lock holder details.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `holder.nodeId`
+| The node holding the lock, shown as `LOCAL` or `REMOTE`.
+
+| `holder.thread`
+| Name of the thread holding the lock.
+
+| `holder.threadId`
+| Identifier of the thread holding the lock.
+
+| `holder.threadState`
+| State of the holding thread, or `n/a` for remote nodes.
+
+| `holder.acquiredAt`
+| Timestamp when the lock was acquired.
+
+| `holder.heldFor`
+| How long the lock has been held.
+
+| `holder.callerClass`
+| (When acquisition stack capture is enabled) The class that acquired the lock.
+
+| `holder.acquireStack`
+| (When acquisition stack capture is enabled) The stack frames captured when the lock was acquired.
+
+| `hz.isLocked`
+| The Hazelcast-level lock state, or `hz.state: unavailable` when it can't be queried.
+|===
+
+The report also lists orphan locks: held lock entries that have no owning node in any member's registry (for example, the holding node stopped before releasing the lock). If acquisition stack traces aren't being captured, the report includes a note explaining how to enable them.
 
 == Considerations
 
