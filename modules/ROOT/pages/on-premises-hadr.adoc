@@ -3,28 +3,37 @@ ifndef::env-site,env-github[]
 include::_attributes.adoc[]
 endif::[]
 
-When you run Mule runtime engine on servers that you manage, you build HA and DR yourself. You cluster runtimes for failover, choose a standby topology that matches your SLA, and back up your environment and data. MuleSoft provides the runtime clustering capabilities and the architectural guidance on this page.
+When you run Mule runtime engine on servers that you manage, you build high availability (HA) and disaster recovery (DR) yourself. You achieve HA by clustering Mule runtime instances so that another node takes over when one fails, and you choose a standby topology that matches your SLA. You own DR under a shared-responsibility model: because you control the infrastructure, you back up, restore, and recover it with your own tooling, while MuleSoft provides the runtime clustering capabilities, the architectural guidance on this page, and control-plane availability through Anypoint Platform.
 
-For an overview of HA and DR across all Mule deployment models, and to compare on-premises deployments with managed options, see xref:hadr-guide.adoc[High Availability and Disaster Recovery].
+For an overview of HA and DR across all Mule deployment models, see xref:hadr-guide.adoc[High Availability and Disaster Recovery].
 
-== On-Premises Clustering and Failover
+== High Availability Versus Disaster Recovery
 
-You can deploy Mule runtime engine in many topologies to support your HA and DR strategies. One common method, high-availability clustering, gives Mule basic failover capability.
+High availability (HA) measures a system's ability to remain accessible when a component fails. On self-managed servers, you achieve HA by clustering and load balancing Mule runtime nodes, so that another node takes over when one fails.
 
-When the primary Mule runtime becomes unavailable—because of a fatal JVM or hardware failure, or because you take it offline for maintenance—a backup Mule runtime immediately takes over as the primary node and resumes processing where the failed instance stopped.
+Disaster recovery (DR) restores a system to an acceptable previous state after a natural or man-made disaster, such as flooding, power failures, server failures, or misconfigurations.
 
-After you recover the failed Mule runtime server and bring it back online, that server automatically becomes the backup node.
+Both strategies increase availability but differ in scope: on-premises, HA keeps your application serving requests when a node in the cluster fails with no loss of service, whereas DR restores service and data after an infrastructure disaster and usually incurs a brief loss of service while the DR plan runs.
+
+Two measurable objectives drive your DR plan:
+
+Recovery Time Objective (RTO):: The maximum downtime a business tolerates. RTO is the time the system takes to recover after a disruption.
+
+Recovery Point Objective (RPO):: The maximum data loss a business accepts after a disaster. RPO drives how often you back up data.
+
+== High Availability in On-Premises Deployments
+
+You achieve high availability on self-managed servers by clustering and load balancing Mule runtime nodes. Depending on your SLA, you choose a standby topology and a deployment architecture that meet your availability and fault-tolerance requirements.
+
+Clustering and failover:: You can deploy Mule runtime engine in many topologies to support your HA and DR strategies. One common method, high-availability clustering, gives Mule basic failover capability. When the primary Mule runtime becomes unavailable—because of a fatal JVM or hardware failure, or because you take it offline for maintenance—a backup Mule runtime immediately takes over as the primary node and resumes processing where the failed instance stopped. After you recover the failed Mule runtime server and bring it back online, that server automatically becomes the backup node.
+
+Distributed memory:: A distributed memory store makes seamless failover possible by sharing all transient state across clustered Mule runtimes, including SEDA service event queues and in-memory message queues.
 
 image::hadr-cluster.png["A clustered server environment handling incoming and outgoing messages"]
 
-A distributed memory store makes seamless failover possible by sharing all transient state across clustered Mule runtimes, including:
-
-* SEDA service event queues
-* In-memory message queues
-
 As you build your Mule application, think critically about how to architect it for the availability, fault tolerance, and performance you need.
 
-== High Availability Options
+=== High Availability Options
 
 You achieve high availability by clustering and load balancing nodes. Depending on your SLA, Mule supports four HA options:
 
@@ -35,7 +44,7 @@ You achieve high availability by clustering and load balancing nodes. Depending 
 
 NOTE: These options often pair with a disaster recovery strategy.
 
-=== Cold Standby
+==== Cold Standby
 
 [%header%autowidth.spread]
 |===
@@ -45,7 +54,7 @@ NOTE: These options often pair with a disaster recovery strategy.
 |Some. Covers the time to start the environment and route traffic.
 |===
 
-=== Warm Standby
+==== Warm Standby
 
 [%header%autowidth.spread]
 |===
@@ -55,7 +64,7 @@ NOTE: These options often pair with a disaster recovery strategy.
 |Little. Covers the time for the Mule runtime instances to start and route traffic to the environment.
 |===
 
-=== Hot Standby - Active-Passive
+==== Hot Standby - Active-Passive
 
 [%header%autowidth.spread]
 |===
@@ -65,7 +74,7 @@ NOTE: These options often pair with a disaster recovery strategy.
 |Minimal to none. Covers the time to route traffic to the environment.
 |===
 
-=== Active-Active
+==== Active-Active
 
 [%header%autowidth.spread]
 |===
@@ -80,19 +89,15 @@ Two or more Mule environments belong to the same cluster. This scenario requires
 |None. The service experiences no downtime.
 |===
 
-== On-Premises Deployment Models
+=== On-Premises Deployment Models
 
-[NOTE]
-====
-When you deploy an application to an on-premises Mule cluster through Runtime Manager, Runtime Manager stages deployment artifacts to cluster nodes sequentially.
-Sequential staging doesn't guarantee that the application starts on one node before startup begins on another. Application startup and readiness across cluster nodes follow no fixed order and can overlap.
-====
+You size your on-premises architecture to meet your SLA. Mule supports three common deployment models:
 
 * <<Active-Active Clustering Deployment Model>>
 * <<Active-Active Clustering Fault Tolerance Deployment Model>>
 * <<Zero Downtime Deployment Model>>
 
-=== Active-Active Clustering Deployment Model
+==== Active-Active Clustering Deployment Model
 
 Two nodes in a clustered or load-balanced environment can plausibly support 1,500 TPS with 1-second responses, which meets the normal SLA. If one node fails, the service degrades but still handles 700 TPS with 1-second responses—well above the agreed acceptable impact—so the failure doesn't breach the SLA.
 
@@ -107,7 +112,7 @@ Distribute the load evenly across multiple Mule nodes:
 
 Costs vary with your SLA requirements. This model needs two nodes to meet the SLA. If the acceptable service impact rises to match normal operations, the environment needs at least three nodes to absorb a single node failure. High-probability failure scenarios can require even more nodes.
 
-=== Active-Active Clustering Fault Tolerance Deployment Model
+==== Active-Active Clustering Fault Tolerance Deployment Model
 
 Fault tolerance means a failure within the system doesn't affect the service at all. It differs from high availability, which tolerates some service impact and downtime.
 
@@ -125,7 +130,7 @@ If the probability of losing more than one node stays low, the architecture need
 
 This model costs more because it requires the redundancy to meet the defined SLA.
 
-=== Zero Downtime Deployment Model
+==== Zero Downtime Deployment Model
 
 This model lets you change the environment—including upgrading the infrastructure and the applications that run on it—without breaching your SLAs. Zero-downtime deployments typically use a side-by-side approach, where the old and new environments coexist briefly. An in-place deployment, by contrast, can reduce capacity or cause complete downtime.
 
@@ -155,14 +160,39 @@ This example assumes that each environment uses the same number of Mule runtimes
 
 This method can temporarily add capacity to the service for a few minutes, hours, or days.
 
+== Disaster Recovery in On-Premises Deployments
+
+Because you control the infrastructure, you own disaster recovery for on-premises deployments. You back up your servers, applications, and data, and you bring backup infrastructure online to meet your recovery objectives when your primary environment fails.
+
+Standby topologies:: Use a cold, warm, or hot standby topology to meet your RTO and RPO. A hot standby minimizes downtime but costs the most, whereas a cold standby costs the least but takes longest to recover.
+
+Backups:: Back up Mule applications, runtime configurations, and application data to external storage outside your primary environment. Schedule backups often enough to meet your RPO.
+
+Anypoint configuration:: Back up your platform configurations—such as connections and properties—with the Anypoint CLI or Anypoint Platform APIs.
+
+MuleSoft responsibility:: MuleSoft keeps the Anypoint Platform control plane available across multiple availability zones. The control plane stores only operational metadata and configuration, not your business data.
+
+== Considerations and Limitations
+
+Account for these factors when you design a clustered on-premises topology:
+
+Network latency:: Clustering across availability zones or regions can degrade performance because of network latency. A single clustered environment that spans locations requires network latency between nodes to stay below 10 ms. Where possible, place cluster nodes on the same subnet or availability zone.
+
+Simultaneous node restarts:: Don't restart multiple cluster nodes at the same time, such as during operating system patching. Concurrent restarts can trigger cluster-membership eviction and take applications offline.
+
+Sequential deployment staging:: When you deploy an application to an on-premises Mule cluster through Runtime Manager, Runtime Manager stages deployment artifacts to cluster nodes sequentially. Sequential staging doesn't guarantee that the application starts on one node before startup begins on another. Application startup and readiness across cluster nodes follow no fixed order and can overlap.
+
+Cost trade-offs:: Higher availability and fault tolerance require more nodes and infrastructure. Size your architecture to the SLA you must meet, rather than to the maximum possible resilience.
+
 == Best Practices
 
-Follow these general design principles for high availability and disaster recovery:
+Follow these design principles for high availability and disaster recovery on self-managed servers:
 
-* Keep your integrations stateless.
-* Don't share transactional information between client invocations or scheduled executions.
-* When the middleware must retain data because of a system limitation, persist it in an external store, such as a database or a messaging queue, rather than in the middleware infrastructure or memory.
-* As the system scales, keep each node's state and resources independent of the other nodes, which delivers better performance, scalability, and reliability.
+* Keep your integrations stateless, and externalize state to an external store, such as a database or a messaging queue.
+* Run identical Mule runtime, Runtime Manager agent, and Java versions on all cluster nodes.
+* Choose a standby topology and node count that meet your SLA rather than the maximum possible resilience.
+* Schedule cluster changes during maintenance windows.
+* Test your failover and restore procedures regularly.
 
 == See Also
 
