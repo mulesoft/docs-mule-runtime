@@ -1,0 +1,171 @@
+= On-Premises Deployment High Availability and Disaster Recovery
+ifndef::env-site,env-github[]
+include::_attributes.adoc[]
+endif::[]
+
+When you run Mule runtime engine on servers that you manage, you build HA and DR yourself. You cluster runtimes for failover, choose a standby topology that matches your SLA, and back up your environment and data. MuleSoft provides the runtime clustering capabilities and the architectural guidance on this page.
+
+For an overview of HA and DR across all Mule deployment models, and to compare on-premises deployments with managed options, see xref:hadr-guide.adoc[High Availability and Disaster Recovery].
+
+== On-Premises Clustering and Failover
+
+You can deploy Mule runtime engine in many topologies to support your HA and DR strategies. One common method, high-availability clustering, gives Mule basic failover capability.
+
+When the primary Mule runtime becomes unavailable—because of a fatal JVM or hardware failure, or because you take it offline for maintenance—a backup Mule runtime immediately takes over as the primary node and resumes processing where the failed instance stopped.
+
+After you recover the failed Mule runtime server and bring it back online, that server automatically becomes the backup node.
+
+image::hadr-cluster.png["A clustered server environment handling incoming and outgoing messages"]
+
+A distributed memory store makes seamless failover possible by sharing all transient state across clustered Mule runtimes, including:
+
+* SEDA service event queues
+* In-memory message queues
+
+As you build your Mule application, think critically about how to architect it for the availability, fault tolerance, and performance you need.
+
+== High Availability Options
+
+You achieve high availability by clustering and load balancing nodes. Depending on your SLA, Mule supports four HA options:
+
+* <<Cold Standby>>
+* <<Warm Standby>>
+* <<Hot Standby - Active-Passive>>
+* <<Active-Active>>
+
+NOTE: These options often pair with a disaster recovery strategy.
+
+=== Cold Standby
+
+[%header%autowidth.spread]
+|===
+|Diagram |Description |Downtime
+|image:hadr-cold-standby.png["A cold standby configuration in a server setup"]
+|You install and configure the Mule environment but leave one or more operating systems stopped—for example, as a backup of a production system or virtual machine. You start the operating system and the Mule runtime after you detect an outage.
+|Some. Covers the time to start the environment and route traffic.
+|===
+
+=== Warm Standby
+
+[%header%autowidth.spread]
+|===
+|Diagram |Description |Downtime
+|image:hadr-warm-standby.png["A warm standby setup for server redundancy"]
+|You install and configure the Mule environment and run the operating systems but leave the Mule runtimes stopped. You start the Mule runtime after you detect an outage.
+|Little. Covers the time for the Mule runtime instances to start and route traffic to the environment.
+|===
+
+=== Hot Standby - Active-Passive
+
+[%header%autowidth.spread]
+|===
+|Diagram |Description |Downtime
+|image:hadr-active-passive.png["An active-passive server setup in a high-availability configuration"]
+|You install, configure, and fully run the Mule environment, but it doesn't process requests until you detect an outage.
+|Minimal to none. Covers the time to route traffic to the environment.
+|===
+
+=== Active-Active
+
+[%header%autowidth.spread]
+|===
+|Diagram |Description |Downtime
+|image:hadr-active-active1.png["A load balancer distributing traffic to a cluster of Mule instances in an active-active configuration"]
+|Load-balanced clustered environments:
+Two or more fully operational Mule environments run at the same time, each with its own cluster, and the load balancer distributes traffic across all of them.
+|None. The service experiences no downtime.
+|image:hadr-active-active2.png["An active-active server configuration with a load balancer and clustering"]
+|Load-balanced single clustered environment:
+Two or more Mule environments belong to the same cluster. This scenario requires network latency between environments to stay below 10 ms.
+|None. The service experiences no downtime.
+|===
+
+== On-Premises Deployment Models
+
+[NOTE]
+====
+When you deploy an application to an on-premises Mule cluster through Runtime Manager, Runtime Manager stages deployment artifacts to cluster nodes sequentially.
+Sequential staging doesn't guarantee that the application starts on one node before startup begins on another. Application startup and readiness across cluster nodes follow no fixed order and can overlap.
+====
+
+* <<Active-Active Clustering Deployment Model>>
+* <<Active-Active Clustering Fault Tolerance Deployment Model>>
+* <<Zero Downtime Deployment Model>>
+
+=== Active-Active Clustering Deployment Model
+
+Two nodes in a clustered or load-balanced environment can plausibly support 1,500 TPS with 1-second responses, which meets the normal SLA. If one node fails, the service degrades but still handles 700 TPS with 1-second responses—well above the agreed acceptable impact—so the failure doesn't breach the SLA.
+
+image::hadr-aa-clustering.png["An active-active clustering setup with load balancers and multiple servers"]
+
+Distribute the load evenly across multiple Mule nodes:
+
+* All nodes offer the same capabilities.
+* All nodes stay active at the same time.
+
+*Costs*
+
+Costs vary with your SLA requirements. This model needs two nodes to meet the SLA. If the acceptable service impact rises to match normal operations, the environment needs at least three nodes to absorb a single node failure. High-probability failure scenarios can require even more nodes.
+
+=== Active-Active Clustering Fault Tolerance Deployment Model
+
+Fault tolerance means a failure within the system doesn't affect the service at all. It differs from high availability, which tolerates some service impact and downtime.
+
+image::hadr-fault-tolerant.png["A fault-tolerant system with redundant nodes and a load balancer"]
+
+Fault tolerance differs from high availability by adding resources that let an application keep running—without interruption—after a component fails. Fault-tolerant environments cost more than highly available environments.
+
+The degree of fault tolerance you need depends on the probability of system failures. Take the earlier SLA example and raise the minimum acceptable service impact to match the normal operation requirement.
+
+The new SLA now requires the system to handle 1,000 transactions per second with 1-second response times, zero downtime, and zero service impact.
+
+If the probability of losing more than one node stays low, the architecture needs just three nodes. If that probability rises above what you accept, the architecture needs more than three nodes to absorb multiple failures.
+
+*Costs*
+
+This model costs more because it requires the redundancy to meet the defined SLA.
+
+=== Zero Downtime Deployment Model
+
+This model lets you change the environment—including upgrading the infrastructure and the applications that run on it—without breaching your SLAs. Zero-downtime deployments typically use a side-by-side approach, where the old and new environments coexist briefly. An in-place deployment, by contrast, can reduce capacity or cause complete downtime.
+
+https://www.gartner.com/en/information-technology/glossary/continuous-operations[Gartner] defines continuous operations as "those characteristics of a data-processing system that reduce or eliminate the need for planned downtime, such as scheduled maintenance. One element of 24-hour-a-day, seven-day-a-week operation".
+
+The baseline production environment is your current operating environment. You create a new environment with the changes—upgraded runtimes, new configurations, and new applications. A small percentage of traffic flows to the new environment and increases as your confidence grows. The baseline environment keeps serving traffic until the new environment handles 100 percent of the traffic. After the new environment accepts all traffic, it becomes the new baseline production environment, and the previous baseline terminates.
+
+This example assumes that each environment uses the same number of Mule runtimes and cores, but the new environment can use more or fewer.
+
+[%header,cols="60a,40a"]
+|===
+|Deployment Step |Diagram
+|You deploy the new production environment and route a small percentage of traffic to it.
+|image:hadr-zero-downtime-1.png["A traffic distribution in a smaller percentage from current to new production environments in a high-availability deployment"]
+
+|Your confidence in the new environment grows, and you route more traffic to it.
+|image:hadr-zero-downtime-2.png["A traffic distribution in a higher percentage from current to new production environment in a high-availability deployment"]
+
+|You route all traffic to the new environment.
+|image:hadr-zero-downtime-3.png["A zero-downtime deployment with traffic shifting from an current to a new environment"]
+
+|You promote the new environment to baseline production and terminate the previous baseline.
+|image:hadr-zero-downtime-4.png["A traffic routing to a new production environment completed in a high-availability environment"]
+|===
+
+*Costs*
+
+This method can temporarily add capacity to the service for a few minutes, hours, or days.
+
+== Best Practices
+
+Follow these general design principles for high availability and disaster recovery:
+
+* Keep your integrations stateless.
+* Don't share transactional information between client invocations or scheduled executions.
+* When the middleware must retain data because of a system limitation, persist it in an external store, such as a database or a messaging queue, rather than in the middleware infrastructure or memory.
+* As the system scales, keep each node's state and resources independent of the other nodes, which delivers better performance, scalability, and reliability.
+
+== See Also
+
+* xref:hadr-guide.adoc[High Availability and Disaster Recovery]
+* xref:mule-high-availability-ha-clusters.adoc[Mule Runtime HA Cluster Overview]
+* xref:creating-and-managing-a-cluster-manually.adoc[Create and Manage a Cluster Manually]
