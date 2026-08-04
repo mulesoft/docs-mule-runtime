@@ -64,6 +64,7 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-title>>
 * <<diaf-basic-info>>
 * <<diaf-system-info>>
+* <<diaf-network-info>>
 * <<diaf-jvm-agents>>
 * <<diaf-statistics>>
 * <<diaf-event-dump>>
@@ -72,6 +73,8 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-deployments>>
 * <<diaf-connectors-state>>
 * <<diaf-cluster-info>>
+* <<diaf-agent-info>>
+* <<diaf-platform-connectivity>>
 
 [[diaf-title]]
 === Title
@@ -291,6 +294,77 @@ This section reports host physical memory, not the JVM heap.
 
 | `transfer.time.ms`
 | Total time spent on transfers, in milliseconds.
+|===
+
+[[diaf-network-info]]
+=== Network Info
+
+[NOTE]
+====
+Available in Mule runtime 4.6.33 and later.
+====
+
+This section shows host-level network diagnostics for the machine, container, or pod where the Mule runtime instance is running: the hostname, the network interfaces with their assigned IP addresses and I/O counters, and the active and listening network connections. Interface counters and connection tables are collected from the host operating system.
+
+==== Host
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.network.hostname`
+| Hostname of the machine running the Mule runtime.
+|===
+
+==== Interfaces
+
+Each network interface is reported under its own name (for example, `eth0:`, `lo:`), including loopback, physical, virtual, and tunnel interfaces. For each interface, the report includes these fields:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `mtu`
+| Maximum transmission unit of the interface, in bytes.
+
+| `mac`
+| MAC address of the interface, or `None` for interfaces that don't have one (for example, loopback).
+
+| `flags`
+| Interface flags, such as `UP`, `LOOPBACK`, `POINTOPOINT`, `VIRTUAL`, and `MULTICAST`, or `None`.
+
+| `addrs`
+| IP addresses (IPv4 and IPv6) assigned to the interface, or `None`.
+
+| `bytes.recv` / `bytes.sent`
+| Cumulative number of bytes received or sent on the interface since the host started. These are raw counters intended for computing rates by comparing two reports.
+
+| `packets.recv` / `packets.sent`
+| Cumulative number of packets received or sent on the interface.
+
+| `errors.in` / `errors.out`
+| Cumulative number of inbound or outbound errors on the interface.
+
+| `drops.in`
+| Cumulative number of inbound packets dropped on the interface.
+|===
+
+==== Connections
+
+The report includes three connection tables, each preceded by its own header. Each connection line has the format `type=<type> state=<state> local=<address>:<port> foreign=<address>:<port>`, where `type` is one of `tcp4`, `tcp6`, `udp4`, or `udp6` and `state` is a TCP connection state (for example, `ESTABLISHED`, `LISTEN`, or `TIME_WAIT`). A wildcard address or port is shown as `*`. IPv6 addresses are shown in compressed form and enclosed in brackets (for example, `[::1]:8081`).
+
+[cols="1,3", options="header"]
+|===
+| Table | Description
+
+| `Connections (Mule pid=<pid>)`
+| Connections owned by the Mule runtime process.
+
+| `Listening ports`
+| Host-wide sockets in the `LISTEN` state. Each line also includes the owning `pid`.
+
+| `Connections (all, count=<n>)`
+| Full host-wide connection table, with the total count in the header. Each line also includes the owning `pid`.
 |===
 
 [[diaf-jvm-agents]]
@@ -815,6 +889,169 @@ Available only when lock diagnostics are enabled on the runtime. Reports the loc
 |===
 
 The report also lists orphan locks, which are held locks that have no owning node in any member's registry, for example, the holding node stopped before releasing the lock. If acquisition stack traces aren't enabled, the report includes a note explaining how to enable them.
+
+[[diaf-agent-info]]
+=== Agent Info
+
+[NOTE]
+====
+Available in Mule runtime 4.6.33 and later. This section is available only in Enterprise Edition runtimes that have the Mule agent installed.
+====
+
+The Agent Info section reports the installation and health of the Mule agent that pairs this runtime with Anypoint Platform: whether the agent is installed, its version, key configuration values, keystore certificate details, and the most recent connection status. Use it to diagnose agent pairing and platform-connectivity issues.
+
+The first line reports whether the agent is installed:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `installed`
+| `true` if the Mule agent plugin is present, or `false` if it isn't. When `false`, the report shows a message directing you to run `./bin/amc_setup` to install and pair the runtime, and no further fields are reported.
+
+| `version`
+| Version of the installed agent, read from the `mule-agent-api` JAR file name, or `n/a` if it can't be determined.
+|===
+
+==== Configuration
+
+Key values read from the agent descriptor file (`conf/mule-agent.yml`). If the file isn't present, the report shows a note indicating the agent hasn't been configured. Fields that can't be read are shown as `n/a`.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `websocket.enabled`
+| Whether the WebSocket transport is enabled.
+
+| `websocket.consoleUri`
+| WebSocket connection URI to Anypoint Platform.
+
+| `rest.enabled`
+| Whether the REST transport is enabled.
+
+| `rest.port`
+| Port configured for the REST transport.
+|===
+
+==== Keystore
+
+Certificate details read from the agent keystore (`conf/mule-agent.jks`). If the file isn't present, can't be loaded, or has no certificates, the report shows a note describing which of those cases applies. Otherwise, the report shows one entry per certificate.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `alias`
+| Alias of the certificate entry in the keystore.
+
+| `subjectDN`
+| Subject distinguished name of the certificate.
+
+| `issuerDN`
+| Issuer distinguished name of the certificate.
+
+| `validFrom`
+| Date from which the certificate is valid.
+
+| `validUntil`
+| Date until which the certificate is valid.
+
+| `validity`
+| Current validity status of the certificate: valid (with days until expiry), expired, or not yet valid.
+|===
+
+==== Connectivity
+
+Connection status derived from the certificate and the agent log file (`logs/mule-agent.log`). If the log file isn't present, the report notes that the connection history is unavailable.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `serverId`
+| Server ID that identifies this runtime to Anypoint Platform, read from the common name of the agent certificate, or `n/a` if it can't be determined.
+
+| `log`
+| Path to the agent log file inspected for connection events.
+
+| `status`
+| Latest connection status found in the log: `CONNECTED`, `DISCONNECTED`, `DELETED` (the runtime was deleted from the platform), or `UNKNOWN` if no connection events are found.
+
+| `lastSuccessfulConnection`
+| Timestamp of the most recent successful connection to the platform, or `n/a` if none is found.
+
+| `recentHistory`
+| The most recent connection events, each shown as a timestamp and status, up to the last five events.
+|===
+
+[[diaf-platform-connectivity]]
+=== Platform Connectivity
+
+[NOTE]
+====
+Available in Mule runtime 4.6.33 and later. This operation runs on demand only. Because it performs outbound network connections, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag platformConnectivity`.
+====
+
+This operation checks TCP connectivity from the Mule runtime host to the Anypoint Platform endpoints and dumps the TLS certificate chain presented by the platform. Use it to diagnose connectivity or TLS issues between a runtime and the control, data, and monitoring planes. The report has two subsections.
+
+==== Connectivity
+
+For each endpoint, the operation resolves the host and attempts a TCP connection, reporting one line per endpoint. The operation probes a fixed list of US, EU, and monitoring-plane endpoints, plus any endpoints derived from this runtime's `anypoint.platform.base_uri` and `anypoint.platform.analytics_base_uri` configuration. Endpoints that share the same host and port are probed only once.
+
+A reachable endpoint is reported as:
+
+[source,text]
+----
+OK     plane=<label> host=<host> port=<port> ips=<resolved-ips> (<duration> ms)
+----
+
+An unreachable endpoint is reported as:
+
+[source,text]
+----
+FAILED plane=<label> host=<host> port=<port> ips=<resolved-ips> : <reason>
+----
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `plane`
+| Label identifying the endpoint's origin: `us` or `eu` for the control and data planes, `us-mon` or `eu-mon` for the monitoring plane, or `configured` for an endpoint derived from this runtime's configuration.
+
+| `host`
+| Hostname or IP address of the endpoint.
+
+| `port`
+| TCP port probed (typically `443`, or `5044` for the monitoring ingestor).
+
+| `ips`
+| IP addresses the host resolved to.
+
+| `duration`
+| (Reachable endpoints only) Time taken to establish the connection, in milliseconds.
+
+| `reason`
+| (Unreachable endpoints only) Cause of the failure, such as an unresolvable host or a refused connection.
+|===
+
+==== Certificate Chain
+
+This subsection opens a TLS connection to `mule-manager.anypoint.mulesoft.com:443` and dumps the certificate chain the platform presents. The chain is captured for inspection even when it wouldn't pass validation, so it can be used to diagnose TLS interception or trust issues.
+
+The report first shows the handshake outcome as `handshake: success` or `handshake: FAILED: <error>`, followed by one entry per certificate in the chain, indexed from `[0]`:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `subject`
+| Subject distinguished name of the certificate.
+
+| `issuer`
+| Issuer distinguished name of the certificate.
+|===
 
 == Considerations
 
