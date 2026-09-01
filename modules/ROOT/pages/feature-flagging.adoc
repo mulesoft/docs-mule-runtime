@@ -11,11 +11,36 @@ By default, Mule runtime engine disables any new features or bug fixes that aren
 
 == Understanding minMuleVersion
 
-`minMuleVersion` declares the minimum runtime *feature set* that a Mule application requires. Conceptually, this corresponds to the *MINOR* number in https://semver.org/[Semantic Versioning] (see also xref:about-classloading-isolation.adoc[Class-loading Isolation], which notes that Mule 4 follows Semantic Versioning 2.0.0): `4.12.0`, `4.11.0`, and so on. This is the value that Anypoint Studio and Anypoint Code Builder should use when scaffolding a new application.
+[TIP]
+Set `minMuleVersion` to the minor version whose features your application needs, with patch `.0`, for example `4.9.0`. Do not set it to the exact patch of the runtime you built or scaffolded with. Declaring a higher version than your application needs can prevent it from being deployed.
 
-The *patch* component (the third number, for example the `2` in `4.12.2`) only matters for the corner case where a bug fix was backported into a patch release instead of shipping with the next minor version, typically as the result of an escalated product request. The <<Feature Flags Reference>> table below documents these cases: most flags become available at a minor release, but a few become available at a patch release, for example `mule.tx.error.when.timeout`, available since Mule 4.6.1. Like every entry in that table, a patch-level fix is *disabled by default* so that an application relying on the preexisting (buggy) behavior isn't affected by upgrading the runtime; enabling it is a deliberate opt-in. If you need to opt in to one of these patch-level fixes (or any flag) on an on-premises Mule instance, the recommended way is to configure it explicitly through a system property, as described in <<Configure Feature Flags for the Mule Instance>>, rather than by bumping the patch component of `minMuleVersion`. Raising the patch changes every flag available since that patch at once, including ones you may not have intended to adopt, and it also tightens the compatibility check described below. Only set a patch-level `minMuleVersion` on deployment targets where a system-property override isn't available, the application genuinely needs that patch's fix by default, and MuleSoft Support has instructed you to do so; otherwise leave the patch at `.0`.
+`minMuleVersion` declares the minimum runtime *feature set* that a Mule application requires. Conceptually, this corresponds to the *MINOR* number in https://semver.org/[Semantic Versioning]. Mule 4 follows Semantic Versioning 2.0.0; see xref:about-classloading-isolation.adoc[Class-loading Isolation] for more on this. Anypoint Studio and Anypoint Code Builder use this value when scaffolding a new application.
 
-This distinction matters because `minMuleVersion` is also used as a compatibility check, not only a feature-flag selector: whenever a Mule runtime, or a tool that introspects a Mule artifact, compares the artifact's `minMuleVersion` against a target runtime version, it does so using the full `major.minor.patch`, and rejects the artifact if its `minMuleVersion` is newer than the target. The most visible case is deployment: the runtime refuses to deploy an application whose `minMuleVersion` is newer than the running runtime. For example, an application with `minMuleVersion=4.12.2` does not deploy on a `4.12.1` runtime, even though the two only differ in patch. The same comparison is also performed outside the deployment cycle, by tooling that works on the artifact independently of deploying it, for example scheduler introspection or Anypoint Exchange metadata extraction &#8212; so an over-declared `minMuleVersion` can cause an artifact to be rejected by that tooling even when you aren't deploying it at all. Because this comparison is patch-sensitive by design (it is what makes the corner case above reliable), setting `minMuleVersion` to the latest patch of whatever runtime you happened to build or scaffold with &#8212; rather than the minor version your application's feature set actually needs &#8212; over-declares the requirement and can make the application rejected by an otherwise-compatible runtime or tool.
+=== Choosing the value
+
+Set `minMuleVersion` to the lowest Mule version whose feature set your application actually needs, not the latest patch of whatever runtime you happened to build or scaffold with. Declaring a higher version than necessary is called over-declaring, and it can prevent an otherwise-compatible runtime or tool from accepting the application, as explained below.
+
+Lowering `minMuleVersion` has a trade-off too: it disables any feature or bug fix that is enabled by default between the new value and the version the application previously declared. Pick the lowest version whose behavior your application actually relies on, not an arbitrarily old one.
+
+=== How the runtime and tools check minMuleVersion
+
+`minMuleVersion` is not only a feature-flag selector. The runtime, and other tools that work with a Mule artifact, compare its `minMuleVersion` against a target version using the full `major.minor.patch`. If the artifact's `minMuleVersion` is newer than the target, it is rejected.
+
+The most visible case is deployment. The runtime refuses to deploy an application whose `minMuleVersion` is newer than the running runtime, and reports that the application requires a newer runtime version. For example, an application with `minMuleVersion=4.12.2` does not deploy on a `4.12.1` runtime, even though the two only differ in patch. To check the version of the target runtime: in CloudHub or Runtime Fabric, check the environment or instance details in Runtime Manager; on-premises, run `./mule -version` or check the startup log.
+
+The same comparison also happens outside the deployment cycle. Tooling that reads the artifact without deploying it also enforces it, for example when the platform inspects an application's schedulers, or when Anypoint Exchange extracts metadata from a published asset. An over-declared `minMuleVersion` can cause an artifact to be rejected by that tooling even when you aren't deploying it at all.
+
+This comparison is patch-sensitive by design, so that the backported bug fixes described below work reliably.
+
+=== Adopting a backported bug fix (advanced)
+
+The *patch* component of `minMuleVersion` (the third number, for example the `2` in `4.12.2`) only matters for the corner case where a bug fix was backported into a patch release instead of shipping with the next minor version, typically as the result of an escalated product request. The <<Feature Flags Reference>> table below documents these cases: most flags become available at a minor release, but a few become available at a patch release, for example `mule.tx.error.when.timeout`, available since Mule 4.6.1.
+
+Like every entry in that table, a backported bug fix is *disabled by default*, so that an application relying on the preexisting behavior isn't affected by upgrading the runtime. Enabling it is a deliberate opt-in.
+
+On an on-premises Mule instance, the recommended way to opt in to a backported fix (or any flag) is to configure it explicitly through a system property, as described in <<Configure Feature Flags for the Mule Instance>>, rather than by bumping the patch component of `minMuleVersion`. Raising the patch changes every flag available since that patch at once, including ones you may not have intended to adopt, and it also tightens the compatibility check described above.
+
+Only set a patch-level `minMuleVersion` when all of the following are true: the application depends on a specific backported fix, the deployment target doesn't support a system-property override, and MuleSoft Support has directed you to do so. Otherwise, leave the patch at `.0`.
 
 For the full list of fields in `mule-artifact.json`, including `minMuleVersion`, see xref:mule-artifact-json.adoc[Application Descriptor Reference (mule-artifact.json)].
 
@@ -31,6 +56,9 @@ For example, you can run a Mule application in Mule 4.5.0 instructing the Mule i
   "minMuleVersion": "4.1.0"
 }
 ----
+
+[NOTE]
+This example intentionally uses an older version, `4.1.0`, to illustrate selecting an earlier feature set. It is not a recommended value for a new application; see <<Understanding minMuleVersion>>.
 
 == Configure Feature Flags for the Mule Instance
 
