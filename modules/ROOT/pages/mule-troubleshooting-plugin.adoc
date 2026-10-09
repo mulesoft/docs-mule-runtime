@@ -23,7 +23,7 @@ The plugin works out-of-the-box in the Standalone, CloudHub, and CloudHub 2.0 de
 
 Run this command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, the tool saves the files unzipped in the `logs` directory of the distribution.
 
-Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create a ZIP file at that path containing all output files.
+Use the `./diag --extended` command to generate a heap dump. Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create an archive at that path containing all output files. The tool uses ZIP format when the `zip` command is available and falls back to TAR.GZ otherwise.
 
 On Windows, run `diag.bat`. The `--stdout` option isn't supported.
 
@@ -31,7 +31,7 @@ The plugin's help output lists the available commands and options.
 
 [source,bash]
 ----
-➜  mule-enterprise-standalone-4.6.23 ./tools/diag help
+➜  mule-enterprise-standalone-4.9.21 ./tools/diag help
 Mule Troubleshooting Tool
 =========================
 
@@ -45,23 +45,71 @@ Commands:
 Global Options:
   --stdout                Output the diagnostic dump to standard output
   --output <path>         Specify custom output directory or file path
+  --extended              Enable extended mode (heap dump + file artifacts: conf, logs, server-plugins, apps, domains, policies)
+  --logsmaxage <days>     Maximum age in days for logs collected with --extended (default 7, 0 disables)
+  --logsmaxtotalsize <mb> Maximum total size in MB for logs collected with --extended (default 100, 0 disables)
   --debug                 Enable debug mode with remote debugging on port 5005
+
+Watch Mode (generate dumps automatically when a condition is met):
+  --watch                 Poll runtime metrics and fire a diagnostic dump when a --trigger condition is met
+  --trigger <condition>   Trigger condition (repeatable; a dump fires when any one matches). Forms:
+                            cpu>N / cpu<N       CPU load percentage above/below N
+                            heap>N / heap<N     heap usage percentage above/below N
+                            thread>N / thread<N live thread count above/below N
+                            time=N              every N seconds
+                            cron=<expression>   on a Quartz cron schedule (e.g. cron=0 0/5 * * * ?)
+                            script=<path>       when <path> exits with a non-zero status
+  --occurrences <n>       Number of dumps to fire before stopping (default 1; 0 or negative = unlimited)
+  --checkperiod <seconds> How often to check the triggers, in seconds (default 30; a lower time=N trigger takes precedence)
 
 Examples:
   ./diag                          # Generate diagnostic dump to logs directory
   ./diag --stdout                 # Output diagnostic dump to stdout
-  ./diag --output /tmp/mule.zip   # Save to specific file
+  ./diag --extended               # Include heap dump and file artifacts in diagnostic
+  ./diag --output /tmp/mule       # Save to specific file (see Archive Format below)
   ./diag --output /tmp/           # Save to specific directory
   ./diag <operation-name>         # Execute specific operation
+  ./diag --watch --trigger heap>90              # Dump once when heap usage exceeds 90%
+  ./diag --watch --trigger cpu>80 --trigger time=300 --occurrences 0 --checkperiod 10
+                                  # Dump every time CPU exceeds 80% or every 300s, checking every 10s, forever
+  ./diag --watch --trigger 'cron=0 0/5 * * * ?' --extended
+                                  # Extended dump every 5 minutes on a cron schedule
 
 Output:
-  By default, the tool creates a ZIP file containing:
+  The tool creates an archive file containing:
   - mule_dump_<timestamp>.diaf    # Diagnostic information
   - thread_dump_<timestamp>.txt   # Thread dump
   - heap_dump_<timestamp>.hprof   # Heap dump
-
-  The ZIP file is saved to the 'logs' directory by default.
+  - tls_support/                  # TLS introspection results (if available)
+  If --extended is used, the following are also included:
+  - conf/, logs/, server-plugins/, apps/, domains/, policies/
+                                  # logs/ capped at 100MB / 7 days by default
+                                  # configurable via --logsmaxtotalsize / --logsmaxage
+  Archive Format:
+  - Uses ZIP format when 'zip' command is available
+  - Falls back to TAR.GZ format when only 'tar' is available
 ----
+
+=== Command-Line Options
+
+The previous output lists every option and its default. These behaviors aren't mentioned in that summary:
+
+* `--output <path>`: when `<path>` is an existing directory or ends with a trailing slash (`/`), the tool writes the individual output files into that directory. Any other `<path>` is treated as the archive to create, with the format taken from the extension (for example, `.zip` or `.tar.gz`).
+* `--stdout`: streams the archive to standard output instead of writing a file, so you can't combine it with `--output`. It isn't supported on Windows.
+* `--debug`: the JVM listens for a remote debugger on port `5005` and suspends until one attaches, so use it only to troubleshoot the tool itself.
+
+==== Watch Mode
+
+Watch mode (`--watch`) keeps the tool running and generates a diagnostic dump automatically whenever a `--trigger` condition is met, which is useful for capturing state at the moment an intermittent problem occurs. The `help` output lists the watch options and trigger forms. These behaviors aren't covered there:
+
+* Watch mode runs in the foreground and blocks the terminal until it reaches the number of successful dumps specified by `--occurrences`, or you stop it with `kbd:[Ctrl+C]`.
+* Watch mode wraps the default full diagnostic dump, so you can't combine it with a single named operation. You can combine it with `--extended`.
+* A trigger whose metric can't be sampled on the current host never fires, so it doesn't produce false dumps.
+
+[NOTE]
+====
+Watch mode and the `--logsmaxage` and `--logsmaxtotalsize` options are available in Mule runtime 4.9.21 and later.
+====
 
 == Understanding Diagnostic Information Analysis File (DIAF)
 
@@ -69,11 +117,21 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 
 * <<diaf-title>>
 * <<diaf-basic-info>>
+* <<diaf-system-info>>
+* <<diaf-health-signals>>
+* <<diaf-memory-detail>>
+* <<diaf-network-info>>
+* <<diaf-jvm-agents>>
 * <<diaf-statistics>>
 * <<diaf-event-dump>>
 * <<diaf-schedulers>>
 * <<diaf-cpu-usage>>
 * <<diaf-deployments>>
+* <<diaf-connectors-state>>
+* <<diaf-cluster-info>>
+* <<diaf-agent-info>>
+* <<diaf-platform-connectivity>>
+* <<diaf-known-issues>>
 
 [[diaf-title]]
 === Title
@@ -93,12 +151,18 @@ This section shows the report generation timestamp.
 
 This section shows details about the environment where the Mule runtime instance is running.
 
+[NOTE]
+====
+Available in Mule runtime 4.9.19 and later. The JVM resource metrics in this section appear under the JVM Resources block and use the jvm. prefix (for example, jvm.memory.used). In earlier patch versions, these metrics appear at the top level without the prefix (for example, memory.used). The metrics have the same meaning in both formats.
+Operating system details and the system-wide CPU load no longer appear in this section. See <<diaf-system-info,System Info>> for those metrics.
+====
+
 [cols="1,3", options="header"]
 |===
 | Field | Description
 
 | Mule Product/version
-| The product (CE/EE), version, and build number of the Mule runtime. Formatted as `[productName] [version] (build [buildNumber])`.
+| Product (CE/EE), version, and build number of the Mule runtime. Formatted as `[productName] [version] (build [buildNumber])`.
 
 | `mule_home`
 | Absolute path to `MULE_HOME` for the Mule runtime.
@@ -121,17 +185,8 @@ This section shows details about the environment where the Mule runtime instance
 | `JAVA_HOME`
 | Location of the JVM running the Mule runtime.
 
-| OS Name
-| Name of the OS running the Mule runtime.
-
-| OS Version
-| Version of the OS running the Mule runtime.
-
-| OS Arch
-| Architecture of the OS (for example, `amd64`, `aarch`).
-
 | Running Time
-| The total time the Mule runtime has been running.
+| Total time the Mule runtime has been running.
 
 | PID
 | Process ID of the JVM running the Mule runtime.
@@ -142,35 +197,398 @@ This section shows details about the environment where the Mule runtime instance
 | Report Nano Time
 | Report generation time in nanoseconds (`System.nanoTime`).
 
-| `memory.used`
+| `memory.used` (`jvm.memory.used`)
 | Amount of used memory in the JVM.
 
-| `memory.free`
+| `memory.free` (`jvm.memory.free`)
 | Amount of available memory in the JVM.
 
-| `memory.total`
+| `memory.total` (`jvm.memory.total`)
 | Total amount of memory in the JVM.
 
-| `memory.max`
+| `memory.max` (`jvm.memory.max`)
 | Maximum amount of memory the JVM attempts to use.
 
-| `memory.used/total`
+| `memory.used/total` (`jvm.memory.used/total`)
 | Percentage of used memory compared to the total allocated memory.
 
 | `memory.used/max`
 | Percentage of used memory compared to the maximum available memory.
 
-| `processors.available`
-| The number of processors available to the JVM process.
+| `processors.available` (`jvm.processors.available`)
+| Number of processors available to the JVM process.
 
-| `load.process`
+| `load.process` (`jvm.load.process`)
 | Percentage of recent CPU usage for the JVM process; negative value if unavailable.
 
-| `load.system`
-| Percentage of recent CPU usage for the whole system; negative value if unavailable.
+| License
+a| (Enterprise Edition only) License information for Enterprise Edition distributions appears under the `License` block. This block doesn't appear in Community Edition or when no Enterprise license is registered. When present, it can include:
 
-| `load.systemAverage`
-| System load average for the last minute; negative value if unavailable.
+* `valid`: Indicates whether the license is valid.
+* `validationError`: Indicates the reason the license is not valid, when applicable.
+* `evaluation`: Indicates whether the license is an evaluation license.
+* `expirationDate`: The license expiration date.
+* `licenseFile`: The license file in use.
+* `contact`: Contact information, including `name`, `email`, `telephone`, `company`, and `country`.
+* `entitlements`: The list of entitlements granted by the license.
+|===
+
+[NOTE]
+====
+In Mule runtime patches earlier than 4.9.19, this section also reports `OS Name`, `OS Version`, `OS Arch`, `load.system`, and `load.systemAverage`. Starting with Mule 4.9.19, the operating system details (`host.os.*`) and the host CPU load (`host.cpu.load.*`) are reported in the <<diaf-system-info,System Info>> section instead.
+====
+
+[[diaf-system-info]]
+=== System Info
+
+[NOTE]
+====
+Available in Mule runtime 4.9.19 and later.
+====
+
+This section shows host-level diagnostics for the machine, container, or pod where the Mule runtime instance is running. The diagnostics are collected from the host operating system. Unlike <<diaf-basic-info,Basic Information>>, which reports JVM-level metrics, this section reports host-level information.
+CPU load percentages are sampled over a short interval. Some fields are only populated on Linux hosts. On other operating systems, these fields can be absent or display `n/a`. If the runtime can't collect host information, the report shows `Host info not available` instead.
+
+==== Operating System
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.os.name`
+| Name of the host operating system.
+
+| `host.os.version`
+| Version of the host operating system.
+
+| `host.os.arch`
+| Architecture of the host operating system (for example, `amd64` or `aarch64`).
+|===
+
+==== CPU
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.cpu.model`
+| Processor model name.
+
+| `host.cpu.cores.physical`
+| Number of physical CPU cores on the host.
+
+| `host.cpu.cores.logical`
+| Number of logical CPUs (hardware threads) on the host.
+
+| `host.cpu.load.user`
+| Percentage of CPU time spent in user space during the sampling interval.
+
+| `host.cpu.load.system`
+| Percentage of CPU time spent in kernel or system space during the sampling interval.
+
+| `host.cpu.load.idle`
+| Percentage of idle CPU time during the sampling interval.
+
+| `host.cpu.load.iowait`
+| (Linux only) Percentage of CPU time spent waiting for input or output operations to complete. High values indicate disk or network I/O bottlenecks rather than CPU saturation.
+
+| `host.cpu.load.steal`
+| (Linux only) Percentage of CPU time taken by the hypervisor to serve other tenants. High values indicate a noisy-neighbor or over-committed virtualized host.
+|===
+
+==== Memory
+
+This section reports host physical memory, not the JVM heap.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.memory.total`
+| Total physical RAM on the host.
+
+| `host.memory.available`
+| Physical RAM currently available.
+
+| `host.memory.used`
+| Physical RAM currently in use (total minus available).
+
+| `host.memory.page.size`
+| Memory page size, in bytes.
+
+| `host.memory.swap.total`
+| Total swap space configured on the host.
+
+| `host.memory.swap.used`
+| Swap space currently in use. Non-zero swap usage often indicates memory pressure.
+
+| `host.memory.virtual.max`
+| Maximum virtual memory (RAM plus swap) available.
+
+| `host.memory.virtual.in.use`
+| Virtual memory currently in use.
+|===
+
+==== Disk Input and Output
+
+(Linux only) For each physical disk device, the report includes information about the device. The report excludes pseudo-devices such as `loop`, `ram`, and `dm-`, and zero-size devices. A device can show `(stats unavailable)` if the runtime can't read its per-device counters.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `model`
+| Disk model.
+
+| `size`
+| Total size of the disk.
+
+| `reads` / `writes`
+| Number of read or write operations the device has served since the runtime started.
+
+| `read.bytes` / `write.bytes`
+| Total amount of bytes the device has read or written since the runtime started.
+
+| `transfer.time.ms`
+| Total time spent on transfers, in milliseconds.
+|===
+
+[[diaf-health-signals]]
+=== Health Signals
+
+[NOTE]
+====
+Available in Mule runtime 4.9.21 and later.
+====
+
+This section evaluates a small set of fast host- and JVM-level health signals and reports only the ones that fired. The inputs come from JMX and the host operating system, plus a check for a JVM crash log. No log-file contents are read. On a healthy host, the section shows `None`.
+
+Each fired signal is listed on its own line with a short description and, where available, the measured values. These are the possible signals:
+
+[cols="1,3", options="header"]
+|===
+| Signal | Meaning
+
+| `Low Available Memory`
+| Available physical memory is below 10% of total memory.
+
+| `No Swap`
+| The host has no swap memory configured, which is a risk on a low-memory host.
+
+| `Low storage`
+| A mounted file system has less than 10% usable space. Reported per affected mount.
+
+| `High CPU Steal`
+| CPU steal time is high, which can indicate low CPU credits on the host (Linux only).
+
+| `High CPU IOWait`
+| CPU I/O wait time is high, which can indicate I/O problems or excessive disk usage (Linux only).
+
+| `JVM was restarted`
+| The JVM process is much younger than the host, which can indicate an unexpected restart.
+
+| `JVM crash log present`
+| A JVM fatal-error log (`hs_err_pid<PID>.log`) is present in the runtime logs directory or the JVM error-file location, indicating a previous JVM crash.
+|===
+
+[[diaf-memory-detail]]
+=== Memory Detail
+
+[NOTE]
+====
+Available in Mule runtime 4.9.21 and later.
+====
+
+This section shows the JVM memory-pool breakdown and garbage-collector statistics of the running Mule runtime, read in-process from JMX. It has four blocks: aggregate `Heap` usage, aggregate `Non-Heap` usage, one entry per memory pool under `Memory Pools`, and one entry per collector under `Garbage Collectors`.
+
+The `Heap`, `Non-Heap`, and each `Memory Pools` entry report these usage fields:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `init`
+| Initial amount of memory the JVM requested for the pool. Shown as `n/a` when the JVM doesn't define it.
+
+| `used`
+| Amount of memory currently in use.
+
+| `committed`
+| Amount of memory guaranteed to be available to the JVM.
+
+| `max`
+| Maximum amount of memory that can be used. Shown as `n/a` for an unbounded pool.
+
+| `used/committed`
+| Ratio of used to committed memory, as a percentage. Omitted when committed memory isn't positive.
+
+| `used/max`
+| Ratio of used to maximum memory, as a percentage. Omitted when maximum memory isn't defined.
+|===
+
+Each `Memory Pools` entry also reports its `type` (`HEAP` or `NON_HEAP`). Each `Garbage Collectors` entry reports:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `count`
+| Number of collections the collector has performed. Shown as `n/a` when the collector doesn't support the counter.
+
+| `time.ms`
+| Accumulated collection time, in milliseconds. Shown as `n/a` when the collector doesn't support the field.
+
+| `pools`
+| Names of the memory pools the collector manages, separated by `\|`.
+|===
+
+[[diaf-network-info]]
+=== Network Info
+
+[NOTE]
+====
+Available in Mule runtime 4.9.20 and later.
+====
+
+This section shows host-level network diagnostics for the machine, container, or pod where the Mule runtime instance is running: the hostname, the network interfaces with their assigned IP addresses and I/O counters, and the active and listening network connections. Interface counters and connection tables are collected from the host operating system.
+
+==== Host
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `host.network.hostname`
+| Hostname of the machine running the Mule runtime.
+|===
+
+==== Interfaces
+
+Each network interface is reported under its own name (for example, `eth0:`, `lo:`), including loopback, physical, virtual, and tunnel interfaces. For each interface, the report includes these fields:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `mtu`
+| Maximum transmission unit of the interface, in bytes.
+
+| `mac`
+| MAC address of the interface, or `None` for interfaces that don't have one (for example, loopback).
+
+| `flags`
+| Interface flags, such as `UP`, `LOOPBACK`, `POINTOPOINT`, `VIRTUAL`, and `MULTICAST`, or `None`.
+
+| `addrs`
+| IP addresses (IPv4 and IPv6) assigned to the interface, or `None`.
+
+| `bytes.recv` / `bytes.sent`
+| Cumulative number of bytes received or sent on the interface since the host started. These are raw counters intended for computing rates by comparing two reports.
+
+| `packets.recv` / `packets.sent`
+| Cumulative number of packets received or sent on the interface.
+
+| `errors.in` / `errors.out`
+| Cumulative number of inbound or outbound errors on the interface.
+
+| `drops.in`
+| Cumulative number of inbound packets dropped on the interface.
+|===
+
+==== Connections
+
+The report includes three connection tables, each preceded by its own header. Each connection line has the format `type=<type> state=<state> local=<address>:<port> foreign=<address>:<port>`, where `type` is one of `tcp4`, `tcp6`, `udp4`, or `udp6` and `state` is a TCP connection state (for example, `ESTABLISHED`, `LISTEN`, or `TIME_WAIT`). A wildcard address or port is shown as `*`. IPv6 addresses are shown in compressed form and enclosed in brackets (for example, `[::1]:8081`).
+
+[cols="1,3", options="header"]
+|===
+| Table | Description
+
+| `Connections (Mule pid=<pid>)`
+| Connections owned by the Mule runtime process.
+
+| `Listening ports`
+| Host-wide sockets in the `LISTEN` state. Each line also includes the owning `pid`.
+
+| `Connections (all, count=<n>)`
+| Full host-wide connection table, with the total count in the header. Each line also includes the owning `pid`.
+|===
+
+[[diaf-jvm-agents]]
+=== JVM Agents
+
+[NOTE]
+====
+Available in Mule runtime 4.9.19 and later.
+====
+
+This section lists the JVM agents attached at JVM startup through the `-javaagent`, `-agentpath`, or `-agentlib` arguments. JVM agents can instrument the runtime, intercept class loading, redefine classes, and add overhead. Use this information to identify third-party, APM, and observability agents such as profilers, monitoring, security, and bytecode instrumentation agents, that can affect runtime behavior or interfere with the Mule runtime.
+The report doesn't include agents attached dynamically after the JVM starts by using the Attach API. If no agents were attached at startup, the report shows `No JVM agents detected.` instead.
+Option values that appear to contain secrets, such as license keys, tokens, and passwords, are masked as `****` in both the report and the debug logs.
+
+==== Java Agents
+
+Jar-based agents attached with `-javaagent`. For each agent, the report shows the JAR path, the option string, and metadata read from the JAR's `META-INF/MANIFEST.MF`. If the JAR is missing or has no usable manifest, the report shows `(no manifest metadata available)`.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `Path`
+| Absolute path to the agent JAR.
+
+| `Options`
+| Option string passed to the agent. The report shows `(none)` if no options are given or `(empty)` if an empty option string is given. Sensitive values are masked.
+
+| `Premain-Class`
+| Class with the `premain` method that runs before the application's `main` method, when the agent is attached at startup.
+
+| `Agent-Class`
+| Class with the `agentmain` method, used when the agent is attached to a running JVM.
+
+| `Launcher-Agent-Class`
+| Class used to launch the agent from an executable JAR.
+
+| `Can-Redefine-Classes`
+| Indicates whether the agent can redefine classes.
+
+| `Can-Retransform-Classes`
+| Indicates whether the agent can retransform classes.
+
+| `Can-Set-Native-Method-Prefix`
+| Indicates whether the agent can set a native method prefix.
+
+| `Boot-Class-Path`
+| Paths the agent adds to the bootstrap class loader search.
+
+| `Implementation-Title`
+| Title of the agent implementation.
+
+| `Implementation-Vendor`
+| Vendor of the agent implementation.
+
+| `Implementation-Version`
+| Version of the agent implementation.
+|===
+
+==== Native Agents
+
+Agents attached through `-agentpath` or `-agentlib` are native libraries, which don't carry a manifest.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `Name`
+| Name (for `-agentlib`) or path (for `-agentpath`) of the native agent.
+
+| `Flag`
+| Argument used to attach the agent through `-agentpath` or `-agentlib`.
+
+| `Options`
+| Option string passed to the agent. The report shows `(none)` if no options are given or `(empty)` if an empty option string is given. Sensitive values are masked.
+
+| `File exists`
+| Whether the native library is found on disk. Shown only for agents attached through `-agentpath`.
 |===
 
 [[diaf-statistics]]
@@ -207,6 +625,8 @@ Set the `mule.enable.statistics` system property to collect General Application 
 
 ==== General Application Metrics
 
+This section shows counter metrics for the application or flow. Counter metrics include cumulative totals and rolling counts for the last 1, 5, 15, and 60 minutes (shown next to the total as `(rolling) 1m: ...  5m: ...  15m: ...  60m: ...`).
+
 [cols="1,3", options="header"]
 |===
 | Field | Description
@@ -240,9 +660,14 @@ Set the `mule.enable.statistics` system property to collect General Application 
 
 | Total Processing Time
 | Cumulative time (in milliseconds) spent processing all events.
+
+| Processing Time (rolling)
+| Aggregated processing-time figures for rolling windows of the last 1, 5, 15, and 60 minutes. Each window reports `min`, `max`, `avg`, and `count` (number of processed events that contributed to the window). When `count` is `0`, `min`, `max`, and `avg` are reported as `0`.
 |===
 
 ==== Flow Statistics
+
+This section shows counter metrics for the flow. Counter metrics include cumulative totals and rolling counts for the last 1, 5, 15, and 60 minutes (shown next to the total as `(rolling) 1m: ...  5m: ...  15m: ...  60m: ...`).
 
 [cols="1,3", options="header"]
 |===
@@ -268,6 +693,9 @@ Set the `mule.enable.statistics` system property to collect General Application 
 
 | Average Processing Time
 | Average time (in milliseconds) required to process an event.
+
+| Processing Time (rolling)
+| Aggregated processing-time figures for rolling windows of the last 1, 5, 15, and 60 minutes. Each window reports `min`, `max`, `avg`, and `count` (number of processed events that contributed to the window). When `count` is `0`, `min`, `max`, and `avg` are reported as `0`.
 |===
 
 [[diaf-event-dump]]
@@ -287,7 +715,9 @@ This section shows a hierarchical listing of in-flight events. For each event hi
 
 | `eventContextState`
 a|
+* `PENDING`: Event has been created but not yet accepted by the flow for processing.
 * `EXECUTING`: Event is being executing by the flow or executable component, or has finished but the response is still being processed.
+* `WAITING_NON_BLOCKING`: Event is waiting for a non-blocking operation to complete.
 * `RESPONSE_PROCESSED`: Event execution is complete and the response is handled.
 * `COMPLETE`: Same as `RESPONSE_PROCESSED`, and all child events are `RESPONSE_PROCESSED`.
 * `TERMINATED`: After `COMPLETE`, and all completion callbacks of the context execute.
@@ -479,6 +909,330 @@ Policy templates appear as separate top-level entries. Each entry represents a u
 | List of all plugins available in the policy template.
 |===
 
+[[diaf-connectors-state]]
+=== Connectors State
+
+[NOTE]
+====
+Available in Mule runtime 4.9.19 and later.
+====
+
+This section reports the state of each connector configuration in the deployed applications, including the connection lifecycle, connection pool information, recent errors, and TLS details. When more than one application is deployed, the report groups connector configurations by application. If an application isn't started, the report shows `Application is not started — no artifact context available.`. If an application has no connector configurations, the report shows `No connector configurations found.`.
+
+For each connector configuration, the report includes a header with the name, the `Extension` it belongs to, and whether the configuration is `Dynamic` (resolved per event from expressions). The report fields depend on whether the configuration is static or dynamic.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| Connection Provider
+| Class name of the resolved connection provider. If the configuration doesn't declare one, the report shows `(configuration does not declare a connection provider)`.
+
+| TLS details
+| TLS context information for the connection provider, including certificate validity where applicable. The report shows this information only for providers that use TLS.
+
+| Connection State
+a| A block of connection statistics for the configuration, shown as `(no statistics available)` when none have been recorded. When present, the block contains:
+
+* `Last Used`: Timestamp of the most recent use of the connection.
+* `Active Components`: Number of components currently using this configuration.
+* `Last Connection Attempt`: Timestamp of the most recent connection attempt.
+* `Last Successful Conn.`: Timestamp of the most recent successful connection.
+* `Pool Info`: For pooling connection providers, the connection pool state: `active`, `idle`, `maxTotal`, `maxIdle`, `created`, `borrowed`, `returned`, and `destroyed` connection counts. An `active` count at or near `maxTotal` indicates the pool is saturated.
+* `Last Error`: Timestamp and details of the most recent connection error, when one has occurred.
+
+| Usages
+| (Static configurations) Component locations that reference this configuration, or `(not referenced by any component)` / `(no usages created yet)` if there are none.
+
+| Last Resolution Failure
+| (Dynamic configurations) Timestamp and details of the most recent failure to resolve the dynamic configuration, or `Not available` if there are none.
+
+| Last Successful Creation
+| (Dynamic configurations) Timestamp of the most recent successful resolution of a configuration instance, or `Not available` if there are none.
+
+| Active Usages
+| (Dynamic configurations) Currently active resolved instances, each with its own `Connection State` block, or `(no active dynamic usages)` if there are none.
+|===
+
+[[diaf-cluster-info]]
+=== Cluster Info
+
+[NOTE]
+====
+This section applies to Enterprise Edition only and is available in Mule runtime 4.9.19 and later.
+====
+
+This section reports the clustering configuration of the local node. When lock diagnostics are enabled, it also reports the distributed locks currently held across the cluster.
+This section isn't available in Community Edition or non-clustered runtimes. If the node isn't part of an active cluster, the report shows `Cluster is not active. No cluster information available.`.
+
+==== Cluster Configuration
+
+The report mirrors the cluster configuration of the local node.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `clusterId`
+| Identifier of the cluster the node belongs to.
+
+| `clusterNodeId`
+| Identifier of the local node in the cluster.
+
+| `clusterSize`
+| Number of nodes currently in the cluster.
+
+| `clusterSchema`
+| Cluster schema in use.
+
+| `multicastEnabled`
+| Indicates whether multicast is enabled for cluster discovery.
+
+| `tcpInboundPort`
+| TCP port the node uses for inbound cluster communication.
+
+| `nodes`
+| IP addresses of the nodes in the cluster.
+
+| `networkInterfaces`
+| Network interfaces used for cluster communication.
+|===
+
+==== Lock Diagnostics
+
+Available only when lock diagnostics are enabled on the runtime. Reports the local member, the number of reporting members, and the distributed locks currently held. For each held lock, the report includes the `lockId` and the lock holder details.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `holder.nodeId`
+| Node holding the lock, shown as `LOCAL` or `REMOTE`.
+
+| `holder.thread`
+| Name of the thread that holds the lock.
+
+| `holder.threadId`
+| Identifier of the thread holding the lock.
+
+| `holder.threadState`
+| State of the holding thread, or `n/a` for remote nodes.
+
+| `holder.acquiredAt`
+| Timestamp when the lock was acquired.
+
+| `holder.heldFor`
+| How long the lock has been held.
+
+| `holder.callerClass`
+| (When acquisition stack capture is enabled) Class that acquired the lock.
+
+| `holder.acquireStack`
+| (When acquisition stack capture is enabled) Stack frames captured when the lock was acquired.
+
+| `hz.isLocked`
+| Hazelcast-level lock state, or `hz.state: unavailable` if it can't be queried.
+|===
+
+The report also lists orphan locks, which are held locks that have no owning node in any member's registry, for example, the holding node stopped before releasing the lock. If acquisition stack traces aren't enabled, the report includes a note explaining how to enable them.
+
+[[diaf-agent-info]]
+=== Agent Info
+
+[NOTE]
+====
+Available in Mule runtime 4.9.20 and later. This section is available only in Enterprise Edition runtimes that have the Mule agent installed.
+====
+
+The Agent Info section reports the installation and health of the Mule agent that pairs this runtime with Anypoint Platform: whether the agent is installed, its version, key configuration values, keystore certificate details, and the most recent connection status. Use it to diagnose agent pairing and platform-connectivity issues.
+
+The first line reports whether the agent is installed:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `installed`
+| `true` if the Mule agent plugin is present, or `false` if it isn't. When `false`, the report shows a message directing you to run `./bin/amc_setup` to install and pair the runtime, and no further fields are reported.
+
+| `version`
+| Version of the installed agent, read from the `mule-agent-api` JAR file name, or `n/a` if it can't be determined.
+|===
+
+==== Configuration
+
+Key values read from the agent descriptor file (`conf/mule-agent.yml`). If the file isn't present, the report shows a note indicating the agent hasn't been configured. Fields that can't be read are shown as `n/a`.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `websocket.enabled`
+| Whether the WebSocket transport is enabled.
+
+| `websocket.consoleUri`
+| WebSocket connection URI to Anypoint Platform.
+
+| `rest.enabled`
+| Whether the REST transport is enabled.
+
+| `rest.port`
+| Port configured for the REST transport.
+|===
+
+==== Keystore
+
+Certificate details read from the agent keystore (`conf/mule-agent.jks`). If the file isn't present, can't be loaded, or has no certificates, the report shows a note describing which of those cases applies. Otherwise, the report shows one entry per certificate.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `alias`
+| Alias of the certificate entry in the keystore.
+
+| `subjectDN`
+| Subject distinguished name of the certificate.
+
+| `issuerDN`
+| Issuer distinguished name of the certificate.
+
+| `validFrom`
+| Date from which the certificate is valid.
+
+| `validUntil`
+| Date until which the certificate is valid.
+
+| `validity`
+| Current validity status of the certificate: valid (with days until expiry), expired, or not yet valid.
+|===
+
+==== Connectivity
+
+Connection status derived from the certificate and the agent log file (`logs/mule-agent.log`). If the log file isn't present, the report notes that the connection history is unavailable.
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `serverId`
+| Server ID that identifies this runtime to Anypoint Platform, read from the common name of the agent certificate, or `n/a` if it can't be determined.
+
+| `log`
+| Path to the agent log file inspected for connection events.
+
+| `status`
+| Latest connection status found in the log: `CONNECTED`, `DISCONNECTED`, `DELETED` (the runtime was deleted from the platform), or `UNKNOWN` if no connection events are found.
+
+| `lastSuccessfulConnection`
+| Timestamp of the most recent successful connection to the platform, or `n/a` if none is found.
+
+| `recentHistory`
+| The most recent connection events, each shown as a timestamp and status, up to the last five events.
+|===
+
+[[diaf-platform-connectivity]]
+=== Platform Connectivity
+
+[NOTE]
+====
+Available in Mule runtime 4.9.20 and later. This operation runs on demand only. Because it performs outbound network connections, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag platformConnectivity`.
+====
+
+This operation checks TCP connectivity from the Mule runtime host to the Anypoint Platform endpoints and dumps the TLS certificate chain presented by the platform. Use it to diagnose connectivity or TLS issues between a runtime and the control, data, and monitoring planes. The report has two subsections.
+
+==== Connectivity
+
+For each endpoint, the operation resolves the host and attempts a TCP connection, reporting one line per endpoint. The operation probes a fixed list of US, EU, and monitoring-plane endpoints, plus any endpoints derived from this runtime's `anypoint.platform.base_uri` and `anypoint.platform.analytics_base_uri` configuration. Endpoints that share the same host and port are probed only once.
+
+A reachable endpoint is reported as:
+
+[source,text]
+----
+OK     plane=<label> host=<host> port=<port> ips=<resolved-ips> (<duration> ms)
+----
+
+An unreachable endpoint is reported as:
+
+[source,text]
+----
+FAILED plane=<label> host=<host> port=<port> ips=<resolved-ips> : <reason>
+----
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `plane`
+| Label identifying the endpoint's origin: `us` or `eu` for the control and data planes, `us-mon` or `eu-mon` for the monitoring plane, or `configured` for an endpoint derived from this runtime's configuration.
+
+| `host`
+| Hostname or IP address of the endpoint.
+
+| `port`
+| TCP port probed (typically `443`, or `5044` for the monitoring ingestor).
+
+| `ips`
+| IP addresses the host resolved to.
+
+| `duration`
+| (Reachable endpoints only) Time taken to establish the connection, in milliseconds.
+
+| `reason`
+| (Unreachable endpoints only) Cause of the failure, such as an unresolvable host or a refused connection.
+|===
+
+==== Certificate Chain
+
+This subsection opens a TLS connection to `mule-manager.anypoint.mulesoft.com:443` and dumps the certificate chain the platform presents. The chain is captured for inspection even when it wouldn't pass validation, so it can be used to diagnose TLS interception or trust issues.
+
+The report first shows the handshake outcome as `handshake: success` or `handshake: FAILED: <error>`, followed by one entry per certificate in the chain, indexed from `[0]`:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `subject`
+| Subject distinguished name of the certificate.
+
+| `issuer`
+| Issuer distinguished name of the certificate.
+|===
+
+[[diaf-known-issues]]
+=== Known Issues
+
+[NOTE]
+====
+Available in Mule runtime 4.9.21 and later.
+
+This operation runs on demand only. Because it scans the full set of rotated log files, which is disk-intensive, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag knownIssues`.
+====
+
+This operation scans the runtime logs and the deployed applications for a set of well-known problem signatures and reports the ones it detects. Use it to surface recurring issues, such as out-of-memory conditions or abnormal terminations, that otherwise require manual log inspection.
+
+The report shows these sections, in this order. Under each section, the operation lists one line per detected signal, showing the signal, the number of occurrences, and, where available, a short diagnosis. A section with no detections shows `None`. When a source can't be read, the operation shows a marker such as `(source not available: no readable Mule log files found)` instead of a count.
+
+[cols="1,3", options="header"]
+|===
+| Section | Description
+
+| `Memory:`
+| Out-of-memory conditions detected in the Mule logs, including Java heap, PermGen, and Metaspace exhaustion.
+
+| `Linux OOM-killer:`
+| Events where the Linux kernel out-of-memory killer terminated a process, detected in the kernel logs.
+
+| `Abnormal termination:`
+| Signs of an abnormal JVM termination, such as a `SIGKILL`, an unexpected JVM exit, or a CloudHub restart trigger, detected in the runtime and monitor logs.
+
+| `MUnit at runtime:`
+| MUnit artifacts found among the deployed applications. MUnit is a test-scope dependency and shouldn't be packaged for deployment. Each detection lists the artifact coordinates followed by this diagnosis.
+
+| `Connector versions:`
+| The connector versions found in the deployed applications, listed for reference.
+|===
+
 == Considerations
 
 * DIAF provides investigation hints. Check the logs for complete details.
@@ -487,3 +1241,7 @@ Policy templates appear as separate top-level entries. Each entry represents a u
 * Correlate events in the event dump section with logs by using the `eventId` for deeper analysis.
 * Collect scheduled diagnostics during maintenance windows in production environments.
 * To verify if all the hosts defined in your deployable artifacts (domains, applications, policies) support TLS 1.2 and 1.3 connectivity, enable the `mule.extractConnectionData.enable` system property. On UNIX, the tool generates `<ORIGINAL_CSV_NAME>_tls_results.csv` along with DIAF output. Enable the `mule.extractConnectionData.silentErrors` system property to log errors without failing deployment. Not available for Windows.
+
+== See Also
+
+include::release-notes::partial$release-notes/rn-known-issues.adoc[tag=knownIssuesSeeAlsoLink]
