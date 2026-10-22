@@ -4,29 +4,29 @@ include::_attributes.adoc[]
 endif::[]
 :page-aliases: scatter-gather-xml-reference.adoc, migration-core-scatter-gather.adoc
 
-The Scatter-Gather component is a routing event processor that processes a Mule event through different parallel processing routes that contain different event processors. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each of these routes uses a separate thread to execute the event processors, and the resulting Mule event can be either the same Mule event without modifications or a new Mule event with its own payload, attributes, and variables. The Scatter-Gather component then combines the Mule events returned by each processing route into a new Mule event that is passed to the next event processor only after every route completes successfully.
+The Scatter-Gather component is a routing event processor that processes a Mule event through parallel processing routes that contain different event processors. Each route receives a reference to the Mule event and executes a sequence of one or more event processors. Each route uses a separate thread to execute its event processors. The resulting Mule event is either the same Mule event without modifications or a new Mule event with its own payload, attributes, and variables. After every route completes successfully, the Scatter-Gather component combines the Mule events that each route returns into a new Mule event and passes the new event to the next event processor.
 
-The Scatter-Gather component executes each route in parallel, not sequentially. Parallel execution of routes can greatly increase the efficiency of your Mule application and may provide more information than sequential processing.
+The Scatter-Gather component executes each route in parallel, not sequentially. Parallel execution can increase the efficiency of your Mule application and can provide more information than sequential processing.
 
-The Scatter-Gather component works with repeatable streams. It does not process nonrepeatable streams, which can be read only once before they are lost. By default, all streams are repeatable in Mule unless a component's streaming strategy is configured to be nonrepeatable.
+The Scatter-Gather component works with repeatable streams. It doesn't process nonrepeatable streams, which can be read only once before they're lost. By default, all streams in Mule are repeatable unless you configure a component's streaming strategy as nonrepeatable.
 
-The following diagram details the behavior of the Scatter-Gather component:
+This diagram shows the behavior of the Scatter-Gather component:
 
 image::mruntime-scatter-gather.png["A Scatter-Gather component processing multiple events in a Mule application"]
 
 [calloutlist]
-. The Scatter-Gather component receives a Mule event and sends a reference of this Mule event to each processing route.
-. Each of the processing routes starts executing in parallel. After all processors inside a route finish processing, the route returns a Mule event, which can be either the same Mule event without modifications or a new Mule event created by the processors in the route as a result of the modifications applied.
-. After all processing routes have finished execution, the Scatter-Gather component creates a new Mule event that combines all resulting Mule events from each route, and then passes the new Mule event to the next component in the flow.
+. The Scatter-Gather component receives a Mule event and sends a reference to this Mule event to each processing route.
+. All processing routes start executing in parallel. After all processors inside a route finish processing, the route returns a Mule event. This Mule event is either the same Mule event without modifications or a new Mule event that the processors in the route create.
+. After all processing routes finish, the Scatter-Gather component creates a new Mule event that combines the resulting Mule events from each route. Then the Scatter-Gather component passes the new Mule event to the next component in the flow.
 
-WARNING: Configure your Scatter-Gather component to have at least two routes; otherwise, your Mule application throws an exception and does not start.
+WARNING: Configure your Scatter-Gather component with at least two routes. Otherwise, your Mule application throws an exception and doesn't start.
 
 == Result
 
-After all routes complete, the component outputs the results in the following format:
+After all routes complete, the component outputs the results in this format:
 `{0: messageFromRoute0, 1: messageFromRoute1, ...}`
 
-To extract all resulting payloads to an array, use a DataWeave script, such as the following:
+To extract all resulting payloads to an array, use a DataWeave script, such as this one:
 
 [source,dw,linenums]
 ----
@@ -35,7 +35,7 @@ flatten(valuesOf(payload) map ((item, index) -> item.*payload))
 
 == Variable Propagation
 
-Every route starts with the same initial variable values. Modifications to a variable within a specific route do not affect other routes. So, if a variable is added or modified in one route, then, after aggregation, the value is defined by that route. If a variable is added or modified by more than one route, the value is added to a list of all the values defined for that variable within all the routes, for example:
+Every route starts with the same initial variable values. Changes to a variable in one route don't affect other routes. If one route adds or modifies a variable, the value after aggregation is the value that route defines. If multiple routes add or modify the same variable, the value after aggregation is a list of all the values that the routes define for that variable. For example:
 
 [source,xml,linenums]
 ----
@@ -62,20 +62,20 @@ After aggregation, the variables are:
 
 == Error Handling Inside Scatter-Gather Routes
 
-You can use a Try scope in each route of a Scatter-Gather component to handle any errors that might be generated by a route’s event processors. After every route executes, if any has failed with an error, then the Scatter-Gather component throws an error of type `MULE:COMPOSITE_ROUTING`, and event processing does not proceed past the Scatter-Gather component in the flow. Instead, the flow branches to your error-handling event processors.
+To handle errors that a route's event processors generate, use a Try scope in each route of the Scatter-Gather component. After all routes execute, if any route fails with an error, the Scatter-Gather component throws an error of type `MULE:COMPOSITE_ROUTING`. Event processing doesn't continue past the Scatter-Gather component in the flow. Instead, the flow branches to your error-handling event processors.
 
-Because the `MULE:COMPOSITE_ROUTING` error object gathers not only errors from routes that failed but also Mule events from successfully completed routes, your application can use the error-handling event processors to process Mule events from the routes that completed. For the full list of fields available in the error, see <<composite_routing_fields>>.
+The `MULE:COMPOSITE_ROUTING` error object gathers the errors from the routes that failed and the Mule events from the routes that completed successfully. Your error-handling event processors can then process the Mule events from the completed routes. For the full list of fields available in the error, see <<composite_routing_fields>>.
 
+These two cases show how error handling works in a Scatter-Gather component:
 
-To illustrate how this works, consider the following two cases:
+* Each route in a Scatter-Gather component contains a Try scope. +
+One route generates an error. The `on-error-continue` error handler in that route's Try scope handles the error, so the route completes successfully. The Scatter-Gather component consolidates the Mule events from all routes into a new Mule event and passes the consolidated event to the next event processor.
 
-* The routes in a Scatter-Gather component each contain a Try scope. +
-One of the routes generates an error that is successfully handled by that route’s Try scope through an `on-error-continue` error handler, so the route is completed successfully. The Scatter-Gather component consolidates the Mule events from all routes into a new Mule event and passes the consolidated event to the next event processor.
+* One route in a Scatter-Gather component has no Try scope, has a Try scope with an error handler that can't handle the error type, or has an `on-error-propagate` error handler. +
+An error occurs in this route and causes the route to fail. As a result, the Scatter-Gather component throws a `MULE:COMPOSITE_ROUTING` error. The flow branches to your error-handling event processors, which can process the Mule events from the completed routes.
 
-* One of the routes in a Scatter-Gather component does not contain a Try scope or contains a Try scope with an error handler that cannot handle the error type, or the error handler is an `on-error-propagate` type. +
-An error occurs in this route, causing the route to fail, which in turn causes the Scatter-Gather component to throw a `MULE:COMPOSITE_ROUTING` error. The flow branches to your error-handling event processors, which are able to process the Mule events from the completed routes.
+This example shows how to handle these errors:
 
-Example of handling these errors:
 [source,xml,linenums]
 ----
 <flow name="errorHandler">
@@ -89,20 +89,20 @@ Example of handling these errors:
     </scatter-gather>
     <error-handler>
         <on-error-continue type="MULE:COMPOSITE_ROUTING">
-            <!-- This will have the error thrown by the first route -->
+            <!-- Returns the error thrown by the first route -->
             <logger level="WARN" message="#[error.errorMessage.payload.failures['0']]"/>
-            <!-- This will be APP:MYERROR, the type set in the raise-error component -->
+            <!-- Returns APP:MYERROR, the type set in the raise-error component -->
             <logger level="WARN" message="#[error.errorMessage.payload.failures['0'].errorType]"/>
-            <!-- This will be "Details on what caused this application error", the description set in the raise-error component -->
+            <!-- Returns "Details on what caused this application error", the description set in the raise-error component -->
             <logger level="WARN" message="#[error.errorMessage.payload.failures['0'].description]"/>
-            <!-- This will be a null value -->
+            <!-- Returns null -->
             <logger level="WARN" message="#[error.errorMessage.payload.failures['1']]"/>
 
-            <!-- This will be a null value -->
+            <!-- Returns null -->
             <logger level="WARN" message="#[error.errorMessage.payload.results['0']]"/>
-            <!-- This will have the result of the second (correctly executed) route -->
+            <!-- Returns the result of the second route, which completed successfully -->
             <logger level="WARN" message="#[error.errorMessage.payload.results['1']]"/>
-            <!-- This will be "apple", the payload set in the second route -->
+            <!-- Returns "apple", the payload set in the second route -->
             <logger level="WARN" message="#[error.errorMessage.payload.results['1'].payload]"/>
         </on-error-continue>
     </error-handler>
@@ -112,7 +112,7 @@ Example of handling these errors:
 [[composite_routing_fields]]
 === MULE:COMPOSITE_ROUTING Error Fields
 
-When the Scatter-Gather component throws a `MULE:COMPOSITE_ROUTING` error, the error message payload (`error.errorMessage.payload`) contains the outcome of every route. Both `failures` and `results` are keyed by the route index, which is a string that corresponds to the order in which the routes are declared in the XML configuration, starting at `'0'`. Each route appears in only one of the two collections, so looking up a route index in the other collection returns `null`.
+When the Scatter-Gather component throws a `MULE:COMPOSITE_ROUTING` error, the error message payload (`error.errorMessage.payload`) contains the outcome of every route. Both `failures` and `results` use the route index as the key. The route index is a string that matches the order of the routes in the XML configuration, starting at `'0'`. Each route appears in only one of the two collections, so looking up its index in the other collection returns `null`.
 
 [%header,cols="2,5"]
 |===
@@ -122,16 +122,16 @@ When the Scatter-Gather component throws a `MULE:COMPOSITE_ROUTING` error, the e
 | Errors from the routes that failed, keyed by route index. For example, `failures['0']` returns the error thrown by the first route. If the route at that index completed successfully, the value is `null`.
 
 | `error.errorMessage.payload.failures['<index>'].errorType`
-| Type of the error thrown during the route execution, which is defined by the component that raised it. In the example, this value is `APP:MYERROR`, which matches the `type` attribute of the `raise-error` component. Use `errorType.namespace` and `errorType.identifier` to get each part of the type separately, for example, `APP` and `MYERROR`.
+| Type of the error that the route threw. The component that raised the error defines this type. In the example, this value is `APP:MYERROR`, which matches the `type` attribute of the `raise-error` component. To get each part of the type separately, use `errorType.namespace` and `errorType.identifier`, for example, `APP` and `MYERROR`.
 
 | `error.errorMessage.payload.failures['<index>'].description`
-| Description of the error, which is defined by the component that raised it. In the example, this value is `Details on what caused this application error`, which matches the `description` attribute of the `raise-error` component.
+| Description of the error. The component that raised the error defines this description. In the example, this value is `Details on what caused this application error`, which matches the `description` attribute of the `raise-error` component.
 
 | `error.errorMessage.payload.failures['<index>'].detailedDescription`
-| Description of the error that can be the same as or more extensive than `description`.
+| Description of the error that's the same as or more extensive than `description`.
 
 | `error.errorMessage.payload.failures['<index>'].errorMessage`
-| Optional Mule message that the failing component associated with the error, such as the response of a failed HTTP request. Components that don't provide one, such as the `raise-error` component, return `null`.
+| Optional Mule message that the failing component associates with the error, such as the response of a failed HTTP request. If the component doesn't provide a message, as with the `raise-error` component, the value is `null`.
 
 | `error.errorMessage.payload.failures['<index>'].cause`
 | Underlying Java `Throwable` that caused the route to fail.
@@ -140,25 +140,26 @@ When the Scatter-Gather component throws a `MULE:COMPOSITE_ROUTING` error, the e
 | Mule messages from the routes that completed successfully, keyed by route index. For example, `results['1']` returns the message from the second route. If the route at that index failed, the value is `null`.
 
 | `error.errorMessage.payload.results['<index>'].payload`
-| Payload of the message returned by a successful route. In the example, `results['1'].payload` is `apple`.
+| Payload of the message that a successful route returns. In the example, `results['1'].payload` is `apple`.
 
 | `error.errorMessage.payload.results['<index>'].attributes`
-| Attributes of the message returned by a successful route.
+| Attributes of the message that a successful route returns.
 
 | `error.childErrors`
-| Collection of the errors thrown by the failed routes.
+| Collection of the errors that the failed routes threw.
 |===
 
-The fields available for each failure are the same fields that any Mule error provides. For more information, see xref:mule-error-concept.adoc#selector_expressions[Selector Expressions for Mule Errors].
+Each failure provides the same fields as any other Mule error. For more information, see xref:mule-error-concept.adoc#selector_expressions[Selector Expressions for Mule Errors].
 
-== Handle Timeout Errors in a Scatter-Gather
+== Handle Timeout Errors in a Scatter-Gather Component
 
-If you configure a timeout for a Scatter-Gather component and a route does not complete processing before the timeout expires, the route throws a `MULE:TIMEOUT` error. This error is then handled the same way as any other error generated from a route: after each route completes (either by processing success or by throwing a `MULE:TIMEOUT` error), the successful results and errors are collected together in the Scatter-Gather component `MULE:COMPOSITE_ROUTING` error, which is then processed in your configured error handler.
+If you configure a timeout for a Scatter-Gather component and a route doesn't complete processing before the timeout expires, the route throws a `MULE:TIMEOUT` error. The Scatter-Gather component handles this error the same way as any other error from a route. After each route completes, either successfully or by throwing a `MULE:TIMEOUT` error, the Scatter-Gather component collects the successful results and the errors in the `MULE:COMPOSITE_ROUTING` error. Your configured error handler then processes this error.
 
 == Example Project
-In Anypoint Studio, you can download and open the example project _Scatter-Gather Flow Control_ from Anypoint Exchange to learn more about how to use the Scatter-Gather component. This example shows the usage of the scatter-gather control flow to aggregate data in parallel and return the result in JSON.
 
-The example uses prepared data as input for two resources that should be aggregated. The data represents information about two contacts and has the following structure:
+To learn more about how to use the Scatter-Gather component, download and open the example project _Scatter-Gather Flow Control_ from Anypoint Exchange in Anypoint Studio. This example shows how to use the Scatter-Gather component to aggregate data in parallel and return the result in JSON.
+
+The example uses prepared data as input for two resources to aggregate. The data represents information about two contacts and has this structure:
 
 |===
 |Resource|`firstname`|`surname`|`phone`|`email`
@@ -175,40 +176,40 @@ The example uses prepared data as input for two resources that should be aggrega
 |jane.doe@texasComp.com
 |===
 
-DataWeave is used to aggregate the data. The information about the contacts is aggregated to a JSON structure that represents data from both resources.
+A DataWeave script aggregates the contact information into a JSON structure that represents the data from both resources.
 
-To download and open this example project while you are in Anypoint Studio, click the Exchange icon in the upper-left corner. Then, in the window that opens, log into Anypoint Exchange and search on the name of the project.
+To download and open this example project in Anypoint Studio, click the Exchange icon in the upper-left corner. In the window that opens, log in to Anypoint Exchange and search for the project name.
 
 == Scatter-Gather XML Reference
 
 [%header%autowidth.spread,cols="a,a"]
 |===
 |Element |Description
-| `scatter-gather` |Sends a request message to multiple targets concurrently. It collects the responses from all routes, and aggregates them into a single message.
+| `scatter-gather` |Sends a request message to multiple targets concurrently. It collects the responses from all routes and aggregates them into a single message.
 2+| *Attributes*
-|`timeout` |Sets the timeout for responses from sent messages, in milliseconds. A value of 0 or lower than 0 means no timeout.
+|`timeout` |Sets the timeout for responses from sent messages, in milliseconds. A value of 0 or a negative value means no timeout.
 
-| `maxConcurrency` |Determines the maximum amount of concurrent routes to process. +
-By default all routes run in parallel.
+| `maxConcurrency` |Determines the maximum number of concurrent routes to process. +
+By default, all routes run in parallel.
 
-By setting this value to 1, scatter-gather processes the routes sequentially.
+If you set this value to 1, the Scatter-Gather component processes the routes sequentially.
 
-| `target` | The name of the target variable.
+| `target` | Name of the target variable.
 
 | `targetValue` | Value of the data to store in the target variable. +
 If not set, the default value is `#[payload]`. +
 This field accepts any value that a variable accepts:
 
-* Any supported data type.
-* DataWeave expressions.
-* The keywords `payload`, `attributes`, and `message`, but _not_ the keyword `vars`.
+* Any supported data type
+* DataWeave expressions
+* The keywords `payload`, `attributes`, and `message`, but *not* the keyword `vars`
 
 |===
 
 [%header%autowidth.spread,cols=","]
 |===
 |Child Element |Description
-| `route` | One of the routes in a the scatter-gather router.
+| `route` | A route in the Scatter-Gather router.
 |===
 
 === Throws
