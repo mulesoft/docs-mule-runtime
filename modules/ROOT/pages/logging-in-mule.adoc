@@ -8,7 +8,7 @@ MuleSoft provides application logs and a runtime log to help you monitor and tro
 
 == App Logs
 
-Every app that you build in Studio comes with its own `log4j2.xml` file. The log contains information about any errors raised in the app (unless you have app logic to handle those errors). It also contains anything you want to explicitly log, if you build the logic in the app.
+Every app that you build in Studio comes with its own `log4j2.xml` configuration file, which defines how the app log is written. The app log contains information about any errors raised in the app (unless you have app logic to handle those errors). It also contains anything you explicitly log in the app.
 
 Mule automatically logs multiple messages and specific elements in your app flows to help you debug and keep track of events. You can also include the xref:logger-component-reference.adoc[Logger component] anywhere in a flow and set it up to output any message you want.
 
@@ -20,40 +20,29 @@ You can view an app log as follows:
 
 By default, Mule stores application log files in the following location: `MULE_HOME/logs/<app-name>.log`. You can customize the log file path in the `log4j2.xml` file of the Mule app.
 
+If you deploy your app to CloudHub or CloudHub 2.0, see xref:runtime-manager::viewing-log-data.adoc[View Log Data]. If you deploy your app to Runtime Fabric, see xref:runtime-fabric::use-log4j-appender.adoc[Integrating with Your Logging System Using Log4j].
+
 == Runtime Log
 
 The runtime log (`mule_ee.log`) contains information about the apps and lifecycle events. For example, the log records an entry when a Mule service or app starts, deploys, stops, or undeploys.
 
 The runtime log configuration is located in the `log4j2.xml` file, in the `/conf` directory. You can customize this file when running Mule on-premises.
 
-=== View the Runtime Log in Anypoint Studio:
+=== View the Runtime Log in Anypoint Studio
 
 Click *Anypoint Studio > About Anypoint Studio > Installation Details > Configuration > View Error Log*:
 
 image::logging-in-mule-view-error-log.png["An Anypoint Studio error log viewer interface"]
 
-=== Change the Log Level
-
-You can change the runtime log level by modifying the `level` value of the following packages in the `log4j2.xml` file:
-
-[source,xml,linenums]
-----
-  <AsyncLogger name="org.mule" level="INFO"/>
-  <AsyncLogger name="com.mulesoft" level="INFO"/>
-----
-Accepted values are: `DEBUG`, `ERROR`, `INFO`, `TRACE`, and `WARN`.
-
-To change the log level only for specific Connectors, see xref:enable-verbose-logging.adoc[Enable Verbose Logging].
-
-== Configure Logging
-
-You can create a configuration file to define:
-
- * What kinds of messages to log
- * How to log the messages (asynchronously or synchronously)
- * Where to log the messages, such as to the console or disk, or to an endpoint or database
+== How Logging Works in Mule
 
 Mule uses `slf4j`, which is a logging facade that discovers and uses a logging strategy from the classpath, such as Apache Log4j 2 or the JDK Logger. By default, Mule includes Log4j 2, which is configured with a file called `log4j2.xml`.
+
+In the `log4j2.xml` file, you define:
+
+* What kinds of messages to log (the log level)
+* How to log the messages (asynchronously or synchronously)
+* Where to log the messages, such as to the console or disk, or to an endpoint or database (the appenders)
 
 == Synchronous Versus Asynchronous Logging
 By default, Mule logs messages asynchronously. When logging synchronously, the execution of the thread that is processing your message is interrupted to wait for the log message to be fully handled before it can continue:
@@ -73,7 +62,7 @@ If you use app logs as audit trails, configure your app to always use *synchrono
 [NOTE]
 Mule 4 introduced thread-local functionality to optimize the memory usage of log4j. To enhance the use of this feature, you can set the system property `AsyncLoggerConfig.RingBufferSize` (see xref:configuring-properties.adoc[Configuring Properties]). `20000` is the suggested value, but you need to tune it to meet your needs.
 
-=== Performance tests
+=== Performance Tests
 The chart below shows the performance difference between synchronous and asynchronous logging, and how much latency increased as more concurrent messages were added. In this test, an app logged about one million messages, using an increasingly higher amount of threads on each run. Each transaction resulted in 1000 messages.
 
 image::logging-latency-vs-concurrency.png["A line chart comparing latency versus concurrency"]
@@ -84,20 +73,79 @@ As indicated by the chart, the results of logging asynchronously are significant
 
 By default, logging in Mule is done asynchronously and at a level greater than or equal to INFO. The default log level discards log messages at the DEBUG or TRACE level.
 
-To use synchronous logging, adjust the logging level or define custom categories. You can configure these properties using the `$MULE_HOME/conf/log4j2.xml` file, which specifies how the logger behaves. If you don't edit this file, Mule uses the default properties.
+To change this behavior, for example, to use synchronous logging, change the log level, or define custom logger categories, edit the `log4j2.xml` file. For the runtime, this file is `$MULE_HOME/conf/log4j2.xml`. If you don't edit this file, Mule uses the default configuration.
 
-In Anypoint Studio, `log4j2.xml` appears in the `src/main/resources` path of each Mule object.
+In Anypoint Studio, `log4j2.xml` appears in the `src/main/resources` path of each Mule project.
 
-The default configuration defines all loggers, including the root logger, as asynchronous. You can override this configuration at the domain or app level. To override this configuration at the app level, add a `logConfigFile` entry to the `mule-artifact.json` file. For example:
+The default configuration defines all loggers, including the root logger, as asynchronous. You can override this configuration at the domain or app level. To use a custom configuration file at the app level, add a `logConfigFile` entry to the `mule-artifact.json` file. The path is relative to the root of the app. For example:
 
 [source,json,linenums]
 ----
 {
   "minMuleVersion": "4.0.0",
-
-  "logConfigFile": "../../../test-classes/resources/logging/custom-log4j2.xml"
+  "logConfigFile": "custom-log4j2.xml"
 }
 ----
+
+=== Change the Log Level
+
+To change the log level, modify the `level` value of the logger for the package you want to configure. For example, to change the runtime log level, modify these loggers in the `log4j2.xml` file:
+
+[source,xml,linenums]
+----
+  <AsyncLogger name="org.mule" level="INFO"/>
+  <AsyncLogger name="com.mulesoft" level="INFO"/>
+----
+
+Accepted values, from most to least verbose, are: `TRACE`, `DEBUG`, `INFO`, `WARN`, and `ERROR`.
+
+To change the log level only for specific connectors, see xref:enable-verbose-logging.adoc[Enable Verbose Logging].
+
+=== Use Synchronous Logging
+
+To log synchronously, use the `Logger` and `Root` elements instead of `AsyncLogger` and `AsyncRoot` in your `log4j2.xml` file. You can make all logging synchronous, or only the loggers that need it.
+
+This example makes all logging synchronous:
+
+[source,xml,linenums]
+----
+<Configuration>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%-5p %d [%t] %c: %m%n"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <Logger name="org.mule" level="INFO"/>
+        <Logger name="com.mulesoft" level="INFO"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>
+----
+
+This example keeps asynchronous logging as the default and logs only the `com.mycompany.audit` category synchronously, for example, to keep an audit trail:
+
+[source,xml,linenums]
+----
+<Loggers>
+    <Logger name="com.mycompany.audit" level="INFO"/>
+
+    <AsyncLogger name="org.mule" level="INFO"/>
+    <AsyncLogger name="com.mulesoft" level="INFO"/>
+
+    <AsyncRoot level="INFO">
+        <AppenderRef ref="Console"/>
+    </AsyncRoot>
+</Loggers>
+----
+
+To send messages to this category from your app, set the `category` attribute of the xref:logger-component-reference.adoc[Logger component] to `com.mycompany.audit`.
+
+=== Default Configuration
 
 The following is the default configuration for the `log4j2.xml` file:
 
@@ -171,42 +219,27 @@ The `log4j2.xml` file should include something like the following snippet to ena
         <AsyncRoot level="INFO">
           <AppenderRef ref="Console"/>
         </AsyncRoot>
-
+    </Loggers>
 </Configuration>
 ----
 
-The above example makes the Runtime Manager agent log its state to a rolling log file in `$MULE_HOME/logs/custom_mule_agent.log`. This file rolls over on a daily interval until it reaches a 250MB size.
+The above example makes the Runtime Manager agent log its state to a rolling log file in `$MULE_HOME/logs/custom_mule_agent.log`. The file rolls over daily, or sooner if it reaches 250 MB.
 
-For other Log4j 2 appender configurations, see the Apache Log4j 2 documentation.
+For other Log4j 2 appender configurations, see the https://logging.apache.org/log4j/2.x/manual/appenders.html[Apache Log4j 2 Appenders documentation].
 
 [[exception_handling]]
 == Exception Handling with Asynchronous Logging
 
 If you're using asynchronous logging and experience a system crash that might have caused incomplete logs, the LMAX `ExceptionHandler` handler can help. By default, Mule registers this handler to log events to the disk, console, and `logs/mule_ee.log`. To provide your own exception handler, set the system property `AsyncLoggerConfig.ExceptionHandler` to the canonical name of a class that implements the interface.
 
-The default exception handler is shown below:
-
+The default exception handler, `org.mule.runtime.module.launcher.api.log4j2.AsyncLoggerExceptionHandler`, logs the failure through the Log4j 2 `StatusLogger`. Use it as a reference for your own implementation:
 
 [source,java,linenums]
 ----
-/*
- * Copyright (c) MuleSoft, Inc.  All rights reserved.  http://www.mulesoft.com
- * The software in this package is published under the terms of the CPAL v1.0
- * license, a copy of which has been included with this distribution in the
- * LICENSE.txt file.
- */
-package org.mule.runtime.module.launcher.api.log4j2;
-
 import com.lmax.disruptor.ExceptionHandler;
 
 import org.apache.logging.log4j.status.StatusLogger;
 
-/**
- * Implementation of {@link com.lmax.disruptor.ExceptionHandler} to be used when async loggers fail to log their messages. It will
- * log this event using the {@link org.apache.logging.log4j.status.StatusLogger}
- *
- * @since 3.6.0
- */
 public class AsyncLoggerExceptionHandler implements ExceptionHandler {
 
   private static final StatusLogger LOGGER = StatusLogger.getLogger();
@@ -232,10 +265,10 @@ There is a performance-reliability trade-off between asynchronous and synchronou
 
 == Configuration Reloading
 
-Mule runtime uses Log4j 2 as the framework for logging. To add or change the monitoring interval at which Log4j 2 checks for changes, add the `monitorInterval` to the `log4j2.xml` configuration file:
+Log4j 2 can check the `log4j2.xml` file for changes at a set interval and apply them without a restart. To enable this behavior, add the `monitorInterval` attribute to the `log4j2.xml` configuration file:
 
 . In the Mule installation folder, open `conf/log4j2.xml`.
-. Add `<Configuration monitorInterval="15">` after the first line. For example:
+. Add the `monitorInterval` attribute, in seconds, to the `<Configuration>` element. For example:
 +
 [source,xml,linenums]
 ----
@@ -251,9 +284,11 @@ Mule runtime uses Log4j 2 as the framework for logging. To add or change the mon
 +
 In this example, Log4j 2 checks for changes every 15 seconds.
 +
-. Save the file, and restart the Mule server.
+. Save the file, and restart Mule so that it loads the `monitorInterval` setting.
++
+After this restart, Log4j 2 applies later changes to `log4j2.xml` automatically within the configured interval.
 
-For more information, see the Apache documentation on automatically configuring Log4j 2.
+For more information, see the https://logging.apache.org/log4j/2.x/manual/configuration.html[Apache Log4j 2 Configuration documentation].
 
 == Debugging Projects that Use the HTTP Connector
 
@@ -261,9 +296,9 @@ To debug projects that use the HTTP connector, you might want to make the loggin
 
 == Request and Response Logging for SOAP
 
-//. In Anypoint Studio,
+Mule sends and receives SOAP messages over HTTP, so to log the full SOAP requests and responses of your app, enable debug logging for the HTTP message logger:
 
-. Open the `log4j2.xml` file in `src/main/resources` and add the `HttpMessageLogger` to the config:
+. In Anypoint Studio, open the `log4j2.xml` file in `src/main/resources` and add the `HttpMessageLogger` logger inside the `<Loggers>` element:
 +
 [source,xml,linenums]
 ----
@@ -276,11 +311,9 @@ To debug projects that use the HTTP connector, you might want to make the loggin
 == Troubleshooting Logging
 
 I don't see any logging output::
+Make sure the `log4j2.xml` file is at the root of your classpath. In an Anypoint Studio project, place it in `src/main/resources`.
 
-Set the `log4j2.xml` at the root of your classpath.
-+
 I reconfigured Log4j 2, but nothing happened::
-
 This issue happens because there is another `log4j2.xml` file on your classpath that is getting picked up before your modified one. To find out which configuration file Log4j 2 is using, add the following switch when starting Mule (or add it to the container startup script if you are embedding Mule):
 +
 ----
