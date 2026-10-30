@@ -31,7 +31,7 @@ The plugin's help output lists the available commands and options.
 
 [source,bash]
 ----
-➜  mule-enterprise-standalone-4.9.21 ./tools/diag help
+➜  mule-enterprise-standalone-4.9.24 ./tools/diag help
 Mule Troubleshooting Tool
 =========================
 
@@ -57,6 +57,7 @@ Watch Mode (generate dumps automatically when a condition is met):
                             heap>N / heap<N     heap usage percentage above/below N
                             thread>N / thread<N live thread count above/below N
                             time=N              every N seconds
+                            hang / hang=N       target JVM deadlock or N seconds of sustained BLOCKED monitor contention (default 60)
                             cron=<expression>   on a Quartz cron schedule (e.g. cron=0 0/5 * * * ?)
                             script=<path>       when <path> exits with a non-zero status
   --occurrences <n>       Number of dumps to fire before stopping (default 1; 0 or negative = unlimited)
@@ -111,6 +112,8 @@ Watch mode (`--watch`) keeps the tool running and generates a diagnostic dump au
 Watch mode and the `--logsmaxage` and `--logsmaxtotalsize` options are available in Mule runtime 4.9.21 and later.
 ====
 
+Starting in Mule runtime 4.9.24, the `hang` trigger accepts `hang` for the default 60-second threshold or `hang=N` to set the number of seconds of sustained monitor contention before the trigger fires. Target JVM deadlocks also trigger a dump.
+
 ==== Run a Single Troubleshooting Operation
 
 Use `./diag <operation-name>` to run only one troubleshooting operation instead of generating the full DIAF. The tool logs the operation result and also saves it to a file named `<operation-name>_<timestamp>.txt`. The `<timestamp>` value is in milliseconds since epoch. A single-operation run doesn't generate the `mule_dump_<timestamp>.diaf` or `thread_dump_<timestamp>.txt` files.
@@ -136,6 +139,7 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-basic-info>>
 * <<diaf-system-info>>
 * <<diaf-health-signals>>
+* <<diaf-key-store-inventory>>
 * <<diaf-memory-detail>>
 * <<diaf-network-info>>
 * <<diaf-jvm-agents>>
@@ -238,8 +242,26 @@ Operating system details and the system-wide CPU load no longer appear in this s
 | `load.process` (`jvm.load.process`)
 | Percentage of recent CPU usage for the JVM process; negative value if unavailable.
 
+| JVM Arguments
+a| Startup arguments reported by the JVM, excluding `-D` system properties and JVM agent arguments, which are covered by other sections. If no arguments are available, the report shows `(none)`.
+
+Available in Mule runtime 4.9.24 and later.
+
+| Proxy Settings
+a| Set JVM-level HTTP, HTTPS, and SOCKS proxy properties. Password values are masked. If no JVM proxy properties are set, the report shows `(no JVM proxy settings)`. The `anypoint.platform.proxy_*` properties are reported under System Properties instead.
+
+Available in Mule runtime 4.9.24 and later.
+
+| Deployment
+a| Deployment type and, for CloudHub 1.0, the CloudHub version. The block can include:
+
+* `type`: `CLOUDHUB`, `RTF`, or `STANDALONE`.
+* `cloudHubVersion`: `1.0` when the runtime is identified as a CloudHub 1.0 deployment. This field is omitted otherwise.
+
+Available in Mule runtime 4.9.24 and later.
+
 | License
-a| (Enterprise Edition only) License information for Enterprise Edition distributions appears under the `License` block. This block doesn't appear in Community Edition or when no Enterprise license is registered. When present, it can include:
+a| (Enterprise Edition standalone deployments only) License information appears under the `License` block. This block isn't included when the troubleshooting operation runs on a platform deployment, or in Community Edition or when no Enterprise license is registered. When present, it can include:
 
 * `valid`: Indicates whether the license is valid.
 * `validationError`: Indicates the reason the license is not valid, when applicable.
@@ -375,10 +397,10 @@ This section reports host physical memory, not the JVM heap.
 
 [NOTE]
 ====
-Available in Mule runtime 4.9.21 and later.
+The host- and JVM-level signals are available in Mule runtime 4.9.21 and later. The connector certificate-expiry and connection-pool signals are available in Mule runtime 4.9.24 and later.
 ====
 
-This section evaluates a small set of fast host- and JVM-level health signals and reports only the ones that fired. The inputs come from JMX and the host operating system, plus a check for a JVM crash log. No log-file contents are read. On a healthy host, the section shows `None`.
+This section evaluates host-, JVM-, and connector-level health signals and reports only the ones that fired. Host and JVM inputs come from JMX and the host operating system, plus a check for a JVM crash log; no log-file contents are read. Connector-level checks inspect deployed applications' TLS stores and connection pools, so they can perform disk I/O when reading keystores. On a healthy runtime, this section shows `None`.
 
 Each fired signal is listed on its own line with a short description and, where available, the measured values. These are the possible signals:
 
@@ -406,7 +428,27 @@ Each fired signal is listed on its own line with a short description and, where 
 
 | `JVM crash log present`
 | A JVM fatal-error log (`hs_err_pid<PID>.log`) is present in the runtime logs directory or the JVM error-file location, indicating a previous JVM crash.
+
+| Certificate expiry
+| A certificate in a deployed connector's TLS key store or trust store is expired or expires within 30, 60, or 90 days. The signal includes the application, configuration, store, alias, subject, and remaining days. Run `keyStoreInventory` for the certificate details.
+
+| Connection pool near exhaustion
+| A deployed connector's connection pool has at least 90% of its configured maximum connections active. The signal includes the application, configuration, and active and maximum connection counts.
 |===
+
+[[diaf-key-store-inventory]]
+=== Key Store Inventory
+
+[NOTE]
+====
+Available in Mule runtime 4.9.24 and later.
+====
+
+This operation inventories X.509 certificates in the key stores and trust stores configured for deployed applications' connector TLS contexts, plus the JVM trust store (`cacerts`). It reports each certificate's alias, entry type, and validity, and deduplicates stores shared by connectors within an application. Stores or applications that can't be inspected don't prevent the remaining inventory from being reported.
+
+Run `./diag keyStoreInventory` to execute the operation by name. To inventory stores for one application, pass the `application` argument; in this mode, the JVM trust store is omitted.
+
+The output includes `Configured Key Stores` and `JVM Trust Store` blocks. The first lists configured connector stores and the applications and connector configurations that use them. The second lists the JVM trust store resolved from `javax.net.ssl.trustStore`, or the default `jssecacerts` / `cacerts` location.
 
 [[diaf-memory-detail]]
 === Memory Detail
@@ -947,6 +989,11 @@ For each connector configuration, the report includes a header with the name, th
 
 | TLS details
 | TLS context information for the connection provider, including certificate validity where applicable. The report shows this information only for providers that use TLS.
+
+| OAuth
+| For OAuth-secured connectors, the OAuth grant type, client ID, client secret, authorization URL, token URL, and scopes. The client secret is masked, and user information embedded in URLs is redacted. Fields that aren't configured are omitted.
+
+OAuth configuration details are available in Mule runtime 4.9.24 and later.
 
 | Connection State
 a| A block of connection statistics for the configuration, shown as `(no statistics available)` when none have been recorded. When present, the block contains:
