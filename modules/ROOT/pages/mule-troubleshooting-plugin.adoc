@@ -23,7 +23,7 @@ The plugin works out-of-the-box in the Standalone, CloudHub, and CloudHub 2.0 de
 
 Run this command from your Mule runtime installation at `$MULE_HOME/tools/diag` to generate the DIAF and a thread dump. By default, the tool saves the files unzipped in the `logs` directory of the distribution.
 
-Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create a ZIP file at that path containing all output files.
+Use the `./diag --extended` command to generate a heap dump. Use `./diag --output some/dir/name/` to create the directories if they don't exist and save unzipped files there. Use `./diag --output some/dir/name` (without a trailing `/`) to create an archive at that path containing all output files. The tool uses ZIP format when the `zip` command is available and falls back to TAR.GZ otherwise.
 
 On Windows, run `diag.bat`. The `--stdout` option isn't supported.
 
@@ -31,7 +31,7 @@ The plugin's help output lists the available commands and options.
 
 [source,bash]
 ----
-➜  mule-enterprise-standalone-4.6.23 ./tools/diag help
+➜  mule-enterprise-standalone-4.9.24 ./tools/diag help
 Mule Troubleshooting Tool
 =========================
 
@@ -45,22 +45,90 @@ Commands:
 Global Options:
   --stdout                Output the diagnostic dump to standard output
   --output <path>         Specify custom output directory or file path
+  --extended              Enable extended mode (heap dump + file artifacts: conf, logs, server-plugins, apps, domains, policies)
+  --logsmaxage <days>     Maximum age in days for logs collected with --extended (default 7, 0 disables)
+  --logsmaxtotalsize <mb> Maximum total size in MB for logs collected with --extended (default 100, 0 disables)
   --debug                 Enable debug mode with remote debugging on port 5005
+
+Watch Mode (generate dumps automatically when a condition is met):
+  --watch                 Poll runtime metrics and fire a diagnostic dump when a --trigger condition is met
+  --trigger <condition>   Trigger condition (repeatable; a dump fires when any one matches). Forms:
+                            cpu>N / cpu<N       CPU load percentage above/below N
+                            heap>N / heap<N     heap usage percentage above/below N
+                            thread>N / thread<N live thread count above/below N
+                            time=N              every N seconds
+                            hang / hang=N       target JVM deadlock or N seconds of sustained BLOCKED monitor contention (default 60)
+                            cron=<expression>   on a Quartz cron schedule (e.g. cron=0 0/5 * * * ?)
+                            script=<path>       when <path> exits with a non-zero status
+  --occurrences <n>       Number of dumps to fire before stopping (default 1; 0 or negative = unlimited)
+  --checkperiod <seconds> How often to check the triggers, in seconds (default 30; a lower time=N trigger takes precedence)
 
 Examples:
   ./diag                          # Generate diagnostic dump to logs directory
   ./diag --stdout                 # Output diagnostic dump to stdout
-  ./diag --output /tmp/mule.zip   # Save to specific file
+  ./diag --extended               # Include heap dump and file artifacts in diagnostic
+  ./diag --output /tmp/mule       # Save to specific file (see Archive Format below)
   ./diag --output /tmp/           # Save to specific directory
   ./diag <operation-name>         # Execute specific operation
+  ./diag --watch --trigger heap>90              # Dump once when heap usage exceeds 90%
+  ./diag --watch --trigger cpu>80 --trigger time=300 --occurrences 0 --checkperiod 10
+                                  # Dump every time CPU exceeds 80% or every 300s, checking every 10s, forever
+  ./diag --watch --trigger 'cron=0 0/5 * * * ?' --extended
+                                  # Extended dump every 5 minutes on a cron schedule
 
 Output:
-  By default, the tool creates a ZIP file containing:
+  The tool creates an archive file containing:
   - mule_dump_<timestamp>.diaf    # Diagnostic information
   - thread_dump_<timestamp>.txt   # Thread dump
   - heap_dump_<timestamp>.hprof   # Heap dump
+  - tls_support/                  # TLS introspection results (if available)
+  If --extended is used, the following are also included:
+  - conf/, logs/, server-plugins/, apps/, domains/, policies/
+                                  # logs/ capped at 100MB / 7 days by default
+                                  # configurable via --logsmaxtotalsize / --logsmaxage
+  Archive Format:
+  - Uses ZIP format when 'zip' command is available
+  - Falls back to TAR.GZ format when only 'tar' is available
+----
 
-  The ZIP file is saved to the 'logs' directory by default.
+=== Command-Line Options
+
+The previous output lists every option and its default. These behaviors aren't mentioned in that summary:
+
+* `--output <path>`: when `<path>` is an existing directory or ends with a trailing slash (`/`), the tool writes the individual output files into that directory. Any other `<path>` is treated as the archive to create, with the format taken from the extension (for example, `.zip` or `.tar.gz`).
+* `--stdout`: streams the archive to standard output instead of writing a file, so you can't combine it with `--output`. It isn't supported on Windows.
+* `--debug`: the JVM listens for a remote debugger on port `5005` and suspends until one attaches, so use it only to troubleshoot the tool itself.
+
+==== Watch Mode
+
+Watch mode (`--watch`) keeps the tool running and generates a diagnostic dump automatically whenever a `--trigger` condition is met, which is useful for capturing state at the moment an intermittent problem occurs. The `help` output lists the watch options and trigger forms. These behaviors aren't covered there:
+
+* Watch mode runs in the foreground and blocks the terminal until it reaches the number of successful dumps specified by `--occurrences`, or you stop it with `kbd:[Ctrl+C]`.
+* Watch mode wraps the default full diagnostic dump, so you can't combine it with a single named operation. You can combine it with `--extended`.
+* A trigger whose metric can't be sampled on the current host never fires, so it doesn't produce false dumps.
+
+[NOTE]
+====
+Watch mode and the `--logsmaxage` and `--logsmaxtotalsize` options are available in Mule runtime 4.9.21 and later.
+====
+
+Starting in Mule runtime 4.9.24, the `hang` trigger accepts `hang` for the default 60-second threshold or `hang=N` to set the number of seconds of sustained monitor contention before the trigger fires. Target JVM deadlocks also trigger a dump.
+
+==== Run a Single Troubleshooting Operation
+
+Use `./diag <operation-name>` to run only one troubleshooting operation instead of generating the full DIAF. The tool logs the operation result and also saves it to a file named `<operation-name>_<timestamp>.txt`. The `<timestamp>` value is in milliseconds since epoch. A single-operation run doesn't generate the `mule_dump_<timestamp>.diaf` or `thread_dump_<timestamp>.txt` files.
+
+The `--output` option works the same way as it does for the DIAF:
+
+* Without `--output`, the tool saves the result file in the `logs` directory of the distribution.
+* With `--output some/dir/name/` (an existing directory or a path that ends with `/`), the tool saves the result file in that directory. If the directory doesn't exist, the tool creates it.
+* With any other `--output` path, the tool creates an archive at that path that contains the result file, using the same ZIP or TAR.GZ format as the DIAF archive.
+
+For example, this command runs the `threadDump` operation and saves the result to `/tmp/diag/threadDump_<timestamp>.txt`:
+
+[source,bash]
+----
+./diag --output /tmp/diag/ threadDump
 ----
 
 == Understanding Diagnostic Information Analysis File (DIAF)
@@ -70,6 +138,9 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-title>>
 * <<diaf-basic-info>>
 * <<diaf-system-info>>
+* <<diaf-health-signals>>
+* <<diaf-key-store-inventory>>
+* <<diaf-memory-detail>>
 * <<diaf-network-info>>
 * <<diaf-jvm-agents>>
 * <<diaf-statistics>>
@@ -81,6 +152,7 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-cluster-info>>
 * <<diaf-agent-info>>
 * <<diaf-platform-connectivity>>
+* <<diaf-known-issues>>
 
 [[diaf-title]]
 === Title
@@ -170,8 +242,26 @@ Operating system details and the system-wide CPU load no longer appear in this s
 | `load.process` (`jvm.load.process`)
 | Percentage of recent CPU usage for the JVM process; negative value if unavailable.
 
+| JVM Arguments
+a| Startup arguments reported by the JVM, excluding `-D` system properties and JVM agent arguments, which are covered by other sections. If no arguments are available, the report shows `(none)`.
+
+Available in Mule runtime 4.9.24 and later.
+
+| Proxy Settings
+a| Set JVM-level HTTP, HTTPS, and SOCKS proxy properties. Password values are masked. If no JVM proxy properties are set, the report shows `(no JVM proxy settings)`. The `anypoint.platform.proxy_*` properties are reported under System Properties instead.
+
+Available in Mule runtime 4.9.24 and later.
+
+| Deployment
+a| Deployment type and, for CloudHub 1.0, the CloudHub version. The block can include:
+
+* `type`: `CLOUDHUB`, `RTF`, or `STANDALONE`.
+* `cloudHubVersion`: `1.0` when the runtime is identified as a CloudHub 1.0 deployment. This field is omitted otherwise.
+
+Available in Mule runtime 4.9.24 and later.
+
 | License
-a| (Enterprise Edition only) License information for Enterprise Edition distributions appears under the `License` block. This block doesn't appear in Community Edition or when no Enterprise license is registered. When present, it can include:
+a| (Enterprise Edition standalone deployments only) License information appears under the `License` block. This block isn't included when the troubleshooting operation runs on a platform deployment, or in Community Edition or when no Enterprise license is registered. When present, it can include:
 
 * `valid`: Indicates whether the license is valid.
 * `validationError`: Indicates the reason the license is not valid, when applicable.
@@ -300,6 +390,115 @@ This section reports host physical memory, not the JVM heap.
 
 | `transfer.time.ms`
 | Total time spent on transfers, in milliseconds.
+|===
+
+[[diaf-health-signals]]
+=== Health Signals
+
+[NOTE]
+====
+The host- and JVM-level signals are available in Mule runtime 4.9.21 and later. The connector certificate-expiry and connection-pool signals are available in Mule runtime 4.9.24 and later.
+====
+
+This section evaluates host-, JVM-, and connector-level health signals and reports only the ones that fired. Host and JVM inputs come from JMX and the host operating system, plus a check for a JVM crash log; no log-file contents are read. Connector-level checks inspect deployed applications' TLS stores and connection pools, so they can perform disk I/O when reading keystores. On a healthy runtime, this section shows `None`.
+
+Each fired signal is listed on its own line with a short description and, where available, the measured values. These are the possible signals:
+
+[cols="1,3", options="header"]
+|===
+| Signal | Meaning
+
+| `Low Available Memory`
+| Available physical memory is below 10% of total memory.
+
+| `No Swap`
+| The host has no swap memory configured, which is a risk on a low-memory host.
+
+| `Low storage`
+| A mounted file system has less than 10% usable space. Reported per affected mount.
+
+| `High CPU Steal`
+| CPU steal time is high, which can indicate low CPU credits on the host (Linux only).
+
+| `High CPU IOWait`
+| CPU I/O wait time is high, which can indicate I/O problems or excessive disk usage (Linux only).
+
+| `JVM was restarted`
+| The JVM process is much younger than the host, which can indicate an unexpected restart.
+
+| `JVM crash log present`
+| A JVM fatal-error log (`hs_err_pid<PID>.log`) is present in the runtime logs directory or the JVM error-file location, indicating a previous JVM crash.
+
+| Certificate expiry
+| A certificate in a deployed connector's TLS key store or trust store is expired or expires within 30, 60, or 90 days. The signal includes the application, configuration, store, alias, subject, and remaining days. Run `keyStoreInventory` for the certificate details.
+
+| Connection pool near exhaustion
+| A deployed connector's connection pool has at least 90% of its configured maximum connections active. The signal includes the application, configuration, and active and maximum connection counts.
+|===
+
+[[diaf-key-store-inventory]]
+=== Key Store Inventory
+
+[NOTE]
+====
+Available in Mule runtime 4.9.24 and later.
+====
+
+This operation inventories X.509 certificates in the key stores and trust stores configured for deployed applications' connector TLS contexts, plus the JVM trust store (`cacerts`). It reports each certificate's alias, entry type, and validity, and deduplicates stores shared by connectors within an application. Stores or applications that can't be inspected don't prevent the remaining inventory from being reported.
+
+Run `./diag keyStoreInventory` to execute the operation by name. To inventory stores for one application, pass the `application` argument; in this mode, the JVM trust store is omitted.
+
+The output includes `Configured Key Stores` and `JVM Trust Store` blocks. The first lists configured connector stores and the applications and connector configurations that use them. The second lists the JVM trust store resolved from `javax.net.ssl.trustStore`, or the default `jssecacerts` / `cacerts` location.
+
+[[diaf-memory-detail]]
+=== Memory Detail
+
+[NOTE]
+====
+Available in Mule runtime 4.9.21 and later.
+====
+
+This section shows the JVM memory-pool breakdown and garbage-collector statistics of the running Mule runtime, read in-process from JMX. It has four blocks: aggregate `Heap` usage, aggregate `Non-Heap` usage, one entry per memory pool under `Memory Pools`, and one entry per collector under `Garbage Collectors`.
+
+The `Heap`, `Non-Heap`, and each `Memory Pools` entry report these usage fields:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `init`
+| Initial amount of memory the JVM requested for the pool. Shown as `n/a` when the JVM doesn't define it.
+
+| `used`
+| Amount of memory currently in use.
+
+| `committed`
+| Amount of memory guaranteed to be available to the JVM.
+
+| `max`
+| Maximum amount of memory that can be used. Shown as `n/a` for an unbounded pool.
+
+| `used/committed`
+| Ratio of used to committed memory, as a percentage. Omitted when committed memory isn't positive.
+
+| `used/max`
+| Ratio of used to maximum memory, as a percentage. Omitted when maximum memory isn't defined.
+|===
+
+Each `Memory Pools` entry also reports its `type` (`HEAP` or `NON_HEAP`). Each `Garbage Collectors` entry reports:
+
+[cols="1,3", options="header"]
+|===
+| Field | Description
+
+| `count`
+| Number of collections the collector has performed. Shown as `n/a` when the collector doesn't support the counter.
+
+| `time.ms`
+| Accumulated collection time, in milliseconds. Shown as `n/a` when the collector doesn't support the field.
+
+| `pools`
+| Names of the memory pools the collector manages, separated by `\|`.
 |===
 
 [[diaf-network-info]]
@@ -791,6 +990,11 @@ For each connector configuration, the report includes a header with the name, th
 | TLS details
 | TLS context information for the connection provider, including certificate validity where applicable. The report shows this information only for providers that use TLS.
 
+| OAuth
+| For OAuth-secured connectors, the OAuth grant type, client ID, client secret, authorization URL, token URL, and scopes. The client secret is masked, and user information embedded in URLs is redacted. Fields that aren't configured are omitted.
+
+OAuth configuration details are available in Mule runtime 4.9.24 and later.
+
 | Connection State
 a| A block of connection statistics for the configuration, shown as `(no statistics available)` when none have been recorded. When present, the block contains:
 
@@ -1057,6 +1261,40 @@ The report first shows the handshake outcome as `handshake: success` or `handsha
 
 | `issuer`
 | Issuer distinguished name of the certificate.
+|===
+
+[[diaf-known-issues]]
+=== Known Issues
+
+[NOTE]
+====
+Available in Mule runtime 4.9.21 and later.
+
+This operation runs on demand only. Because it scans the full set of rotated log files, which is disk-intensive, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag knownIssues`.
+====
+
+This operation scans the runtime logs and the deployed applications for a set of well-known problem signatures and reports the ones it detects. Use it to surface recurring issues, such as out-of-memory conditions or abnormal terminations, that otherwise require manual log inspection.
+
+The report shows these sections, in this order. Under each section, the operation lists one line per detected signal, showing the signal, the number of occurrences, and, where available, a short diagnosis. A section with no detections shows `None`. When a source can't be read, the operation shows a marker such as `(source not available: no readable Mule log files found)` instead of a count.
+
+[cols="1,3", options="header"]
+|===
+| Section | Description
+
+| `Memory:`
+| Out-of-memory conditions detected in the Mule logs, including Java heap, PermGen, and Metaspace exhaustion.
+
+| `Linux OOM-killer:`
+| Events where the Linux kernel out-of-memory killer terminated a process, detected in the kernel logs.
+
+| `Abnormal termination:`
+| Signs of an abnormal JVM termination, such as a `SIGKILL`, an unexpected JVM exit, or a CloudHub restart trigger, detected in the runtime and monitor logs.
+
+| `MUnit at runtime:`
+| MUnit artifacts found among the deployed applications. MUnit is a test-scope dependency and shouldn't be packaged for deployment. Each detection lists the artifact coordinates followed by this diagnosis.
+
+| `Connector versions:`
+| The connector versions found in the deployed applications, listed for reference.
 |===
 
 == Considerations
