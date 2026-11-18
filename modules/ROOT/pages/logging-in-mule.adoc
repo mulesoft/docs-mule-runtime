@@ -210,6 +210,7 @@ The above example makes the Runtime Manager agent log its state to a rolling log
 For other Log4j 2 appender configurations, see the https://logging.apache.org/log4j/2.x/manual/appenders.html[Apache Log4j 2 Appenders documentation].
 
 [[exception_handling]]
+
 == Exception Handling with Asynchronous Logging
 
 If you're using asynchronous logging and experience a system crash that might have caused incomplete logs, the LMAX `ExceptionHandler` handler can help. By default, Mule registers this handler to log events to the disk, console, and `logs/mule_ee.log`. To provide your own exception handler, set the system property `AsyncLoggerConfig.ExceptionHandler` to the canonical name of a class that implements the interface.
@@ -244,6 +245,45 @@ public class AsyncLoggerExceptionHandler implements ExceptionHandler {
 ----
 
 There is a performance-reliability trade-off between asynchronous and synchronous logging. If the risk of losing log messages is a serious issue, then configure your loggers to be synchronous. You can have a mix of both synchronous and asynchronous logging.
+
+== Prevent Thread Blocking from Log4j2 Appenders
+
+Log4j2 appender configurations can block Mule app threads and cause applications to become unresponsive if an external logging destination is slow or unreachable. This risk applies both to synchronous appenders and to asynchronous appenders whose buffers fill up.
+
+=== Asynchronous Buffer Overflow
+
+When the asynchronous ring buffer fills up, Log4j2 defaults to synchronous logging. The Mule thread that triggered the log event then waits for the appender to finish writing, which can block threads and exhaust resources under high load.
+
+To prevent threads from blocking when the buffer is full, wrap external appenders in an `<Async>` element and set `blocking="false"`. When the buffer is full, log events are discarded instead of blocking the thread:
+
+
+[source,xml,linenums]
+----
+<Async name="AsyncExternal" blocking="false" bufferSize="262144">
+    <AppenderRef ref="ExternalAppender"/>
+</Async>
+----
+
+For high-volume deployments, increase the default ring buffer size by setting the `AsyncLoggerConfig.RingBufferSize` system property. The default is `20000`; for high-volume scenarios, consider `524288` (512K) or `1048576` (1M):
+
+----
+-M-DAsyncLoggerConfig.RingBufferSize=524288
+----
+
+Tune this value based on your application's log volume and available memory.
+
+=== HTTP Appender Timeouts
+
+If you use an HTTP appender to send logs to an external service, configure connection and read timeouts to prevent Mule threads from blocking indefinitely when the external service is slow or unreachable:
+
+[source,xml,linenums]
+----
+<Http name="HTTPAppender" url="https://your-log-service/endpoint"
+      connectTimeoutMillis="2000" readTimeoutMillis="5000">
+    <PatternLayout pattern="%d %p %c{1.} [%t] %m%n"/>
+</Http>
+----
+Without these timeouts, a Mule thread sending a log event to an unresponsive HTTP endpoint blocks until the OS-level TCP timeout expires, which can take several minutes. To further reduce this risk, wrap the HTTP appender in an `<Async>` element with `blocking="false"`.
 
 == Configuration Reloading
 
