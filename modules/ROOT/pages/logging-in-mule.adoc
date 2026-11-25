@@ -245,6 +245,29 @@ public class AsyncLoggerExceptionHandler implements ExceptionHandler {
 
 There is a performance-reliability trade-off between asynchronous and synchronous logging. If the risk of losing log messages is a serious issue, then configure your loggers to be synchronous. You can have a mix of both synchronous and asynchronous logging.
 
+== Prevent Thread Blocking from Log4j2 Appenders
+
+Log4j2 appender configurations can block Mule app threads and cause applications to become unresponsive if an external logging destination is slow or unreachable. The risk applies to synchronous appenders and asynchronous appenders whose buffers fill up.
+
+=== Asynchronous Buffer Overflow
+
+When the asynchronous ring buffer fills up, Log4j2 defaults to synchronous logging. The Mule thread that triggered the log event then waits for the appender to finish writing, which can block threads and exhaust resources under high load. If this occurs, Mule generates an "Async logger ringbuffer full" alert in the xref:mule-troubleshooting-plugin.adoc#diaf-alerts[] tool.
+
+To address this issue, review the logging volume of your application as well as the performance of your appenders and the external systems they connect to. Reducing unnecessary log output and ensuring external logging destinations are responsive prevents the buffer from filling up.
+
+=== HTTP Appender Timeouts
+
+If you use an HTTP appender to send logs to an external service, configure connection and read timeouts to prevent Mule threads from blocking indefinitely when the external service is slow or unreachable:
+
+[source,xml,linenums]
+----
+<Http name="HTTPAppender" url="https://your-log-service/endpoint"
+      connectTimeoutMillis="2000" readTimeoutMillis="5000">
+    <PatternLayout pattern="%d %p %c{1.} [%t] %m%n"/>
+</Http>
+----
+Without these timeouts, a Mule thread sending a log event to an unresponsive HTTP endpoint is blocked until the OS-level TCP timeout expires, which can take several minutes. To further reduce this risk, wrap the HTTP appender in an `<Async>` element with `blocking="false"`.
+
 == Configuration Reloading
 
 Log4j 2 can check the `log4j2.xml` file for changes at a set interval and apply them without a restart. To enable this behavior, add the `monitorInterval` attribute to the `log4j2.xml` configuration file:
