@@ -31,7 +31,7 @@ The plugin's help output lists the available commands and options.
 
 [source,bash]
 ----
-➜  mule-enterprise-standalone-4.12.3 ./tools/diag help
+➜  mule-enterprise-standalone-4.13.2 ./tools/diag help
 Mule Troubleshooting Tool
 =========================
 
@@ -57,6 +57,7 @@ Watch Mode (generate dumps automatically when a condition is met):
                             heap>N / heap<N     heap usage percentage above/below N
                             thread>N / thread<N live thread count above/below N
                             time=N              every N seconds
+                            hang / hang=N       target JVM deadlock or N seconds of sustained BLOCKED monitor contention (default 60)
                             cron=<expression>   on a Quartz cron schedule (e.g. cron=0 0/5 * * * ?)
                             script=<path>       when <path> exits with a non-zero status
   --occurrences <n>       Number of dumps to fire before stopping (default 1; 0 or negative = unlimited)
@@ -107,10 +108,7 @@ Watch mode (`--watch`) keeps the tool running and generates a diagnostic dump au
 * Watch mode wraps the default full diagnostic dump, so you can't combine it with a single named operation. You can combine it with `--extended`.
 * A trigger whose metric can't be sampled on the current host never fires, so it doesn't produce false dumps.
 
-[NOTE]
-====
-Watch mode and the `--logsmaxage` and `--logsmaxtotalsize` options are available in Mule runtime 4.12.3 and later.
-====
+Starting in Mule runtime 4.13.2, the `hang` trigger accepts `hang` for the default 60-second threshold or `hang=N` to set the number of seconds of sustained monitor contention before the trigger fires. Target JVM deadlocks also trigger a dump.
 
 ==== Run a Single Troubleshooting Operation
 
@@ -137,6 +135,7 @@ The Diagnostic Information Analysis File (DIAF) organizes all diagnostic data co
 * <<diaf-basic-info>>
 * <<diaf-system-info>>
 * <<diaf-health-signals>>
+* <<diaf-key-store-inventory>>
 * <<diaf-memory-detail>>
 * <<diaf-network-info>>
 * <<diaf-jvm-agents>>
@@ -172,7 +171,7 @@ This section shows details about the environment where the Mule runtime instance
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.1 and later. The JVM resource metrics in this section appear under the JVM Resources block and use the jvm. prefix (for example, jvm.memory.used). In earlier patch versions, these metrics appear at the top level without the prefix (for example, memory.used). The metrics have the same meaning in both formats.
+Available in Mule runtime 4.13.2 and later. The JVM resource metrics in this section appear under the JVM Resources block and use the jvm. prefix (for example, jvm.memory.used). In earlier patch versions, these metrics appear at the top level without the prefix (for example, memory.used). The metrics have the same meaning in both formats.
 Operating system details and the system-wide CPU load no longer appear in this section. See <<diaf-system-info,System Info>> for those metrics.
 ====
 
@@ -240,8 +239,26 @@ Operating system details and the system-wide CPU load no longer appear in this s
 | `load.process` (`jvm.load.process`)
 | Percentage of recent CPU usage for the JVM process; negative value if unavailable.
 
+| JVM Arguments
+a| Startup arguments reported by the JVM, excluding `-D` system properties and JVM agent arguments, which are covered by other sections. If no arguments are available, the report shows `(none)`.
+
+Available in Mule runtime 4.13.2 and later.
+
+| Proxy Settings
+a| Set JVM-level HTTP, HTTPS, and SOCKS proxy properties. Password values are masked. If no JVM proxy properties are set, the report shows `(no JVM proxy settings)`. The `anypoint.platform.proxy_*` properties are reported under System Properties instead.
+
+Available in Mule runtime 4.13.2 and later.
+
+| Deployment
+a| Deployment type and, for CloudHub 1.0, the CloudHub version. The block can include:
+
+* `type`: `CLOUDHUB`, `RTF`, or `STANDALONE`.
+* `cloudHubVersion`: `1.0` when the runtime is identified as a CloudHub 1.0 deployment. This field is omitted otherwise.
+
+Available in Mule runtime 4.13.2 and later.
+
 | License
-a| (Enterprise Edition only) License information for Enterprise Edition distributions appears under the `License` block. This block doesn't appear in Community Edition or when no Enterprise license is registered. When present, it can include:
+a| (Enterprise Edition standalone deployments only) License information appears under the `License` block. This block isn't included when the troubleshooting operation runs on a platform deployment, or in Community Edition or when no Enterprise license is registered. When present, it can include:
 
 * `valid`: Indicates whether the license is valid.
 * `validationError`: Indicates the reason the license is not valid, when applicable.
@@ -254,7 +271,7 @@ a| (Enterprise Edition only) License information for Enterprise Edition distribu
 
 [NOTE]
 ====
-In Mule runtime patches earlier than 4.12.1, this section also reports `OS Name`, `OS Version`, `OS Arch`, `load.system`, and `load.systemAverage`. Starting with Mule 4.12.1, the operating system details (`host.os.*`) and the host CPU load (`host.cpu.load.*`) are reported in the <<diaf-system-info,System Info>> section instead.
+In earlier Mule runtime patches, this section also reports `OS Name`, `OS Version`, `OS Arch`, `load.system`, and `load.systemAverage`. In Mule runtime 4.13, the operating system details (`host.os.*`) and the host CPU load (`host.cpu.load.*`) are reported in the <<diaf-system-info,System Info>> section instead.
 ====
 
 [[diaf-system-info]]
@@ -262,7 +279,7 @@ In Mule runtime patches earlier than 4.12.1, this section also reports `OS Name`
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.1 and later.
+Available in Mule runtime 4.13.2 and later.
 ====
 
 This section shows host-level diagnostics for the machine, container, or pod where the Mule runtime instance is running. The diagnostics are collected from the host operating system. Unlike <<diaf-basic-info,Basic Information>>, which reports JVM-level metrics, this section reports host-level information.
@@ -377,10 +394,10 @@ This section reports host physical memory, not the JVM heap.
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.3 and later.
+The host- and JVM-level signals, connector certificate-expiry signals, and connection-pool signals are available in Mule runtime 4.13.2 and later.
 ====
 
-This section evaluates a small set of fast host- and JVM-level health signals and reports only the ones that fired. The inputs come from JMX and the host operating system, plus a check for a JVM crash log. No log-file contents are read. On a healthy host, the section shows `None`.
+This section evaluates host-, JVM-, and connector-level health signals and reports only the ones that fired. Host and JVM inputs come from JMX and the host operating system, plus a check for a JVM crash log; no log-file contents are read. Connector-level checks inspect deployed applications' TLS stores and connection pools, so they can perform disk I/O when reading keystores. On a healthy runtime, this section shows `None`.
 
 Each fired signal is listed on its own line with a short description and, where available, the measured values. These are the possible signals:
 
@@ -408,14 +425,34 @@ Each fired signal is listed on its own line with a short description and, where 
 
 | `JVM crash log present`
 | A JVM fatal-error log (`hs_err_pid<PID>.log`) is present in the runtime logs directory or the JVM error-file location, indicating a previous JVM crash.
+
+| Certificate expiry
+| A certificate in a deployed connector's TLS key store or trust store is expired or expires within 30, 60, or 90 days. The signal includes the application, configuration, store, alias, subject, and remaining days. Run `keyStoreInventory` for the certificate details.
+
+| Connection pool near exhaustion
+| A deployed connector's connection pool has at least 90% of its configured maximum connections active. The signal includes the application, configuration, and active and maximum connection counts.
 |===
+
+[[diaf-key-store-inventory]]
+=== Key Store Inventory
+
+[NOTE]
+====
+Available in Mule runtime 4.13.2 and later.
+====
+
+This operation inventories X.509 certificates in the key stores and trust stores configured for deployed applications' connector TLS contexts, plus the JVM trust store (`cacerts`). It reports each certificate's alias, entry type, and validity, and deduplicates stores shared by connectors within an application. Stores or applications that can't be inspected don't prevent the remaining inventory from being reported.
+
+Run `./diag keyStoreInventory` to execute the operation by name. To inventory stores for one application, pass the `application` argument; in this mode, the JVM trust store is omitted.
+
+The output includes `Configured Key Stores` and `JVM Trust Store` blocks. The first lists configured connector stores and the applications and connector configurations that use them. The second lists the JVM trust store resolved from `javax.net.ssl.trustStore`, or the default `jssecacerts` / `cacerts` location.
 
 [[diaf-memory-detail]]
 === Memory Detail
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.3 and later.
+Available in Mule runtime 4.13.2 and later.
 ====
 
 This section shows the JVM memory-pool breakdown and garbage-collector statistics of the running Mule runtime, read in-process from JMX. It has four blocks: aggregate `Heap` usage, aggregate `Non-Heap` usage, one entry per memory pool under `Memory Pools`, and one entry per collector under `Garbage Collectors`.
@@ -466,7 +503,7 @@ Each `Memory Pools` entry also reports its `type` (`HEAP` or `NON_HEAP`). Each `
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.2 and later.
+Available in Mule runtime 4.13.2 and later.
 ====
 
 This section shows host-level network diagnostics for the machine, container, or pod where the Mule runtime instance is running: the hostname, the network interfaces with their assigned IP addresses and I/O counters, and the active and listening network connections. Interface counters and connection tables are collected from the host operating system.
@@ -537,7 +574,7 @@ The report includes three connection tables, each preceded by its own header. Ea
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.1 and later.
+Available in Mule runtime 4.13.2 and later.
 ====
 
 This section lists the JVM agents attached at JVM startup through the `-javaagent`, `-agentpath`, or `-agentlib` arguments. JVM agents can instrument the runtime, intercept class loading, redefine classes, and add overhead. Use this information to identify third-party, APM, and observability agents such as profilers, monitoring, security, and bytecode instrumentation agents, that can affect runtime behavior or interfere with the Mule runtime.
@@ -978,7 +1015,7 @@ Policy templates appear as separate top-level entries. Each entry represents a u
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.1 and later.
+Available in Mule runtime 4.13.2 and later.
 ====
 
 This section reports the state of each connector configuration in the deployed applications, including the connection lifecycle, connection pool information, recent errors, and TLS details. When more than one application is deployed, the report groups connector configurations by application. If an application isn't started, the report shows `Application is not started — no artifact context available.`. If an application has no connector configurations, the report shows `No connector configurations found.`.
@@ -994,6 +1031,11 @@ For each connector configuration, the report includes a header with the name, th
 
 | TLS details
 | TLS context information for the connection provider, including certificate validity where applicable. The report shows this information only for providers that use TLS.
+
+| OAuth
+| For OAuth-secured connectors, the OAuth grant type, client ID, client secret, authorization URL, token URL, and scopes. The client secret is masked, and user information embedded in URLs is redacted. Fields that aren't configured are omitted.
+
+OAuth configuration details are available in Mule runtime 4.13.2 and later.
 
 | Connection State
 a| A block of connection statistics for the configuration, shown as `(no statistics available)` when none have been recorded. When present, the block contains:
@@ -1023,7 +1065,7 @@ a| A block of connection statistics for the configuration, shown as `(no statist
 
 [NOTE]
 ====
-This section applies to Enterprise Edition only and is available in Mule runtime 4.12.1 and later.
+This section applies to Enterprise Edition only and is available in Mule runtime 4.13.2 and later.
 ====
 
 This section reports the clustering configuration of the local node. When lock diagnostics are enabled, it also reports the distributed locks currently held across the cluster.
@@ -1105,7 +1147,7 @@ The report also lists orphan locks, which are held locks that have no owning nod
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.2 and later. This section is available only in Enterprise Edition runtimes that have the Mule agent installed.
+Available in Mule runtime 4.13.2 and later. This section is available only in Enterprise Edition runtimes that have the Mule agent installed.
 ====
 
 The Agent Info section reports the installation and health of the Mule agent that pairs this runtime with Anypoint Platform: whether the agent is installed, its version, key configuration values, keystore certificate details, and the most recent connection status. Use it to diagnose agent pairing and platform-connectivity issues.
@@ -1200,7 +1242,7 @@ Connection status derived from the certificate and the agent log file (`logs/mul
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.2 and later. This operation runs on demand only. Because it performs outbound network connections, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag platformConnectivity`.
+Available in Mule runtime 4.13.2 and later. This operation runs on demand only. Because it performs outbound network connections, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag platformConnectivity`.
 ====
 
 This operation checks TCP connectivity from the Mule runtime host to the Anypoint Platform endpoints and dumps the TLS certificate chain presented by the platform. Use it to diagnose connectivity or TLS issues between a runtime and the control, data, and monitoring planes. The report has two subsections.
@@ -1268,7 +1310,7 @@ The report first shows the handshake outcome as `handshake: success` or `handsha
 
 [NOTE]
 ====
-Available in Mule runtime 4.12.3 and later.
+Available in Mule runtime 4.13.2 and later.
 
 This operation runs on demand only. Because it scans the full set of rotated log files, which is disk-intensive, it isn't included in the default diagnostic dump. Run it explicitly by name with `./diag knownIssues`.
 ====
