@@ -4,31 +4,35 @@ include::_attributes.adoc[]
 endif::[]
 :keywords: anypoint studio, studio, mule, split, aggregate, scope, parallel, for, each
 
-The Parallel For Each scope enables you to process a collection of messages by splitting the collection into parts that are simultaneously processed in separate routes within the scope of any limitation configured for concurrent-processing. After all messages are processed, the results are aggregated following the same order they were in before the split, and then the flow continues.
+
+The Parallel For Each scope enables you to process a collection of messages by splitting the input payload into parts that are simultaneously processed in separate routes. This scope ignores Mule attributes from the input, and any creation or processing of Mule variables in within the scope do not propagate outside of the scope.
+//TODO: "within the scope of any limitation configured for concurrent-processing" confusing here. break up sentence?
+//TODO: NEW SENTENCE ...
+within the scope of any limitation configured for concurrent-processing. After all messages are processed, the results are aggregated in the same order they were in before the split, and then the flow continues.
 
 == Considerations
 
-* Parallel For Each buffers all processing routes' results in a list to return it after the scope finishes processing, which can cause out-of-memory errors when processing a high number of entries. To process large payloads, use xref::batch-processing-concept.adoc[Batch Processing] instead.
-* Anypoint Studio versions prior to 7.6 do not provide this feature in the Mule Palette view. To use Parallel for Each in those versions, you must manually configure Parallel For Each scope in the XML.
+* Parallel For Each buffers the results of all processing routes in a list to return after the scope finishes processing, which can cause out-of-memory errors when processing a high number of entries. To process large payloads, use xref::batch-processing-concept.adoc[Batch Processing] instead.
+* Anypoint Studio versions prior to 7.6 do not provide this feature in the Mule Palette view. To use Parallel for Each in those versions, you must manually configure Parallel For Each scope in XML.
 
-== Configuration
+== Reference
 
-The Parallel For Each scope can be configured through the following fields:
+The Parallel For Each scope provides the following configurable fields:
 
-[%header,cols="1,3"]
+[%header,cols="1a,1a,3a"]
 |===
-|Child element |Description
-|Collection (`collection`) | Specifies the expression that defines the collection of parts to be processed in parallel. By default, it uses the incoming payload.
+|Child element | XML | Description
+|Collection | `<collection />` | DataWeave expression that defines the collection of parts to process in parallel. By default, the collection is the incoming payload.
 |===
 
-[%header,cols="1,3"]
+[%header,cols="1a,1a,3a"]
 |===
-|Attribute |Description
-|Collection Expression (`collection`) | An expression that returns a collection. By default, the payload is taken as the collection to split.
-|Timeout (`timeout`) | Specifies the timeout in milliseconds for each parallel route. By default, there is no timeout.
-|Max Concurrency (`maxConcurrency`) | Specifies the maximum level of parallelism for the router to use. By default, all routes run in parallel.
-|Target Variable (`target`) | Specifies a variable to use for storing the processed payload. By default, the output is saved in the flow's payload.
-|Target Value (`targetValue`) | Specifies an expression to evaluate against the operation's output value. The outcome of this expression is stored in the target variable. By default, this is the same as the operation's output value.
+|Attribute | XML | Description
+|Collection Expression | `collection` | DataWeave expression that returns a collection. By default, the payload is treated as the collection to split.
+|Timeout | `timeout` | A timeout in milliseconds for each parallel route. By default, there is no timeout.
+|Max Concurrency | `maxConcurrency` | Maximum level of parallelism for the router to use. By default, all routes run in parallel. //TODO: ANY RECOMMENDATIONS FOR PERFORMANCE?
+|Target Variable | `target` | Name of a variable to use for storing the Mule message (payload and any attributes) after processing by For Each. See xref:target-variables.adoc[]. 
+|Target Value | `targetValue` | A DataWeave expression to evaluate against the Mule message that For Each returns. The result of this expression is stored in the target variable and accessible from a processor _after_ For Each. You can access the target variable using `vars`, for example, `vars._myTargetVariable_`. Within For Each, any attempt to access a target variable returns `null`. By default, if you leave this field blank, the target value is the Mule message created from the For Each output. 
 |===
 
 == Example
@@ -41,14 +45,30 @@ This XML example adds to every element in the collection the string `"-result"`:
 
   <parallel-foreach collection="#[['apple', 'banana', 'orange']]">
       <set-payload value="#[payload ++ '-result']"/>
+      <logger level="INFO" doc:name="Logger" message="#[payload]" />
   </parallel-foreach>
 
 </flow>
 ----
 
-Every execution of the Parallel For Each scope starts with the same variables and values as before the execution of the block.
+The Logger output looks like this (edited for readability): 
 
+[source,logs]
+----
+INFO  ...LoggerMessageProcessor: orange-result
+INFO  ...LoggerMessageProcessor: banana-result
+INFO  ...LoggerMessageProcessor: apple-result
+----
+
+Every execution of the Parallel For Each scope starts with the same variables and variable values. 
+
+//TODO: CLARIFY THIS:
 New variables or modifications of already existing variables while processing one element are not visible while processing another element. All of those variable changes are not available outside the Parallel For Each scope, the set of variables (and their values) after the execution of the Parallel For Each Scope remains the same as before the execution.
+
+// Variables created or modified within For Each 
+// Changes that take place to variables within the scope are not available outside of the scope. 
+// 
+
 
 Consider the following example:
 
