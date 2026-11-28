@@ -59,6 +59,36 @@ This example passes the order ID as a parameter instead, so the script text is t
 
 To set the maximum number of compiled scripts in the cache, use the `mule.weave.script.parser.cache.size` system property. For more information, see xref:dataweave::dataweave-memory-management.adoc[DataWeave Memory Management].
 
+=== Memory Implications and Mitigation
+
+Compiled DataWeave scripts are stored in JVM Metaspace, not in the heap. If the compilation cache grows without bound—for example, when each event produces a unique script—Metaspace can fill up and cause `java.lang.OutOfMemoryError: Metaspace` errors. This is especially likely when the Dynamic Evaluate component is used inside API Gateway policies, where many different policy scripts can accumulate in the cache.
+
+To prevent parser objects from accumulating in Metaspace, set the following system property:
+
+----
+com.mulesoft.weave.closeAfterFunCall=true
+----
+
+This property causes DataWeave functions to release their compilation results after execution, so the parsed objects are eligible for garbage collection instead of remaining in Metaspace indefinitely.
+
+[NOTE]
+====
+Setting `com.mulesoft.weave.closeAfterFunCall=true` affects all DataWeave transformations in the application, not only Dynamic Evaluate scripts. Use it when profiling confirms that Metaspace or Old Generation memory grows continuously under load.
+====
+
+Use both properties together for complete control over compilation memory:
+
+[%header,cols="2,3"]
+|===
+| System property | Effect
+
+| `mule.weave.script.parser.cache.size`
+| Limits the number of compiled scripts kept in the cache. Scripts that exceed the limit are evicted (LRU). Default behavior can allow the cache to grow very large.
+
+| `com.mulesoft.weave.closeAfterFunCall=true`
+| Releases compilation results after each function call, preventing Metaspace from accumulating parser objects over time.
+|===
+
 == Evaluate DataWeave Script from the File System Example
 
 The following example shows how the Dynamic Evaluate component selects and executes a DataWeave script stored locally in the file system. The application's flow behavior is as follows:
